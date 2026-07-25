@@ -142,6 +142,8 @@ syncwingetlink/
 │  │  ├─ PackageSourceError.{h,cpp} # typed enumeration-failure exception + HRESULT mapping
 │  │  ├─ ExecutableScanner.{h,cpp} # shared *.exe walk used by WingetComSource and FsScanSource
 │  │  ├─ FsScanSource.{h,cpp}  # fallback: recursive scan of Packages, exe enumeration
+│  │  ├─ PackageSourceFactory.{h,cpp} # --source com|fs|auto selection + COM→FS degrade
+│  │  ├─ PackageFilter.{h,cpp} # --include/--exclude glob filtering over enumerated packages
 │  │  ├─ LinkInspector.{h,cpp} # judge symlink state under Links (missing/broken/OK)
 │  │  ├─ AliasResolver.{h,cpp} # decide alias by metadata > regex > raw name
 │  │  ├─ SymlinkService.{h,cpp}# symlink create/delete/verify (Win32)
@@ -255,6 +257,11 @@ Options:
   --verbose / --quiet   log level
   --version / --help
 ```
+
+`--include`/`--exclude` take shell-style wildcards (`*` and `?` only — no character
+classes, no path semantics), matched per executable against either the package identifier
+or the executable file name, ordinal and case-insensitive. An exclude match always beats
+an include match. See `docs/adr-phase-2.md` ADR-0010.
 
 ### Exit codes
 - `0`: success (nothing to fix or fixed)

@@ -129,3 +129,90 @@ build error when either Desktop App Installer or the SDK compiler is unavailable
   therefore intentionally absent; `mapHresultToKind` and `isPortableInstallerType` are
   unit tested as pure functions instead, and manual verification of `--source com` in a
   normal interactive session is called out as an open item once `main.cpp` exists (M6).
+
+---
+
+## ADR-0010 — Source selection, glob filter semantics, and the FsScanSource failure contract
+
+- **Date**: 2026-07-26
+- **Affected**: `PackageSourceFactory`, `PackageFilter`, `FsScanSource`, `docs/TODO.md` M2
+- **Status**: Accepted
+
+### Decision
+
+1. **`--source auto` degrades only on `PackageSourceError`, and only on a fault.**
+   `AutoPackageSource` (in `core/PackageSourceFactory`) attempts the COM source inside
+   `enumeratePackages()`, not in its constructor, so that a COM failure is caught wherever
+   it surfaces: activation and catalog connect happen when `WingetComSource` is
+   constructed, but the `FindPackages` query can still fail afterwards, and to a user who
+   asked for `auto` both mean the same thing. Three consequences follow:
+   - Any exception that is **not** a `PackageSourceError` propagates. `std::bad_alloc` or a
+     programming error is not a "COM is unavailable" signal and must not be silently
+     turned into a filesystem scan.
+   - A COM source that connected and returned **zero packages does not degrade**. A machine
+     with no portable packages installed legitimately enumerates none; scanning the
+     filesystem in that case would be second-guessing a source that worked.
+   - Explicit `--source com` never degrades — the failure is the user's to see, and M6 maps
+     the `PackageSourceErrorKind` onto an exit code. Explicit `--source fs` never
+     constructs the COM source at all.
+2. **`--include`/`--exclude` semantics** (this is the resolution ADR-0009 §4 deferred to
+   "the PR that implements `PackageFilter`"):
+   - Matching is **per executable**, not per package, and each pattern is tested against
+     both the owning package's identifier and the executable's bare file name — so
+     `--include OpenAI.Codex` and `--include codex*.exe` select the same executable.
+   - Comparison is **ordinal and case-insensitive** (`CompareStringOrdinal`), for the same
+     reason `isPortableInstallerType` is: a locale-dependent case fold such as the Turkish
+     dotless-i must not change whether a user's pattern matches.
+   - The supported glob syntax is **`*` and `?` only**. No character classes (`[a-z]`), no
+     brace expansion, and no path-separator semantics — the matched values are an
+     identifier or a bare file name, never a path, so there is no directory structure to
+     reason about. `?` consumes one UTF-16 code unit.
+   - **Exclude always beats include**, and a package whose executables are all filtered out
+     is **dropped** rather than reported with an empty list.
+   - `PackageFilter` is pure logic applied to the *result* of
+     `IPackageSource::enumeratePackages()`, not inside a source, so both sources filter
+     identically. It is deliberately not wired to `AppOptions` yet: M6 is the first code
+     with parsed options to hand.
+3. **`FsScanSource` reports unrecoverable filesystem failures instead of returning empty.**
+   `IPackageSource` documents that denied access or an I/O error throws; the original
+   implementation returned an empty vector for every `std::error_code`, which is
+   indistinguishable from "no packages installed". An **absent** Packages directory (or a
+   plain file where it should be) still yields an empty result — that is the normal state
+   of a machine that never installed a portable package. Anything else now raises
+   `PackageSourceError(ScanFailed)`, so `ScanFailed` is no longer the unused enumerator its
+   comment described.
+
+### Reason
+
+- Putting the COM attempt in `AutoPackageSource::enumeratePackages()` rather than in a
+  constructor is what makes a single `catch` cover both failure windows. A factory that
+  only guarded construction would let a `FindPackages` failure escape from a source the
+  user explicitly asked to be forgiving.
+- Degrading on an empty result would make `auto` behave differently from `com` on a
+  perfectly healthy machine, and would produce filesystem-derived packages (with no version
+  metadata) where COM had already given a correct, empty answer.
+- The narrow glob syntax is what the CLI surface in `docs/PLAN.md` §8 actually promises
+  (`--include <glob>`), and it avoids committing to `std::regex` semantics in an option
+  that users will reasonably expect to behave like a shell wildcard. Widening it later is
+  backward compatible; narrowing it would not be.
+- Swallowing an access error and reporting "no packages" would send a user looking for a
+  winget problem that does not exist, and would make `scan` report success while having
+  read nothing.
+
+### Consequences
+
+- `docs/TODO.md` M2 is complete. `AppOptions::includePatterns`/`excludePatterns` and
+  `AppOptions::source` are now consumed by `createPackageSource`/`PackageFilter`, but
+  nothing constructs an `AppOptions` until M6 — the M6 CLI must call
+  `createPackageSource(options, onDegrade)` and apply `PackageFilter` to its result, and
+  should surface the `onDegrade` callback as a warning line.
+- `AutoPackageSource::resolvedSource()`/`degradationKind()` exist so `--json` and the
+  console reporter can state which source produced a result. They are `PackageSource::Auto`
+  / empty until `enumeratePackages()` has run.
+- The COM/FS switching tests inject fake `IPackageSource` implementations. No automated
+  test constructs a live `WingetComSource`, for the environment reason recorded in
+  ADR-0009; `--source auto` degradation against a machine with App Installer genuinely
+  removed remains a manual check once M6 exists.
+- `FsScanSource`'s access-denied throw path has no automated test: it cannot be provoked
+  reliably from a non-elevated test process. The absent-directory and
+  not-a-directory paths are covered.

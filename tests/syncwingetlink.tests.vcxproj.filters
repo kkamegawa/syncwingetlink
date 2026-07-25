@@ -12,7 +12,13 @@
     <ClCompile Include="FsScanSourceTests.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
+    <ClCompile Include="PackageFilterTests.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
     <ClCompile Include="PackageSourceErrorTests.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
+    <ClCompile Include="PackageSourceFactoryTests.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
     <ClCompile Include="SmokeTests.cpp">

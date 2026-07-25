@@ -38,7 +38,9 @@
     <ClCompile Include="core\ComApartment.cpp" />
     <ClCompile Include="core\ExecutableScanner.cpp" />
     <ClCompile Include="core\FsScanSource.cpp" />
+    <ClCompile Include="core\PackageFilter.cpp" />
     <ClCompile Include="core\PackageSourceError.cpp" />
+    <ClCompile Include="core\PackageSourceFactory.cpp" />
     <ClCompile Include="core\Paths.cpp" />
     <ClCompile Include="core\WingetComSource.cpp" />
   </ItemGroup>
@@ -48,7 +50,9 @@
     <ClInclude Include="core\FsScanSource.h" />
     <ClInclude Include="core\IPackageSource.h" />
     <ClInclude Include="core\Model.h" />
+    <ClInclude Include="core\PackageFilter.h" />
     <ClInclude Include="core\PackageSourceError.h" />
+    <ClInclude Include="core\PackageSourceFactory.h" />
     <ClInclude Include="core\Paths.h" />
     <ClInclude Include="core\WingetComSource.h" />
   </ItemGroup>

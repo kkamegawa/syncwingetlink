@@ -86,6 +86,8 @@ syncwingetlink/
 │  │  ├─ PackageSourceError.*  # typed enumeration-failure exception + HRESULT mapping
 │  │  ├─ ExecutableScanner.*   # shared *.exe walk used by WingetComSource and FsScanSource
 │  │  ├─ FsScanSource.*        # filesystem-scan fallback
+│  │  ├─ PackageSourceFactory.* # --source com|fs|auto selection + COM→FS degrade
+│  │  ├─ PackageFilter.*       # --include/--exclude glob filtering
 │  │  ├─ LinkInspector.*       # judges symlink state under Links
 │  │  ├─ AliasResolver.*       # decides the alias name
 │  │  ├─ SymlinkService.*      # create/delete/verify symlinks
