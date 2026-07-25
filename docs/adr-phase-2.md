@@ -38,3 +38,94 @@ build error when either Desktop App Installer or the SDK compiler is unavailable
   generated during each non-design-time build instead of being committed.
 - Cross-building ARM64 continues to use the x64 host compiler; the generated C++ headers
   are architecture-independent.
+
+---
+
+## ADR-0009 — WingetComSource activation, and the dead COM alias branch
+
+- **Date**: 2026-07-25
+- **Affected**: `WingetComSource`, `docs/com-api.md`, `docs/TODO.md` M2/M3, `AliasResolver` (M3)
+- **Status**: Accepted
+
+### Decision
+
+1. **Activation.** `WingetComSource` activates `PackageManager` with
+   `winrt::create_instance<PackageManager>(kPackageManagerClsid, CLSCTX_LOCAL_SERVER)`
+   using a fixed CLSID (`C53A4F16-787E-42A4-B304-29EFFB4BF597`), not default WinRT
+   activation (`PackageManager m{};`, which fails unpackaged). The same applies to every
+   other activatable class this code touches — `FindPackagesOptions`
+   (`572DED96-9C60-4526-8F92-EE7D91D38C1A`) and `PackageMatchFilter`
+   (`D02C9DAF-99DC-429C-B503-4E504E4AB000`) — confirmed by reading the CLSIDs registered
+   in the installed Microsoft Desktop App Installer 1.29.280.0 package's
+   `AppxManifest.xml` and cross-checking the generated projection header. Apartment
+   initialization uses `CoInitializeEx(nullptr, COINIT_MULTITHREADED)` directly
+   (`core/ComApartment`), not `winrt::init_apartment()`, and tolerates
+   `RPC_E_CHANGED_MODE` rather than treating it as a failure.
+2. **The COM-metadata alias branch is permanently dead.** `docs/PLAN.md` §3/§6/§7 and
+   `AGENTS.md` §6 describe a three-tier alias priority whose tier 1 is "COM API metadata
+   (when a `PortableCommandAlias`-equivalent is available)". There is no such API.
+   `PackageVersionMetadataField` has exactly six members (`InstallerType`,
+   `InstalledScope`, `InstalledLocation`, `StandardUninstallCommand`,
+   `SilentUninstallCommand`, `PublisherDisplayName`); `IPackageVersionInfo2/3/4` add only
+   version comparison, publisher, and installer metadata. `WingetComSource` therefore
+   never populates `PackageExe::metadataAlias` — it is always `std::nullopt` from this
+   source. M3's `AliasResolver` must treat tier 1 as unreachable and rely entirely on
+   tier 2 (regex rules) / tier 3 (raw file name); it should not be written to expect a
+   COM-supplied alias.
+3. **A portable package with an empty `InstalledLocation` is dropped, not guessed at.**
+   `GetMetadata(PackageVersionMetadataField::InstalledLocation)` is not guaranteed
+   non-empty for every portable package. `WingetComSource` skips such a package (nothing
+   to scan for executables) rather than reconstructing a path from the
+   `Packages\<id>_<source>` naming convention `FsScanSource` uses — that convention is a
+   filesystem-source heuristic, not something COM's own metadata implies.
+4. **`--include`/`--exclude` matching semantics** (deferred from this ADR to the PR that
+   implements `PackageFilter`): matching is per-executable, ordinal, case-insensitive,
+   against the package id or the executable file name; an exclude match always wins over
+   an include match; a package left with zero executables after filtering is dropped.
+
+### Reason
+
+- Confirmed empirically: default WinRT activation of `PackageManager` fails with
+  `REGDB_E_CLASSNOTREG` in an unpackaged process; the manifest shows every one of these
+  types registered as a distinct out-of-process `ExeServer` class, not just
+  `PackageManager`.
+- `winrt::init_apartment()` throws on `RPC_E_CHANGED_MODE`; a static library must not
+  assume it is the first thing to touch COM on a thread (a host process or test runner
+  may already have initialized a different concurrency model).
+- Silently guessing an install location would produce a package entry pointing at a
+  directory COM never actually reported, which is worse than omitting the package and is
+  exactly the kind of guess `AGENTS.md` §2 rule 4 says not to make.
+
+### Consequences
+
+- `docs/TODO.md` M2's `winrt::init_apartment()` wording and `docs/com-api.md`'s original
+  skeleton (`PackageManager manager{};`, `FindPackagesOptions options{};`) were wrong for
+  an unpackaged desktop app; `docs/com-api.md` is corrected in the same change as this
+  ADR.
+- `docs/TODO.md` M3's alias-priority wording (`(1) COM metadata PortableCommandAlias`)
+  describes an API that does not exist; M3 should implement `AliasResolver` starting from
+  the regex-rules tier, not attempt to read a COM alias first.
+- New files added under `src/core/` for this work — `ExecutableScanner`, `FsScanSource`,
+  `PackageSourceError`, `ComApartment`, `WingetComSource` — are not yet reflected in the
+  `src/core/` tree listed in `docs/PLAN.md` §5 or `AGENTS.md` §3; both should be updated
+  to match.
+- `WingetComSource.h` does not include any winrt header (all winrt types are confined to
+  `WingetComSource.cpp` behind a pimpl), because only `syncwingetlink.core.vcxproj`
+  imports the projection-generation MSBuild target — `tests/syncwingetlink.tests.vcxproj`
+  has no include path to the generated headers. Any future file that needs to name a
+  winrt type in a public header must follow the same pattern.
+- `<winrt/base.h>` has no `#pragma comment(lib, ...)` of its own; `WingetComSource.cpp`
+  adds `#pragma comment(lib, "runtimeobject.lib")`, which — because a linker directive
+  embedded in an `.obj` propagates through the static library archive — covers every
+  consumer (the exe project and the tests DLL) without editing either `.vcxproj`.
+- Live COM enumeration was exercised manually against this machine's real winget install
+  (20 packages, 27 portable executables) via a standalone probe program, which confirmed
+  the CLSID/activation facts above. It was **not** exercised automatically as an MSTest
+  case: out-of-process COM server activation for this CLSID reliably terminated the probe
+  process in the sandboxed development environment used for this change (suspected cause:
+  no interactive window station/desktop available to launch
+  `WindowsPackageManagerServer.exe`), and risking the same inside `vstest.console.exe`
+  would turn one questionable test into a crashed test run. `WingetComSourceTests` is
+  therefore intentionally absent; `mapHresultToKind` and `isPortableInstallerType` are
+  unit tested as pure functions instead, and manual verification of `--source com` in a
+  normal interactive session is called out as an open item once `main.cpp` exists (M6).

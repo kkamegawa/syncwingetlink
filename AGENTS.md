@@ -82,6 +82,9 @@ syncwingetlink/
 │  ├─ core/                    # domain logic (Win32/COM dependencies isolated)
 │  │  ├─ IPackageSource.h      # abstract IF for enumerating installed packages
 │  │  ├─ WingetComSource.*     # COM API implementation (default source)
+│  │  ├─ ComApartment.*        # process-wide CoInitializeEx RAII, shared by WingetComSource
+│  │  ├─ PackageSourceError.*  # typed enumeration-failure exception + HRESULT mapping
+│  │  ├─ ExecutableScanner.*   # shared *.exe walk used by WingetComSource and FsScanSource
 │  │  ├─ FsScanSource.*        # filesystem-scan fallback
 │  │  ├─ LinkInspector.*       # judges symlink state under Links
 │  │  ├─ AliasResolver.*       # decides the alias name

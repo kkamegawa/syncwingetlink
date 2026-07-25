@@ -284,3 +284,115 @@ FS traversal) that aren't in scope for issue #26.
   existing tests still pass.
 
 Closes #26.
+
+## 2026-07-25 (continued) — Filesystem package scan fallback (M2, issues #32, #33)
+
+**Trigger**: issue #4 (M2 milestone) and its sub-issues #32 (filesystem package scanning)
+and #33 (reparse-point traversal prevention). Branch `feature/32-fs-package-scan`, PR #85.
+
+### Completed
+
+- `src/core/ExecutableScanner.{h,cpp}`: shared `*.exe` collector used by both package
+  sources, since COM only reports install locations and something still has to walk them
+  for real files (`docs/PLAN.md` §3's two-stage design).
+- `src/core/FsScanSource.{h,cpp}`: `IPackageSource` fallback that enumerates the
+  immediate subdirectories of the WinGet `Packages` folder, deriving each package id from
+  winget's `<PackageIdentifier>_<SourceIdentifier>` directory naming convention.
+- Tests: `ExecutableScannerTests.cpp`, `FsScanSourceTests.cpp`.
+
+### Corrected after review (before merge)
+
+An independent design review of the full M2 plan flagged two defects, fixed in a
+follow-up commit on the same branch before requesting merge:
+
+- The original reparse-point handling hand-rolled recursion and excluded every
+  `FILE_ATTRIBUTE_REPARSE_POINT` entry outright. Reading MSVC's `<filesystem>` headers
+  directly confirmed `recursive_directory_iterator` already refuses to descend into a
+  symlink or junction by default (`_Should_recurse` gates on `_Is_symlink_or_junction`),
+  so the hand-rolled walk solved an already-solved problem, and the blanket attribute
+  check would have silently dropped legitimate files carrying an unrelated reparse tag
+  (e.g. a OneDrive placeholder). Switched to `recursive_directory_iterator` with default
+  options, keeping the depth cap only as a second guard. The identical wrong claim in the
+  `cpp-msbuild` skill (`.github/skills/cpp-msbuild/SKILL.md`) was corrected and mirrors
+  regenerated via `tools/sync-skills.sh`.
+- Both scanners were storing the `\\?\`-prefixed path used internally to walk long paths
+  straight into `PackageExe::path`/`InstalledPackage::installLocation`, which would have
+  compared unequal to paths built anywhere else (rules matching, `--json` output,
+  console). Added `paths::fromExtendedLengthPath()` and rebased every returned path
+  through it.
+- Also sorted both executables and packages before returning them (directory enumeration
+  order is filesystem-dependent, so the original tests were flaky by construction), and
+  replaced the symlink-based reparse test (silently skipped without Developer Mode) with
+  an NTFS junction created via `DeviceIoControl`/`FSCTL_SET_REPARSE_POINT`, which needs
+  only write access to the parent directory — the loop-prevention assertion now always
+  runs.
+
+### Verified
+
+- `Debug|x64`, `Release|x64`: core + tests build clean at `/W4 /WX`. `syncwingetlink.exe`
+  still fails `LNK1561` (expected — no `main.cpp` until M6).
+- `Debug|ARM64`: cross-built, not run.
+- `vstest.console.exe`: 31/31 tests passed (read the actual output, not just the build
+  result).
+- No dependency added (standard library + Win32 only).
+
+PR #85 opened against `main`, not yet merged (issues #32/#33 not yet closed).
+
+## 2026-07-25 (continued) — Winget COM package source (M2, issues #27–#31)
+
+**Trigger**: issue #4 (M2 milestone) and sub-issues #27 (activate the COM package
+manager), #28 (connect to the installed catalog), #29 (enumerate package metadata), #30
+(filter to portable installers), #31 (handle COM activation failures). Branch
+`feature/27-winget-com-source`, stacked on `feature/32-fs-package-scan`.
+
+### Completed
+
+- `src/core/PackageSourceError.{h,cpp}`: `PackageSourceErrorKind` enum + exception type,
+  plus two pure, winrt-independent free functions — `mapHresultToKind(int32_t)` and
+  `isPortableInstallerType(std::wstring_view)` — so the two riskiest decisions in the COM
+  path are unit-testable without winget installed.
+- `src/core/ComApartment.{h,cpp}`: `CoInitializeEx(COINIT_MULTITHREADED)` RAII, tolerating
+  `RPC_E_CHANGED_MODE` instead of throwing (unlike `winrt::init_apartment()`).
+- `src/core/WingetComSource.{h,cpp}`: `IPackageSource` implementation. Activates
+  `PackageManager` (and `FindPackagesOptions`/`PackageMatchFilter`) via
+  `winrt::create_instance` with fixed CLSIDs — not default WinRT activation, which fails
+  unpackaged — then `GetLocalPackageCatalog(InstalledPackages)` → `Connect()` →
+  `FindPackages()`, filtering to `InstallerType == "portable"` (ordinal comparison) and
+  reusing `ExecutableScanner` against each package's reported install location. The
+  header exposes no winrt type (pimpl'd into the `.cpp`) because only
+  `syncwingetlink.core.vcxproj` imports the winget-projection MSBuild target — the tests
+  DLL has no include path to the generated headers.
+- `docs/adr-phase-2.md` ADR-0009: records the activation method (CLSIDs, why
+  `CoInitializeEx` replaces `winrt::init_apartment()`), and the fact that the COM API has
+  no per-file alias mapping at all — `docs/PLAN.md`/`docs/TODO.md`'s "COM metadata
+  `PortableCommandAlias`" tier is permanently unreachable, confirmed by reading every
+  member of `PackageVersionMetadataField` and `IPackageVersionInfo2/3/4` in the generated
+  projection. `docs/com-api.md`, `docs/TODO.md` (M2 and M3), `AGENTS.md` §3, and
+  `docs/PLAN.md` §5 were updated to match.
+- Tests: `PackageSourceErrorTests.cpp` covers `mapHresultToKind` and
+  `isPortableInstallerType` exhaustively.
+
+### Deliberately not done
+
+No automated test constructs a real `WingetComSource`. A standalone probe program
+(outside the repo, in the session scratchpad) confirmed the CLSID/activation facts above
+against this machine's real winget install — 20 packages, 27 portable executables
+enumerated successfully via raw `CoCreateInstance`/`winrt::create_instance` — but
+out-of-process COM server activation for this CLSID reliably terminated that probe
+process when run inside this development sandbox (suspected cause: no interactive window
+station/desktop available to launch `WindowsPackageManagerServer.exe`). Risking the same
+inside `vstest.console.exe` would turn one environment-dependent test into a crashed test
+run instead of a red one. Manual verification of `--source com` in a normal interactive
+session is left as an open item once `main.cpp` exists (M6); see ADR-0009's Consequences
+section.
+
+### Verified
+
+- `Debug|x64`, `Release|x64`: core + tests build clean at `/W4 /WX`, including linking the
+  tests DLL against a static library containing winrt-using object code (confirms the
+  pimpl + `#pragma comment(lib, "runtimeobject.lib")` approach works without editing
+  `tests/syncwingetlink.tests.vcxproj`). `syncwingetlink.exe` still fails `LNK1561`
+  (expected).
+- `Debug|ARM64`: cross-built, not run.
+- `vstest.console.exe`: 39/39 tests passed.
+- No dependency added (standard library + Windows SDK C++/WinRT only).
