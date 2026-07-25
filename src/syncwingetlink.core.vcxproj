@@ -41,7 +41,8 @@
     <ClInclude Include="core\Model.h" />
     <ClInclude Include="core\Paths.h" />
   </ItemGroup>
-  <Import Project="$(MSBuildThisFileDirectory)..\props\syncwingetlink.winget-projection.targets" />
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
-  <ImportGroup Label="ExtensionTargets" />
+  <ImportGroup Label="ExtensionTargets">
+    <Import Project="$(MSBuildThisFileDirectory)..\props\syncwingetlink.winget-projection.targets" />
+  </ImportGroup>
 </Project>

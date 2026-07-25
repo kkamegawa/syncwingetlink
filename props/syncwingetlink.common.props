@@ -3,7 +3,7 @@
   <PropertyGroup>
     <CharacterSet>Unicode</CharacterSet>
     <UseDebugLibraries Condition="'$(Configuration)' == 'Debug'">true</UseDebugLibraries>
-    <UseDebugLibraries Condition="'$(Configuration)' == 'Release'">false</UseDebugLibraries>
+    <UseDebugLibraries Condition="'$(Configuration)' != 'Debug'">false</UseDebugLibraries>
     <WholeProgramOptimization Condition="'$(Configuration)' == 'Release'">true</WholeProgramOptimization>
   </PropertyGroup>
   <ItemDefinitionGroup>
