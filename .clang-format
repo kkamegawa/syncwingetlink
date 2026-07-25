@@ -1,0 +1,63 @@
+# SPDX-License-Identifier: MIT
+# Formatting rules for syncwingetlink.
+# Naming conventions are NOT enforced here -- clang-format cannot check identifiers.
+# See .clang-tidy (readability-identifier-naming) for those.
+---
+Language: Cpp
+BasedOnStyle: Microsoft
+
+Standard: c++20
+ColumnLimit: 100
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+
+# Allman braces, consistent with the Win32/C++ samples in docs/.
+BreakBeforeBraces: Allman
+
+AccessModifierOffset: -4
+IndentCaseLabels: true
+NamespaceIndentation: None
+FixNamespaceComments: true
+CompactNamespaces: false
+
+PointerAlignment: Left
+ReferenceAlignment: Left
+DerivePointerAlignment: false
+
+AllowShortFunctionsOnASingleLine: Empty
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+AllowShortCaseLabelsOnASingleLine: false
+
+AlwaysBreakTemplateDeclarations: Yes
+BinPackArguments: false
+BinPackParameters: false
+AllowAllArgumentsOnNextLine: false
+AllowAllParametersOfDeclarationOnNextLine: false
+
+SpaceAfterCStyleCast: true
+SpaceBeforeCpp11BracedList: false
+
+SortIncludes: CaseInsensitive
+IncludeBlocks: Regroup
+IncludeCategories:
+  # Precompiled / local project headers first.
+  - Regex: '^"'
+    Priority: 1
+  # C++/WinRT projections.
+  - Regex: '^<winrt/'
+    Priority: 3
+  # Windows SDK headers. windows.h must precede the headers that depend on it,
+  # so it is given its own earlier priority.
+  - Regex: '^<(windows|Windows)\.h>'
+    Priority: 2
+  - Regex: '^<(shlobj|shlwapi|knownfolders|pathcch|objbase|combaseapi)'
+    Priority: 4
+  # Everything else from the standard library.
+  - Regex: '^<'
+    Priority: 5
+
+KeepEmptyLinesAtTheStartOfBlocks: false
+MaxEmptyLinesToKeep: 1
+SeparateDefinitionBlocks: Always

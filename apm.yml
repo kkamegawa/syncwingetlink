@@ -1,0 +1,17 @@
+name: syncwingetlink
+version: 1.0.0
+description: APM project for syncwingetlink
+author: Kazushi Kamegawa
+# Which agent platforms to deploy to.
+# Resolution order: --target flag > this field > auto-detect from filesystem.
+# Accepted values: agent-skills, antigravity, claude, codex, copilot, cursor, gemini, kiro, opencode, windsurf
+targets:
+  - claude
+  - codex
+  - copilot
+dependencies:
+  apm:
+    - github/awesome-copilot
+  mcp: []
+includes: auto
+scripts: {}

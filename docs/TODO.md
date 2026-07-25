@@ -1,0 +1,112 @@
+# syncwingetlink — TODO (implementation checklist for AI coding agents)
+
+Tasks can be started top-down. `[core]` requires tests. One task = one small PR.
+
+📖 日本語版は [`TODO_ja.md`](./TODO_ja.md) を参照してください。
+
+## M0. Project bootstrap
+
+Build system decisions are recorded in [`adr.md`](./adr.md) (ADR-0001 … ADR-0004).
+
+- [x] `.editorconfig` / clang-format / clang-tidy setup
+- [x] Record the build-system decisions in `docs/adr.md`
+- [ ] Create the MSBuild solution `syncwingetlink.sln`
+      (VS2026 / platform toolset v145, C++20, `Debug|Release` × `x64|ARM64`)
+- [ ] Add the three projects per ADR-0002: `syncwingetlink.core` (static library),
+      `syncwingetlink` (executable), `syncwingetlink.tests` (MSTest DLL)
+- [ ] Create `Directory.Build.props` + `props/syncwingetlink.common.props` and import them
+      from every project (re-derive from ADR-0001 … ADR-0003; an earlier draft was
+      discarded, see `task.md`)
+- [ ] Add app manifest: `longPathAware=true`, `requestedExecutionLevel=asInvoker`
+- [ ] Set up MSTest (Microsoft Unit Testing Framework for C++) with one smoke test that
+      passes under `vstest.console.exe`
+- [ ] **Resolve ADR-0003**: verify whether the CppUnitTest framework library links against
+      a `/MT` test DLL, then fix the `StaticRuntime` default and update the ADR
+- [ ] Use the **Windows SDK's** bundled C++/WinRT headers — no package is required
+      (ADR-0007). Do not add `Microsoft.Windows.CppWinRT`
+- [ ] **Spike**: determine where to source the `Microsoft.Management.Deployment` winmd,
+      then generate the projection with the SDK's `cppwinrt.exe` in a pre-build step
+      (open item 1 in `adr.md`). Do not implement `WingetComSource` until this is settled
+- [ ] Add `vcpkg.json` **only if** a native dependency actually becomes necessary
+      (ADR-0007); pin `builtin-baseline` and match the triplet to `StaticRuntime`
+- [ ] CI (GitHub Actions): `msbuild` + `vstest.console.exe`, x64 and ARM64.
+      Confirm whether a `windows-11-arm` runner is available; if not, ARM64 is
+      build-only and must be documented as such (open item 3 in `adr.md`)
+- [ ] Evaluate a vulnerability scanner that understands vcpkg (OSV-Scanner is a candidate,
+      coverage unverified) and wire it into CI — Dependabot cannot do this
+      (open item 6 in `adr.md`). Until then the gate is manual; do not claim otherwise
+
+## M1. Paths / model foundation
+- [ ] `core/Model.h`: define `InstalledPackage`, `PackageExe`, `LinkStatus{Ok,Missing,Broken,Mismatch}`, `RepairItem`, `AppOptions`
+- [ ] `core/Paths`: resolve Links path (and Packages path for FS fallback) via
+      `SHGetKnownFolderPath(FOLDERID_LocalAppData)` (support `--links-dir`/`--packages-dir` override)
+- [ ] `\\?\` long-path normalization helper
+- [ ] `core/IPackageSource.h`: define the abstract interface for installed-package enumeration
+
+## M2. Package enumeration (COM first + FS fallback)
+- [ ] `[core] core/WingetComSource`: C++/WinRT `winrt::init_apartment()` →
+      create `PackageManager`
+- [ ] `GetLocalPackageCatalog(LocalPackageCatalog.InstalledPackages)` → `Connect()`
+- [ ] `FindPackages()` to enumerate `CatalogPackage`; from `InstalledVersion` get
+      Id/Name/version/install location/(alias if available)
+- [ ] Filter to installer type = portable
+- [ ] Detect COM activation failure (App Installer missing / policy disabled / no permission) and handle exceptions
+- [ ] `[core] core/FsScanSource`: recursively scan Packages to collect `*.exe` (fallback)
+- [ ] Do not follow reparse points (symlink/junction) by default (loop prevention)
+- [ ] Implement `--source com|fs|auto` switch (auto: COM → FS degrade)
+- [ ] `--include`/`--exclude` glob filters
+- [ ] Unit tests: FsScanSource exe enumeration, and COM/FS switching logic
+
+## M3. Alias resolution + regex rules (most important)
+- [ ] `[core] rules/RuleSet`: load/validate rules JSON (exit code 3 on invalid)
+- [ ] Embed default rules in the binary (rust target triple stripping, etc.)
+- [ ] `[core] core/AliasResolver`: decide alias by priority
+      ((1) COM metadata `PortableCommandAlias` → (2) regex rules → (3) raw file name)
+- [ ] `test-rule` subcommand: show file name → matched rule name → alias
+- [ ] Unit tests: cover cases including `codex-x86_64-pc-windows-msvc.exe → codex.exe`
+- [ ] Implement and test rule priority (`--rules` > user settings > embedded)
+- [ ] `docs/rules.md`: document format, captures, replacement syntax, samples
+
+## M4. Link state judgment
+- [ ] `[core] core/LinkInspector`: judge the state of `Links\<alias>.exe`
+- [ ] Resolve symlink target via `GetFileAttributesW` + `FSCTL_GET_REPARSE_POINT`
+- [ ] Treat copy placement (a normal file) or a different target as `Mismatch`
+- [ ] Detect and warn on alias collisions (multiple exes → same alias)
+- [ ] Unit tests: classification of Ok/Missing/Broken/Mismatch
+
+## M5. Symlink creation service
+- [ ] `core/SymlinkService`: `CreateSymbolicLinkW`
+      + `SYMBOLIC_LINK_FLAG_ALLOW_UNPRIVILEGED_CREATE`
+- [ ] Delete broken links then recreate
+- [ ] Permission/Developer Mode detection and distinction (exit code 2 + guidance on failure)
+- [ ] `--dry-run` outputs the plan with no side effects
+
+## M6. CLI
+- [ ] `cli/ArgParser`: `scan`/`fix`/`test-rule` and each option
+- [ ] `cli/Console`: UTF-8/UTF-16 output, coloring, confirmation prompt (`--yes` support)
+- [ ] `--json` output (for scripting)
+- [ ] `main.cpp`: mode dispatch and exit-code mapping
+- [ ] `--help`/`--version`
+
+## M7. TUI (`--tui`)
+- [ ] Enable Console Virtual Terminal Sequences (`ENABLE_VIRTUAL_TERMINAL_PROCESSING`)
+- [ ] Checklist UI for repair candidates (space to select, Enter to execute)
+- [ ] Progress / result summary display
+
+## M8. Quality / polish
+- [ ] Integration test: with a dummy Packages/Links tree, scan→fix→re-scan becomes Ok
+- [ ] Verify display/creation with non-ASCII paths
+- [ ] Decide the localization policy for error messages (English/Japanese)
+- [ ] README (install, usage, permission requirements, examples)
+- [ ] Release: attach an unsigned single exe (static link) to GitHub Releases
+      (build with `-p:StaticRuntime=true`; depends on ADR-0003 being resolved)
+
+## M9. Documentation (COM API)
+- [ ] `docs/com-api.md`: COM activation steps, required capabilities,
+      out-of-proc/in-proc differences, fallback behavior on failure
+
+## Future enhancements (separate milestone)
+- [ ] Read winget `PortableIndex` (sqlite) read-only (last resort when COM/FS are insufficient)
+- [ ] machine-scope support (requires admin)
+- [ ] Verify whether Links is on PATH, and assist registration
+- [ ] Register a scheduled task for periodic auto-repair

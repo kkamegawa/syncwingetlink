@@ -1,0 +1,9 @@
+{
+  "name": "syncwingetlink",
+  "version": "1.0.0",
+  "description": "APM project for syncwingetlink",
+  "author": {
+    "name": "Kazushi Kamegawa"
+  },
+  "license": "MIT"
+}
