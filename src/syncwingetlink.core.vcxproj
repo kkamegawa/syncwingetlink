@@ -35,7 +35,11 @@
   <ImportGroup Label="PropertySheets" />
   <PropertyGroup Label="UserMacros" />
   <ItemGroup>
+    <ClCompile Include="core\Paths.cpp" />
+  </ItemGroup>
+  <ItemGroup>
     <ClInclude Include="core\Model.h" />
+    <ClInclude Include="core\Paths.h" />
   </ItemGroup>
   <Import Project="$(MSBuildThisFileDirectory)..\props\syncwingetlink.winget-projection.targets" />
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

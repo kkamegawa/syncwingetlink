@@ -9,5 +9,13 @@
     <ClInclude Include="core\Model.h">
       <Filter>core</Filter>
     </ClInclude>
+    <ClInclude Include="core\Paths.h">
+      <Filter>core</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="core\Paths.cpp">
+      <Filter>core</Filter>
+    </ClCompile>
   </ItemGroup>
 </Project>
