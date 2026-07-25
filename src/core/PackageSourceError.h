@@ -23,8 +23,9 @@ enum class PackageSourceErrorKind
     ServerUnavailable,        // the out-of-proc server could not be reached/is unresponsive
     CatalogError,             // ConnectResultStatus/FindPackagesResultStatus == CatalogError,
                               // or SourceAgreementsNotAccepted
-    ScanFailed,               // a filesystem-source failure (currently unused: FsScanSource
-                              // degrades to an empty result rather than throwing)
+    ScanFailed,               // a filesystem-source failure: FsScanSource could not read the
+                              // Packages directory (denied access, I/O error). A merely
+                              // absent directory is an empty result, not this.
     Unknown,
 };
 

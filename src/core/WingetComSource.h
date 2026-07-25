@@ -19,11 +19,14 @@ namespace syncwingetlink
 // particular, tests/syncwingetlink.tests.vcxproj is not). All winrt types are confined to
 // WingetComSource.cpp behind this pimpl.
 //
-// Construction performs the full COM activation and catalog-connect sequence, so a
-// caller implementing --source auto degradation can catch construction failure alone,
-// without calling enumeratePackages() first. Throws PackageSourceError on any
-// unrecoverable failure; see docs/adr-phase-2.md ADR-0009 for the HRESULT-to-kind
-// mapping this uses.
+// Construction performs every COM activation this type needs - PackageManager,
+// FindPackagesOptions and PackageMatchFilter - plus the catalog connect, so a caller
+// implementing --source auto degradation can catch construction failure alone, without
+// calling enumeratePackages() first. enumeratePackages() itself still throws if the
+// FindPackages call or the catalog query fails at runtime, so an --source auto
+// implementation should cover both (see AutoPackageSource in PackageSourceFactory.h).
+// Throws PackageSourceError - never a raw winrt::hresult_error - on any unrecoverable
+// failure; see docs/adr-phase-2.md ADR-0009 for the HRESULT-to-kind mapping this uses.
 class WingetComSource final : public IPackageSource
 {
 public:

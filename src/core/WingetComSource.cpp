@@ -91,6 +91,12 @@ struct WingetComSource::Impl
     ComApartment apartment;
     PackageManager manager{nullptr};
     PackageCatalog catalog{nullptr};
+    // Activated during construction, not lazily in enumeratePackages(), so that every COM
+    // activation this type performs fails at one predictable point - see the class comment
+    // in WingetComSource.h. The object carries no per-call state (it is a filter list the
+    // server reads), so a single instance is reused across repeated enumeratePackages()
+    // calls.
+    FindPackagesOptions findOptions{nullptr};
 
     Impl()
     {
@@ -141,28 +147,44 @@ struct WingetComSource::Impl
         }
 
         catalog = connectResult.PackageCatalog();
+
+        findOptions = buildFindPackagesOptions();
     }
 
-    [[nodiscard]] FindPackagesOptions buildFindPackagesOptions() const
+    [[nodiscard]] static FindPackagesOptions buildFindPackagesOptions()
     {
-        FindPackagesOptions options =
-            winrt::create_instance<FindPackagesOptions>(kFindPackagesOptionsClsid,
-                                                        CLSCTX_LOCAL_SERVER);
+        try
+        {
+            FindPackagesOptions options =
+                winrt::create_instance<FindPackagesOptions>(kFindPackagesOptionsClsid,
+                                                            CLSCTX_LOCAL_SERVER);
 
-        // An empty options object (no filters, no selectors) has been observed to come
-        // back FindPackagesResultStatus::InvalidOptions against some winget versions
-        // (docs/com-api.md "known caveats"). A single filter that matches every package -
-        // "Id contains the empty string" - works around that without narrowing the
-        // result set.
-        PackageMatchFilter filter =
-            winrt::create_instance<PackageMatchFilter>(kPackageMatchFilterClsid,
-                                                       CLSCTX_LOCAL_SERVER);
-        filter.Field(PackageMatchField::Id);
-        filter.Option(PackageFieldMatchOption::ContainsCaseInsensitive);
-        filter.Value(L"");
-        options.Filters().Append(filter);
+            // An empty options object (no filters, no selectors) has been observed to come
+            // back FindPackagesResultStatus::InvalidOptions against some winget versions
+            // (docs/com-api.md "known caveats"). A single filter that matches every
+            // package - "Id contains the empty string" - works around that without
+            // narrowing the result set.
+            PackageMatchFilter filter =
+                winrt::create_instance<PackageMatchFilter>(kPackageMatchFilterClsid,
+                                                           CLSCTX_LOCAL_SERVER);
+            filter.Field(PackageMatchField::Id);
+            filter.Option(PackageFieldMatchOption::ContainsCaseInsensitive);
+            filter.Value(L"");
+            options.Filters().Append(filter);
 
-        return options;
+            return options;
+        }
+        catch (const winrt::hresult_error& error)
+        {
+            // FindPackagesOptions and PackageMatchFilter are separately registered
+            // out-of-process classes, so activating them can fail independently of
+            // PackageManager. Translate here rather than letting an hresult_error escape:
+            // callers of IPackageSource are documented to see PackageSourceError only.
+            throw PackageSourceError(mapHresultToKind(error.code()),
+                                     "Failed to activate the winget FindPackagesOptions or "
+                                     "PackageMatchFilter COM server",
+                                     error.code());
+        }
     }
 };
 
@@ -176,12 +198,10 @@ WingetComSource& WingetComSource::operator=(WingetComSource&&) noexcept = defaul
 
 std::vector<InstalledPackage> WingetComSource::enumeratePackages()
 {
-    const FindPackagesOptions options = m_impl->buildFindPackagesOptions();
-
     FindPackagesResult findResult{nullptr};
     try
     {
-        findResult = m_impl->catalog.FindPackages(options);
+        findResult = m_impl->catalog.FindPackages(m_impl->findOptions);
     }
     catch (const winrt::hresult_error& error)
     {
