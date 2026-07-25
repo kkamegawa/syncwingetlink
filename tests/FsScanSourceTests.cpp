@@ -106,6 +106,23 @@ public:
         Assert::IsTrue(source.enumeratePackages().empty());
     }
 
+    TEST_METHOD(directoriesThatDeriveAnEmptyIdAreSkipped)
+    {
+        const TempDirectory temp(L"fsscan-emptyid");
+        // "_Microsoft.Winget.Source_8wekyb3d8bbwe" has no characters before the first
+        // '_', so packageIdFromDirectoryName() returns an empty id for it.
+        const std::wstring emptyIdDirectory = L"_" + std::wstring(kSourceSuffix);
+        const std::wstring realDirectory = L"Real.Package" + std::wstring(kSourceSuffix);
+        temp.createFile(std::filesystem::path(emptyIdDirectory) / L"tool.exe");
+        temp.createFile(std::filesystem::path(realDirectory) / L"real.exe");
+
+        FsScanSource source(temp.path());
+        const auto packages = source.enumeratePackages();
+
+        Assert::AreEqual(static_cast<std::size_t>(1), packages.size());
+        Assert::IsTrue(packages.front().id == L"Real.Package");
+    }
+
     TEST_METHOD(looseFilesAtTheRootAreIgnored)
     {
         const TempDirectory temp(L"fsscan-loose");
