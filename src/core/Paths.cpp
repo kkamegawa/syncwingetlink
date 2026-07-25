@@ -67,6 +67,11 @@ std::filesystem::path toExtendedLengthPath(const std::filesystem::path& path)
     absolutePath.make_preferred();
 
     const std::wstring normalized = absolutePath.native();
+    if (normalized.starts_with(LR"(\\?\)") || normalized.starts_with(LR"(\\.\)"))
+    {
+        return absolutePath;
+    }
+
     if (normalized.starts_with(LR"(\\)"))
     {
         return std::filesystem::path(LR"(\\?\UNC\)" + normalized.substr(2));

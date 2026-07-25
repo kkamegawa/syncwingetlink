@@ -78,5 +78,27 @@ public:
         Assert::IsTrue(paths::toExtendedLengthPath(relative) ==
                        std::filesystem::path(LR"(\\?\)" + expected.native()));
     }
+
+    TEST_METHOD(relativeLongPathUnderExtendedCurrentDirectoryStaysExtended)
+    {
+        const auto originalCurrentPath = std::filesystem::current_path();
+        struct CurrentPathGuard
+        {
+            std::filesystem::path original;
+            ~CurrentPathGuard()
+            {
+                std::filesystem::current_path(original);
+            }
+        } guard{originalCurrentPath};
+
+        std::filesystem::current_path(
+            std::filesystem::path(LR"(\\?\)" + originalCurrentPath.native()));
+
+        const std::wstring result =
+            paths::toExtendedLengthPath(LR"(relative\tool.exe)").native();
+
+        Assert::IsTrue(result.starts_with(LR"(\\?\)"));
+        Assert::IsFalse(result.starts_with(LR"(\\?\UNC\)"));
+    }
 };
 } // namespace syncwingetlink::tests
