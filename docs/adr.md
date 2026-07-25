@@ -125,7 +125,7 @@ part of the pragma. `LibraryPath` must therefore point at the **parent** directo
 
 - **Date**: 2026-07-25
 - **Affected**: `TODO.md` M0 / M8
-- **Status**: **Proposed — not yet verified**
+- **Status**: Accepted
 
 ### Context
 
@@ -134,7 +134,7 @@ compiling with `/MT`. But all three projects share one static core library, and 
 library's CRT choice is recorded in its object files: linking a `/MT` core into a `/MD`
 test DLL (or vice versa) produces `LNK2038`.
 
-### Proposed decision
+### Decision
 
 Introduce a `StaticRuntime` MSBuild property, defaulting to `false` (dynamic CRT, `/MD`
 and `/MDd`). Release packaging opts in explicitly:
@@ -144,17 +144,17 @@ msbuild syncwingetlink.sln -p:Configuration=Release -p:Platform=x64 `
         -p:StaticRuntime=true -t:syncwingetlink
 ```
 
-Tests are then always built and run against the dynamic CRT, and only the shipping
-executable is statically linked.
+Normal development and CI builds use the dynamic CRT. Release packaging opts into the
+static CRT explicitly. The MSTest project supports either setting, which lets a release
+validation build use the same CRT as the shipping executable when required.
 
-### Open question (must be resolved before M0 is closed)
+### Verification
 
-**It has not been verified whether `Microsoft.VisualStudio.TestTools.CppUnitTestFramework.lib`
-can link into a `/MT` test DLL at all.** Only one library variant per architecture is
-shipped (there is no `/MT` vs `/MD` split), which suggests it targets the dynamic CRT,
-but this was not confirmed by an actual build. Resolve it by building the test project
-both ways once the projects exist, then update this ADR with the result and drop the
-speculation.
+The x64 smoke-test DLL was rebuilt and executed successfully with both `/MTd` (Debug)
+and `/MT` (Release) using the Visual Studio 2026 Desktop C++ Unit Test framework.
+Therefore the framework library is compatible with the project's static-CRT test builds.
+The default remains dynamic because it is the conventional development configuration;
+the static setting remains an explicit release-packaging choice.
 
 ---
 
