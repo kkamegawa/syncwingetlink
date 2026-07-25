@@ -80,4 +80,21 @@ std::filesystem::path toExtendedLengthPath(const std::filesystem::path& path)
 
     return std::filesystem::path(LR"(\\?\)" + normalized);
 }
+
+std::filesystem::path fromExtendedLengthPath(const std::filesystem::path& path)
+{
+    const std::wstring native = path.native();
+
+    if (native.starts_with(LR"(\\?\UNC\)"))
+    {
+        return std::filesystem::path(LR"(\\)" + native.substr(8));
+    }
+
+    if (native.starts_with(LR"(\\?\)"))
+    {
+        return std::filesystem::path(native.substr(4));
+    }
+
+    return path;
+}
 } // namespace syncwingetlink::paths

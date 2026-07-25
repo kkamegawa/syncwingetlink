@@ -154,9 +154,13 @@ Notes and caveats:
   without it entirely, raise it rather than silently pulling in a header-only parser.
 - Prefer RAII everywhere. Wrap raw `HANDLE`s in a move-only holder rather than calling
   `CloseHandle` on every branch.
-- `std::filesystem` follows reparse points by default. When enumerating directories that
-  may contain symlinks, use `directory_options::skip_permission_denied` and check
-  `is_symlink`/`FILE_ATTRIBUTE_REPARSE_POINT` explicitly to avoid link loops.
+- `recursive_directory_iterator` does **not** descend into a symlink or a junction unless
+  `directory_options::follow_directory_symlink` is set — do not set it when the tree may
+  contain either, and no extra reparse-point check is needed to prevent a traversal loop.
+  Still use `directory_options::skip_permission_denied` so an inaccessible subdirectory
+  does not abort the whole scan. Query `FILE_ATTRIBUTE_REPARSE_POINT` only when the
+  decision is about the *entry itself* (e.g. skipping a package directory that is itself
+  a junction before scanning under it), not as a substitute for the iterator's own guard.
 
 ---
 

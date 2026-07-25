@@ -5,6 +5,7 @@
 #include "ExecutableScanner.h"
 #include "Paths.h"
 
+#include <algorithm>
 #include <system_error>
 #include <utility>
 
@@ -79,11 +80,15 @@ std::vector<InstalledPackage> FsScanSource::enumeratePackages()
         InstalledPackage package;
         package.id = packageIdFromDirectoryName(directoryName);
         package.name = package.id;
-        package.installLocation = entry.path();
+        // entry.path() is rooted at the \\?\-prefixed root; un-prefix it before storing,
+        // matching the paths collectExecutables() already returns for package.executables.
+        package.installLocation = paths::fromExtendedLengthPath(entry.path());
         package.executables = std::move(executables);
         packages.push_back(std::move(package));
     }
 
+    std::sort(packages.begin(), packages.end(),
+             [](const InstalledPackage& a, const InstalledPackage& b) { return a.id < b.id; });
     return packages;
 }
 } // namespace syncwingetlink

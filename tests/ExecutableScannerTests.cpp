@@ -108,31 +108,25 @@ public:
         Assert::IsFalse(containsFileName(executables, L"tooDeep.exe"));
     }
 
-    TEST_METHOD(reparsePointsAreNotFollowed)
+    TEST_METHOD(junctionsAreNotFollowed)
     {
         const TempDirectory temp(L"scanner-reparse");
         const auto realDirectory = temp.createDirectory(L"real");
         temp.createFile(LR"(real\real.exe)");
 
-        std::error_code error;
-        std::filesystem::create_directory_symlink(realDirectory, temp.path() / L"link", error);
-        if (error)
-        {
-            // Creating a symlink needs Developer Mode or elevation. Report the skip rather
-            // than pretending the traversal guard was exercised.
-            Logger::WriteMessage("reparsePointsAreNotFollowed: symlink creation unavailable, "
-                                 "loop guard assertion skipped\n");
-            return;
-        }
-
+        // A junction needs only write access to the parent directory, unlike a symlink
+        // (Developer Mode / elevation), so this assertion runs unconditionally instead of
+        // being silently skipped in a locked-down environment.
+        Assert::IsTrue(createJunction(realDirectory, temp.path() / L"link"));
         Assert::IsTrue(isReparsePoint(temp.path() / L"link"));
         Assert::IsFalse(isReparsePoint(realDirectory));
 
         const auto executables = collectExecutables(temp.path());
 
         // The executable is found once through the real directory and never through the
-        // symlink, so a self-referencing link cannot produce duplicates or hang.
+        // junction, so a self-referencing link cannot produce duplicates or hang.
         Assert::AreEqual(static_cast<std::size_t>(1), executables.size());
+        Assert::IsTrue(executables.front().path == realDirectory / L"real.exe");
     }
 
     TEST_METHOD(reparsePointCheckIsFalseForMissingPaths)
@@ -140,6 +134,35 @@ public:
         const TempDirectory temp(L"scanner-reparse-missing");
 
         Assert::IsFalse(isReparsePoint(temp.path() / L"absent"));
+    }
+
+    TEST_METHOD(resultPathsNeverCarryTheExtendedLengthPrefix)
+    {
+        const TempDirectory temp(L"scanner-prefix");
+        temp.createFile(L"tool.exe");
+
+        const auto executables = collectExecutables(temp.path());
+
+        Assert::AreEqual(static_cast<std::size_t>(1), executables.size());
+        const std::wstring resultPath = executables.front().path.native();
+        Assert::IsFalse(resultPath.starts_with(LR"(\\?\)"));
+        Assert::IsTrue(executables.front().path == temp.path() / L"tool.exe");
+    }
+
+    TEST_METHOD(resultsAreSortedByPath)
+    {
+        const TempDirectory temp(L"scanner-sort");
+        temp.createFile(L"zeta.exe");
+        temp.createFile(L"alpha.exe");
+        temp.createFile(L"mid.exe");
+
+        const auto executables = collectExecutables(temp.path());
+
+        Assert::AreEqual(static_cast<std::size_t>(3), executables.size());
+        Assert::IsTrue(std::is_sorted(executables.begin(), executables.end(),
+                                      [](const PackageExe& a, const PackageExe& b) {
+                                          return a.path < b.path;
+                                      }));
     }
 };
 } // namespace syncwingetlink::tests

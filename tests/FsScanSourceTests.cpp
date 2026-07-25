@@ -129,5 +129,39 @@ public:
         // The filesystem carries no version metadata; only the COM source can supply it.
         Assert::IsTrue(packages.front().version.empty());
     }
+
+    TEST_METHOD(resultPathsNeverCarryTheExtendedLengthPrefix)
+    {
+        const TempDirectory temp(L"fsscan-prefix");
+        const std::wstring directory = L"Some.Package" + std::wstring(kSourceSuffix);
+        temp.createFile(std::filesystem::path(directory) / L"tool.exe");
+
+        FsScanSource source(temp.path());
+        const auto packages = source.enumeratePackages();
+
+        Assert::AreEqual(static_cast<std::size_t>(1), packages.size());
+        const std::wstring installLocation = packages.front().installLocation.native();
+        Assert::IsFalse(installLocation.starts_with(LR"(\\?\)"));
+        Assert::IsTrue(packages.front().installLocation == temp.path() / directory);
+
+        const std::wstring exePath = packages.front().executables.front().path.native();
+        Assert::IsFalse(exePath.starts_with(LR"(\\?\)"));
+    }
+
+    TEST_METHOD(resultsAreSortedById)
+    {
+        const TempDirectory temp(L"fsscan-sort");
+        temp.createFile(std::filesystem::path(L"Zeta.Package" + std::wstring(kSourceSuffix)) /
+                        L"z.exe");
+        temp.createFile(std::filesystem::path(L"Alpha.Package" + std::wstring(kSourceSuffix)) /
+                        L"a.exe");
+
+        FsScanSource source(temp.path());
+        const auto packages = source.enumeratePackages();
+
+        Assert::AreEqual(static_cast<std::size_t>(2), packages.size());
+        Assert::IsTrue(packages.front().id == L"Alpha.Package");
+        Assert::IsTrue(packages.back().id == L"Zeta.Package");
+    }
 };
 } // namespace syncwingetlink::tests

@@ -79,6 +79,26 @@ public:
                        std::filesystem::path(LR"(\\?\)" + expected.native()));
     }
 
+    TEST_METHOD(extendedLengthPrefixIsStripped)
+    {
+        Assert::IsTrue(paths::fromExtendedLengthPath(LR"(\\?\C:\bin\tool.exe)") ==
+                       LR"(C:\bin\tool.exe)");
+        Assert::IsTrue(paths::fromExtendedLengthPath(LR"(\\?\UNC\server\share\tool.exe)") ==
+                       LR"(\\server\share\tool.exe)");
+        Assert::IsTrue(paths::fromExtendedLengthPath(LR"(C:\already\plain.exe)") ==
+                       LR"(C:\already\plain.exe)");
+        Assert::IsTrue(paths::fromExtendedLengthPath(LR"(\\.\pipe\device)") ==
+                       LR"(\\.\pipe\device)");
+    }
+
+    TEST_METHOD(extendedLengthPrefixRoundTrips)
+    {
+        const std::filesystem::path original = LR"(C:\tools\bin\tool.exe)";
+
+        Assert::IsTrue(
+            paths::fromExtendedLengthPath(paths::toExtendedLengthPath(original)) == original);
+    }
+
     TEST_METHOD(relativeLongPathUnderExtendedCurrentDirectoryStaysExtended)
     {
         const auto originalCurrentPath = std::filesystem::current_path();

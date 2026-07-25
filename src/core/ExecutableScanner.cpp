@@ -24,53 +24,6 @@ constexpr std::wstring_view kExecutableExtension = L".exe";
                    [](wchar_t c) { return static_cast<wchar_t>(::towlower(c)); });
     return extension == kExecutableExtension;
 }
-
-void collectInto(const std::filesystem::path& directory, int depth,
-                 std::vector<PackageExe>& executables)
-{
-    if (depth > kMaxScanDepth)
-    {
-        return;
-    }
-
-    std::error_code error;
-    std::filesystem::directory_iterator iterator(
-        directory, std::filesystem::directory_options::skip_permission_denied, error);
-    if (error)
-    {
-        return;
-    }
-
-    const std::filesystem::directory_iterator end;
-    for (; iterator != end; iterator.increment(error))
-    {
-        if (error)
-        {
-            return;
-        }
-
-        const std::filesystem::directory_entry& entry = *iterator;
-
-        // Reparse points are skipped before any other test so that neither a directory
-        // junction nor a symlinked executable can be followed.
-        if (isReparsePoint(entry.path()))
-        {
-            continue;
-        }
-
-        std::error_code entryError;
-        if (entry.is_directory(entryError) && !entryError)
-        {
-            collectInto(entry.path(), depth + 1, executables);
-            continue;
-        }
-
-        if (entry.is_regular_file(entryError) && !entryError && hasExecutableExtension(entry.path()))
-        {
-            executables.push_back(PackageExe{entry.path(), std::nullopt});
-        }
-    }
-}
 } // namespace
 
 bool isReparsePoint(const std::filesystem::path& path)
@@ -100,7 +53,60 @@ std::vector<PackageExe> collectExecutables(const std::filesystem::path& root)
         return executables;
     }
 
-    collectInto(scanRoot, 0, executables);
+    std::filesystem::recursive_directory_iterator iterator(
+        scanRoot, std::filesystem::directory_options::skip_permission_denied, error);
+    if (error)
+    {
+        return executables;
+    }
+
+    const std::filesystem::recursive_directory_iterator end;
+    for (; iterator != end; iterator.increment(error))
+    {
+        if (error)
+        {
+            break;
+        }
+
+        // recursive_directory_iterator never descends into a symlink or junction unless
+        // directory_options::follow_directory_symlink is set (we do not set it), which is
+        // what actually prevents a reparse-point traversal loop here. This depth cap is
+        // only a second guard in case a future reparse tag is not covered by that check.
+        if (iterator.depth() > kMaxScanDepth)
+        {
+            iterator.disable_recursion_pending();
+            continue;
+        }
+
+        const std::filesystem::directory_entry& entry = *iterator;
+
+        std::error_code entryError;
+        if (!entry.is_regular_file(entryError) || entryError ||
+            !hasExecutableExtension(entry.path()))
+        {
+            continue;
+        }
+
+        // entry.path() is rooted at scanRoot, which carries the \\?\ prefix needed to
+        // walk long paths. Rebase onto the caller's original root, then strip any prefix
+        // that root itself carried (a caller may pass an already-prefixed directory, as
+        // FsScanSource does), so the model never stores a \\?\-prefixed path — it would
+        // compare unequal to paths built elsewhere (rules, --json output, console).
+        std::filesystem::path displayPath = entry.path();
+        std::error_code relativeError;
+        const std::filesystem::path relative =
+            std::filesystem::relative(entry.path(), scanRoot, relativeError);
+        if (!relativeError)
+        {
+            displayPath = root / relative;
+        }
+        displayPath = paths::fromExtendedLengthPath(displayPath);
+
+        executables.push_back(PackageExe{displayPath, std::nullopt});
+    }
+
+    std::sort(executables.begin(), executables.end(),
+             [](const PackageExe& a, const PackageExe& b) { return a.path < b.path; });
     return executables;
 }
 } // namespace syncwingetlink
