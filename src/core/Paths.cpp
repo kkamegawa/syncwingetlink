@@ -5,6 +5,7 @@
 #include <ShlObj.h>
 
 #include <memory>
+#include <stdexcept>
 #include <system_error>
 
 namespace syncwingetlink::paths
@@ -45,5 +46,32 @@ getPackagesDirectory(const std::optional<std::filesystem::path>& overridePath)
     }
 
     return getLocalAppDataDirectory() / L"Microsoft" / L"WinGet" / L"Packages";
+}
+
+std::filesystem::path toExtendedLengthPath(const std::filesystem::path& path)
+{
+    if (path.empty())
+    {
+        throw std::invalid_argument("Cannot normalize an empty path");
+    }
+
+    const std::wstring original = path.native();
+    if (original.starts_with(LR"(\\?\)") || original.starts_with(LR"(\\.\)"))
+    {
+        return path;
+    }
+
+    std::filesystem::path absolutePath =
+        path.is_absolute() ? path : std::filesystem::absolute(path);
+    absolutePath = absolutePath.lexically_normal();
+    absolutePath.make_preferred();
+
+    const std::wstring normalized = absolutePath.native();
+    if (normalized.starts_with(LR"(\\)"))
+    {
+        return std::filesystem::path(LR"(\\?\UNC\)" + normalized.substr(2));
+    }
+
+    return std::filesystem::path(LR"(\\?\)" + normalized);
 }
 } // namespace syncwingetlink::paths

@@ -180,3 +180,41 @@ projects per ADR-0002 and ADR-0004 — re-deriving `Directory.Build.props` and
 end of `adr.md`: the `/MT` question (ADR-0003), the winget winmd spike (open item 1), the
 vcpkg MSBuild property names (open item 7), and a vcpkg-aware vulnerability scanner
 (open item 6).
+
+---
+
+## 2026-07-25 (continued) — Normalize long paths (issue #25)
+
+**Trigger**: a prior agent session on branch `feature/25-normalize-long-paths` was
+interrupted before committing. Its working-tree changes to `src/core/Paths.h`,
+`src/core/Paths.cpp`, and `tests/SmokeTests.cpp` were recovered, reviewed, and finished
+in this session.
+
+### Completed
+
+- `paths::toExtendedLengthPath()`: prefixes a path with `\\?\` (or `\\?\UNC\` for UNC
+  paths) so callers can pass long paths to Win32 APIs, per `PLAN.md`'s "Long paths" note.
+  Passes through paths already prefixed with `\\?\` or `\\.\` unchanged. Relative paths
+  are resolved via `std::filesystem::absolute()` before normalization.
+- Added `tests/SmokeTests.cpp::relativeLongPathIsMadeAbsolute`, covering the one branch
+  (relative-path input) the recovered tests didn't exercise.
+- Checked off the `\\?\` long-path normalization helper item under M1 in `TODO.md`.
+
+### Verified
+
+- `MSBuild.exe syncwingetlink.sln -p:Configuration=Debug -p:Platform=x64 -m`:
+  `syncwingetlink.core` and `syncwingetlink.tests` build clean under `/W4 /WX`.
+  `syncwingetlink.vcxproj` (the executable) fails with `LNK1561` — pre-existing and
+  unrelated: it has no source files yet (`main.cpp` / M6 CLI work hasn't started).
+- `vstest.console.exe build\x64\Debug\syncwingetlink.tests.dll /Platform:x64`: all 7
+  tests pass, including the new one.
+
+### Deliberately not done
+
+`toExtendedLengthPath` is not wired into `getLinksDirectory`/`getPackagesDirectory` or
+any other caller. Issue #25's acceptance criteria and the `TODO.md` M1 checklist ask only
+for the helper itself, listed separately from path resolution; the real callers
+(`SymlinkService`, `FsScanSource`) don't exist until M2/M5. Wiring it in now would guess
+at an interface that isn't designed yet.
+
+Closes #25.

@@ -14,4 +14,7 @@ getLinksDirectory(const std::optional<std::filesystem::path>& overridePath = std
 
 [[nodiscard]] std::filesystem::path
 getPackagesDirectory(const std::optional<std::filesystem::path>& overridePath = std::nullopt);
+
+[[nodiscard]] std::filesystem::path
+toExtendedLengthPath(const std::filesystem::path& path);
 } // namespace syncwingetlink::paths

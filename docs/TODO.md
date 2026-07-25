@@ -40,7 +40,7 @@ Build system decisions are recorded in [`adr.md`](./adr.md) (ADR-0001 … ADR-00
 - [ ] `core/Model.h`: define `InstalledPackage`, `PackageExe`, `LinkStatus{Ok,Missing,Broken,Mismatch}`, `RepairItem`, `AppOptions`
 - [ ] `core/Paths`: resolve Links path (and Packages path for FS fallback) via
       `SHGetKnownFolderPath(FOLDERID_LocalAppData)` (support `--links-dir`/`--packages-dir` override)
-- [ ] `\\?\` long-path normalization helper
+- [x] `\\?\` long-path normalization helper
 - [ ] `core/IPackageSource.h`: define the abstract interface for installed-package enumeration
 
 ## M2. Package enumeration (COM first + FS fallback)
