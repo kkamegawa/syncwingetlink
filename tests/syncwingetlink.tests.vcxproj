@@ -36,7 +36,12 @@
   <ImportGroup Label="PropertySheets" />
   <PropertyGroup Label="UserMacros" />
   <ItemGroup>
+    <ClCompile Include="ExecutableScannerTests.cpp" />
+    <ClCompile Include="FsScanSourceTests.cpp" />
     <ClCompile Include="SmokeTests.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="TempDirectory.h" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\src\syncwingetlink.core.vcxproj">
