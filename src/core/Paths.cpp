@@ -20,7 +20,8 @@ std::filesystem::path getLocalAppDataDirectory()
     if (FAILED(result))
     {
         throw std::system_error(
-            std::error_code(result, std::system_category()), "SHGetKnownFolderPath failed");
+            std::error_code(result, std::system_category()),
+            "SHGetKnownFolderPath(FOLDERID_LocalAppData) failed");
     }
 
     return std::filesystem::path(path.get());
