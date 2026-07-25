@@ -31,8 +31,21 @@ TEST_CLASS(FsScanSourceTests)
 public:
     TEST_METHOD(missingPackagesDirectoryYieldsNoPackages)
     {
+        // A machine that never installed a portable package simply has no Packages
+        // directory. That is an empty result, not the PackageSourceError that a genuine
+        // access failure produces.
         const TempDirectory temp(L"fsscan-missing");
         FsScanSource source(temp.path() / L"absent");
+
+        Assert::IsTrue(source.enumeratePackages().empty());
+    }
+
+    TEST_METHOD(aFileWhereThePackagesDirectoryShouldBeYieldsNoPackages)
+    {
+        const TempDirectory temp(L"fsscan-notadir");
+        const std::filesystem::path file = temp.createFile(L"Packages");
+
+        FsScanSource source(file);
 
         Assert::IsTrue(source.enumeratePackages().empty());
     }

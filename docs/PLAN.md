@@ -138,6 +138,9 @@ syncwingetlink/
 │  │  ├─ Paths.{h,cpp}         # known-folder resolution (SHGetKnownFolderPath) / Links path
 │  │  ├─ IPackageSource.h      # abstract IF for installed-package enumeration (COM/FS switch)
 │  │  ├─ WingetComSource.{h,cpp} # ★COM API impl (Microsoft.Management.Deployment, C++/WinRT)
+│  │  ├─ ComApartment.{h,cpp}  # process-wide CoInitializeEx RAII; see adr-phase-2.md ADR-0009
+│  │  ├─ PackageSourceError.{h,cpp} # typed enumeration-failure exception + HRESULT mapping
+│  │  ├─ ExecutableScanner.{h,cpp} # shared *.exe walk used by WingetComSource and FsScanSource
 │  │  ├─ FsScanSource.{h,cpp}  # fallback: recursive scan of Packages, exe enumeration
 │  │  ├─ LinkInspector.{h,cpp} # judge symlink state under Links (missing/broken/OK)
 │  │  ├─ AliasResolver.{h,cpp} # decide alias by metadata > regex > raw name

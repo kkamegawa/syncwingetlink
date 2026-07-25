@@ -38,6 +38,7 @@
   <ItemGroup>
     <ClCompile Include="ExecutableScannerTests.cpp" />
     <ClCompile Include="FsScanSourceTests.cpp" />
+    <ClCompile Include="PackageSourceErrorTests.cpp" />
     <ClCompile Include="SmokeTests.cpp" />
   </ItemGroup>
   <ItemGroup>

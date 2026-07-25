@@ -6,6 +6,9 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="core\ComApartment.h">
+      <Filter>core</Filter>
+    </ClInclude>
     <ClInclude Include="core\ExecutableScanner.h">
       <Filter>core</Filter>
     </ClInclude>
@@ -18,18 +21,33 @@
     <ClInclude Include="core\Model.h">
       <Filter>core</Filter>
     </ClInclude>
+    <ClInclude Include="core\PackageSourceError.h">
+      <Filter>core</Filter>
+    </ClInclude>
     <ClInclude Include="core\Paths.h">
+      <Filter>core</Filter>
+    </ClInclude>
+    <ClInclude Include="core\WingetComSource.h">
       <Filter>core</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="core\ComApartment.cpp">
+      <Filter>core</Filter>
+    </ClCompile>
     <ClCompile Include="core\ExecutableScanner.cpp">
       <Filter>core</Filter>
     </ClCompile>
     <ClCompile Include="core\FsScanSource.cpp">
       <Filter>core</Filter>
     </ClCompile>
+    <ClCompile Include="core\PackageSourceError.cpp">
+      <Filter>core</Filter>
+    </ClCompile>
     <ClCompile Include="core\Paths.cpp">
+      <Filter>core</Filter>
+    </ClCompile>
+    <ClCompile Include="core\WingetComSource.cpp">
       <Filter>core</Filter>
     </ClCompile>
   </ItemGroup>

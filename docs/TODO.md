@@ -44,15 +44,18 @@ Build system decisions are recorded in [`adr.md`](./adr.md) (ADR-0001 … ADR-00
 - [x] `core/IPackageSource.h`: define the abstract interface for installed-package enumeration
 
 ## M2. Package enumeration (COM first + FS fallback)
-- [ ] `[core] core/WingetComSource`: C++/WinRT `winrt::init_apartment()` →
+> Activation details (CLSIDs, why `winrt::init_apartment()` is not used) are recorded in
+> `docs/adr-phase-2.md` ADR-0009 and `docs/com-api.md`; they differ from the shorthand
+> below for a documented reason.
+- [x] `[core] core/WingetComSource`: C++/WinRT `winrt::init_apartment()` →
       create `PackageManager`
-- [ ] `GetLocalPackageCatalog(LocalPackageCatalog.InstalledPackages)` → `Connect()`
-- [ ] `FindPackages()` to enumerate `CatalogPackage`; from `InstalledVersion` get
+- [x] `GetLocalPackageCatalog(LocalPackageCatalog.InstalledPackages)` → `Connect()`
+- [x] `FindPackages()` to enumerate `CatalogPackage`; from `InstalledVersion` get
       Id/Name/version/install location/(alias if available)
-- [ ] Filter to installer type = portable
-- [ ] Detect COM activation failure (App Installer missing / policy disabled / no permission) and handle exceptions
-- [ ] `[core] core/FsScanSource`: recursively scan Packages to collect `*.exe` (fallback)
-- [ ] Do not follow reparse points (symlink/junction) by default (loop prevention)
+- [x] Filter to installer type = portable
+- [x] Detect COM activation failure (App Installer missing / policy disabled / no permission) and handle exceptions
+- [x] `[core] core/FsScanSource`: recursively scan Packages to collect `*.exe` (fallback)
+- [x] Do not follow reparse points (symlink/junction) by default (loop prevention)
 - [ ] Implement `--source com|fs|auto` switch (auto: COM → FS degrade)
 - [ ] `--include`/`--exclude` glob filters
 - [ ] Unit tests: FsScanSource exe enumeration, and COM/FS switching logic
@@ -61,7 +64,10 @@ Build system decisions are recorded in [`adr.md`](./adr.md) (ADR-0001 … ADR-00
 - [ ] `[core] rules/RuleSet`: load/validate rules JSON (exit code 3 on invalid)
 - [ ] Embed default rules in the binary (rust target triple stripping, etc.)
 - [ ] `[core] core/AliasResolver`: decide alias by priority
-      ((1) COM metadata `PortableCommandAlias` → (2) regex rules → (3) raw file name)
+      ((1) COM metadata `PortableCommandAlias` → (2) regex rules → (3) raw file name).
+      **Tier 1 is permanently unreachable** — `WingetComSource` never populates
+      `PackageExe::metadataAlias` because the COM API exposes no such field; see
+      `docs/adr-phase-2.md` ADR-0009. Implement starting from tier 2.
 - [ ] `test-rule` subcommand: show file name → matched rule name → alias
 - [ ] Unit tests: cover cases including `codex-x86_64-pc-windows-msvc.exe → codex.exe`
 - [ ] Implement and test rule priority (`--rules` > user settings > embedded)

@@ -35,16 +35,22 @@
   <ImportGroup Label="PropertySheets" />
   <PropertyGroup Label="UserMacros" />
   <ItemGroup>
+    <ClCompile Include="core\ComApartment.cpp" />
     <ClCompile Include="core\ExecutableScanner.cpp" />
     <ClCompile Include="core\FsScanSource.cpp" />
+    <ClCompile Include="core\PackageSourceError.cpp" />
     <ClCompile Include="core\Paths.cpp" />
+    <ClCompile Include="core\WingetComSource.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="core\ComApartment.h" />
     <ClInclude Include="core\ExecutableScanner.h" />
     <ClInclude Include="core\FsScanSource.h" />
     <ClInclude Include="core\IPackageSource.h" />
     <ClInclude Include="core\Model.h" />
+    <ClInclude Include="core\PackageSourceError.h" />
     <ClInclude Include="core\Paths.h" />
+    <ClInclude Include="core\WingetComSource.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
