@@ -145,10 +145,10 @@ msbuild syncwingetlink.sln -p:Configuration=Release -p:Platform=x64 `
 ```
 
 Normal development builds use the dynamic CRT. This repo has no CI workflow yet (see
-open item 3 below and issue #21); once CI is added it should build with the same
-dynamic-CRT default as local development. Release packaging opts into the static CRT
-explicitly. The MSTest project supports either setting, which lets a release validation
-build use the same CRT as the shipping executable when required.
+issue #21); once CI is added it should build with the same dynamic-CRT default as local
+development. Release packaging opts into the static CRT explicitly. The MSTest project
+supports either setting, which lets a release validation build use the same CRT as the
+shipping executable when required.
 
 ### Verification
 
