@@ -4,7 +4,9 @@
 
 #include <core/PackageSourceFactory.h>
 
+#include <filesystem>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <vector>

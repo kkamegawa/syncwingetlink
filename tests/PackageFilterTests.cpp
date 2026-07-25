@@ -4,6 +4,9 @@
 
 #include <core/PackageFilter.h>
 
+#include <algorithm>
+#include <filesystem>
+#include <optional>
 #include <string>
 #include <vector>
 

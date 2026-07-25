@@ -122,9 +122,13 @@ std::vector<InstalledPackage> PackageFilter::apply(std::vector<InstalledPackage>
 
         for (PackageExe& executable : package.executables)
         {
-            // filename() returns a temporary path; its native() reference stays valid for
-            // the duration of the full expression, which covers the call.
-            if (includesExecutable(package.id, executable.path.filename().native()))
+            // Materialized rather than passed as a chained temporary: filename() returns
+            // a std::filesystem::path by value, and binding its native() std::wstring
+            // directly into the wstring_view parameter would leave the view dangling the
+            // instant the full expression ends if this code is ever refactored to store
+            // it (e.g. behind a lambda or an early return).
+            const std::filesystem::path fileName = executable.path.filename();
+            if (includesExecutable(package.id, fileName.native()))
             {
                 executables.push_back(std::move(executable));
             }
