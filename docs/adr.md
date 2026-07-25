@@ -9,6 +9,9 @@ one; if it does, get explicit approval first.
 
 > Split this file per phase once it exceeds 200 lines.
 
+Records added after the initial planning phase are kept in
+[`adr-phase-2.md`](./adr-phase-2.md).
+
 ---
 
 ## ADR-0001 — Use MSBuild instead of CMake
@@ -381,12 +384,9 @@ vulnerability gate as automated until one is actually wired into CI.
 These are not decisions yet. They are recorded so they are not silently guessed at
 (`AGENTS.md` §2 rule 4).
 
-1. **Where to source the `Microsoft.Management.Deployment` winmd.** ADR-0007 removed half
-   of this problem: the *tooling* is settled, because the Windows SDK ships
-   `cppwinrt.exe`, so the projection can be generated in a pre-build step with no package
-   manager involved. What remains is obtaining the winmd itself. Treat this as a spike in
-   M0 and do not implement `WingetComSource` until it is settled — M2's filesystem
-   fallback is designed to work without it, so this does not block the critical path.
+1. ~~**Where to source the `Microsoft.Management.Deployment` winmd.**~~ **Resolved
+   2026-07-25.** ADR-0008 sources the winmd from the installed Microsoft Desktop App
+   Installer package and generates the projection with the Windows SDK compiler.
 2. ~~**NuGet reference style for native projects.**~~ **Moot as of 2026-07-25.** ADR-0007
    adopted vcpkg and dropped NuGet, and the SDK turned out to supply C++/WinRT, so no
    package reference of either kind is currently needed.

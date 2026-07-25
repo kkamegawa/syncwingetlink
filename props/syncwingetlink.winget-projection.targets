@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <CppWinRTExecutable>$(WindowsSdkDir)bin\$(WindowsTargetPlatformVersion)\x64\cppwinrt.exe</CppWinRTExecutable>
+    <WingetProjectionDirectory>$(IntDir)generated</WingetProjectionDirectory>
+  </PropertyGroup>
+
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <AdditionalIncludeDirectories>$(WingetProjectionDirectory);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+  </ItemDefinitionGroup>
+
+  <Target Name="GenerateWingetProjection"
+          BeforeTargets="ClCompile"
+          Condition="'$(DesignTimeBuild)' != 'true'">
+    <Error Condition="!Exists('$(CppWinRTExecutable)')"
+           Text="The Windows SDK C++/WinRT compiler was not found at '$(CppWinRTExecutable)'." />
+
+    <Exec Command="&quot;$(SystemRoot)\System32\WindowsPowerShell\v1.0\powershell.exe&quot; -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command &quot;$package = Get-AppxPackage -Name Microsoft.DesktopAppInstaller | Sort-Object Version -Descending | Select-Object -First 1; if ($null -eq $package) { Write-Error 'Microsoft Desktop App Installer is required to generate the winget COM projection.'; exit 1 }; [Console]::Out.Write((Join-Path $package.InstallLocation 'Microsoft.Management.Deployment.winmd'))&quot;"
+          ConsoleToMSBuild="true"
+          StandardOutputImportance="Low">
+      <Output TaskParameter="ConsoleOutput" ItemName="_WingetWinmdPathOutput" />
+    </Exec>
+
+    <PropertyGroup>
+      <WingetWinmdPath>@(_WingetWinmdPathOutput)</WingetWinmdPath>
+    </PropertyGroup>
+
+    <Error Condition="'$(WingetWinmdPath)' == '' Or !Exists('$(WingetWinmdPath)')"
+           Text="Microsoft.Management.Deployment.winmd was not found in the installed Microsoft Desktop App Installer package." />
+
+    <MakeDir Directories="$(WingetProjectionDirectory)"
+             Condition="!Exists('$(WingetProjectionDirectory)')" />
+    <Exec Command="&quot;$(CppWinRTExecutable)&quot; -input &quot;$(WingetWinmdPath)&quot; -reference &quot;$(WindowsTargetPlatformVersion)&quot; -output &quot;$(WingetProjectionDirectory)&quot; -overwrite -prefix" />
+  </Target>
+</Project>
