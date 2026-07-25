@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <PropertyGroup>
-    <CppWinRTExecutable>$(WindowsSdkDir)bin\$(WindowsTargetPlatformVersion)\x64\cppwinrt.exe</CppWinRTExecutable>
+    <CppWinRTExecutable Condition="'$(CppWinRTExecutable)' == '' And ('$(PROCESSOR_ARCHITECTURE)' == 'ARM64' Or '$(PROCESSOR_ARCHITEW6432)' == 'ARM64')">$(WindowsSdkDir)bin\$(WindowsTargetPlatformVersion)\arm64\cppwinrt.exe</CppWinRTExecutable>
+    <CppWinRTExecutable Condition="'$(CppWinRTExecutable)' == ''">$(WindowsSdkDir)bin\$(WindowsTargetPlatformVersion)\x64\cppwinrt.exe</CppWinRTExecutable>
     <WingetProjectionDirectory>$(IntDir)generated</WingetProjectionDirectory>
   </PropertyGroup>
 
@@ -17,7 +18,7 @@
     <Error Condition="!Exists('$(CppWinRTExecutable)')"
            Text="The Windows SDK C++/WinRT compiler was not found at '$(CppWinRTExecutable)'." />
 
-    <Exec Command="&quot;$(SystemRoot)\System32\WindowsPowerShell\v1.0\powershell.exe&quot; -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command &quot;$package = Get-AppxPackage -Name Microsoft.DesktopAppInstaller | Sort-Object Version -Descending | Select-Object -First 1; if ($null -eq $package) { Write-Error 'Microsoft Desktop App Installer is required to generate the winget COM projection.'; exit 1 }; [Console]::Out.Write((Join-Path $package.InstallLocation 'Microsoft.Management.Deployment.winmd'))&quot;"
+    <Exec Command="&quot;$(SystemRoot)\System32\WindowsPowerShell\v1.0\powershell.exe&quot; -NoLogo -NoProfile -NonInteractive -Command &quot;$package = Get-AppxPackage -Name Microsoft.DesktopAppInstaller | Sort-Object Version -Descending | Select-Object -First 1; if ($null -eq $package) { Write-Error 'Microsoft Desktop App Installer is required to generate the winget COM projection.'; exit 1 }; [Console]::Out.Write((Join-Path $package.InstallLocation 'Microsoft.Management.Deployment.winmd'))&quot;"
           ConsoleToMSBuild="true"
           StandardOutputImportance="Low">
       <Output TaskParameter="ConsoleOutput" ItemName="_WingetWinmdPathOutput" />
