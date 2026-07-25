@@ -6,6 +6,12 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="core\ExecutableScanner.h">
+      <Filter>core</Filter>
+    </ClInclude>
+    <ClInclude Include="core\FsScanSource.h">
+      <Filter>core</Filter>
+    </ClInclude>
     <ClInclude Include="core\IPackageSource.h">
       <Filter>core</Filter>
     </ClInclude>
@@ -17,6 +23,12 @@
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="core\ExecutableScanner.cpp">
+      <Filter>core</Filter>
+    </ClCompile>
+    <ClCompile Include="core\FsScanSource.cpp">
+      <Filter>core</Filter>
+    </ClCompile>
     <ClCompile Include="core\Paths.cpp">
       <Filter>core</Filter>
     </ClCompile>

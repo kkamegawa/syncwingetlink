@@ -35,9 +35,13 @@
   <ImportGroup Label="PropertySheets" />
   <PropertyGroup Label="UserMacros" />
   <ItemGroup>
+    <ClCompile Include="core\ExecutableScanner.cpp" />
+    <ClCompile Include="core\FsScanSource.cpp" />
     <ClCompile Include="core\Paths.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="core\ExecutableScanner.h" />
+    <ClInclude Include="core\FsScanSource.h" />
     <ClInclude Include="core\IPackageSource.h" />
     <ClInclude Include="core\Model.h" />
     <ClInclude Include="core\Paths.h" />
