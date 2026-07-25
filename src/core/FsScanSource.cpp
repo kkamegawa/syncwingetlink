@@ -77,8 +77,18 @@ std::vector<InstalledPackage> FsScanSource::enumeratePackages()
         }
 
         const std::wstring directoryName = entry.path().filename().native();
+        std::wstring id = packageIdFromDirectoryName(directoryName);
+        if (id.empty())
+        {
+            // A directory name beginning with '_' (or otherwise deriving an empty
+            // identifier) cannot be turned into a usable InstalledPackage - skip it
+            // rather than emitting one with an empty id/name that downstream logic
+            // (alias resolution, --include/--exclude matching) is not prepared for.
+            continue;
+        }
+
         InstalledPackage package;
-        package.id = packageIdFromDirectoryName(directoryName);
+        package.id = std::move(id);
         package.name = package.id;
         // entry.path() is rooted at the \\?\-prefixed root; un-prefix it before storing,
         // matching the paths collectExecutables() already returns for package.executables.

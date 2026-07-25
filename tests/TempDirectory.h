@@ -112,8 +112,14 @@ public:
     {
         static std::atomic<unsigned long long> counter{0};
         const unsigned long long id = counter.fetch_add(1);
+        // The process id is part of the name, not just the in-process counter: two
+        // vstest.console.exe processes running this same test binary in parallel (e.g. a
+        // future CI matrix) would otherwise pick identical directory names and stomp on
+        // each other's fixtures.
+        const DWORD processId = ::GetCurrentProcessId();
         m_path = std::filesystem::temp_directory_path() /
-                 (L"syncwingetlink-" + label + L"-" + std::to_wstring(id));
+                 (L"syncwingetlink-" + label + L"-" + std::to_wstring(processId) + L"-" +
+                  std::to_wstring(id));
 
         std::error_code error;
         std::filesystem::remove_all(m_path, error);
