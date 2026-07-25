@@ -56,9 +56,17 @@ Build system decisions are recorded in [`adr.md`](./adr.md) (ADR-0001 … ADR-00
 - [x] Detect COM activation failure (App Installer missing / policy disabled / no permission) and handle exceptions
 - [x] `[core] core/FsScanSource`: recursively scan Packages to collect `*.exe` (fallback)
 - [x] Do not follow reparse points (symlink/junction) by default (loop prevention)
-- [ ] Implement `--source com|fs|auto` switch (auto: COM → FS degrade)
-- [ ] `--include`/`--exclude` glob filters
-- [ ] Unit tests: FsScanSource exe enumeration, and COM/FS switching logic
+- [x] Implement `--source com|fs|auto` switch (auto: COM → FS degrade) —
+      `core/PackageSourceFactory` (`AutoPackageSource` + `createPackageSource`). Only
+      `PackageSourceError` degrades, and an empty COM result is not a failure; see
+      `docs/adr-phase-2.md` ADR-0010
+- [x] `--include`/`--exclude` glob filters — `core/PackageFilter`. Matching is
+      per-executable against the package id or the exe file name, ordinal and
+      case-insensitive, `*`/`?` only; exclude beats include (ADR-0010). Wiring to
+      `AppOptions` happens in M6, which owns the parsed options
+- [x] Unit tests: FsScanSource exe enumeration, and COM/FS switching logic —
+      the switching tests inject fake `IPackageSource`s rather than activating real COM
+      (ADR-0009 explains why no test constructs a live `WingetComSource`)
 
 ## M3. Alias resolution + regex rules (most important)
 - [ ] `[core] rules/RuleSet`: load/validate rules JSON (exit code 3 on invalid)

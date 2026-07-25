@@ -396,3 +396,70 @@ section.
 - `Debug|ARM64`: cross-built, not run.
 - `vstest.console.exe`: 39/39 tests passed.
 - No dependency added (standard library + Windows SDK C++/WinRT only).
+
+## 2026-07-26 — Source selection, package filters, and the M2 tail (issues #34–#36)
+
+**Trigger**: issue #4 (M2 milestone) and sub-issues #34 (`--source com|fs|auto`), #35
+(`--include`/`--exclude` glob filters), #36 (unit tests for enumeration and source
+switching). Branch `feature/34-source-selection`, stacked on
+`feature/27-winget-com-source` (PR #86), which is itself stacked on
+`feature/32-fs-package-scan` (PR #85).
+
+### Completed
+
+- `src/core/PackageFilter.{h,cpp}`: `matchesGlob()` (a `*`/`?`-only, ordinal
+  case-insensitive wildcard matcher implemented with iterative backtracking, so no pattern
+  can overflow the stack) plus `PackageFilter`, which filters per executable against the
+  package identifier or the executable file name, lets exclude beat include, and drops a
+  package once all of its executables are filtered out. Pure logic, applied to the result
+  of `IPackageSource::enumeratePackages()` rather than inside a source.
+- `src/core/PackageSourceFactory.{h,cpp}`: `AutoPackageSource` (tries COM, degrades to the
+  filesystem scan on `PackageSourceError`) and two `createPackageSource` overloads — an
+  injectable one taking factory callables, and a production one taking `AppOptions`. The
+  COM attempt lives in `enumeratePackages()` so both the construction window (activation,
+  catalog connect) and the query window (`FindPackages`) are covered by one `catch`.
+- `docs/adr-phase-2.md` ADR-0010: records the `--source auto` degradation policy (only
+  `PackageSourceError`; an empty COM result is not a failure; explicit `--source com` never
+  degrades), resolves the `--include`/`--exclude` semantics ADR-0009 §4 had deferred, and
+  records `FsScanSource`'s change from returning empty to throwing on unrecoverable
+  filesystem errors. `docs/TODO.md` M2, `docs/PLAN.md` §5/§8, and `AGENTS.md` §3 updated to
+  match.
+- Review fixes folded into the two branches below this one: `WingetComSource` now activates
+  `FindPackagesOptions`/`PackageMatchFilter` in its constructor with the failure translated
+  to `PackageSourceError` (no raw `winrt::hresult_error` escapes); `FsScanSource` throws
+  `PackageSourceError(ScanFailed)` on unrecoverable filesystem errors and skips directories
+  that derive an empty package id; `TempDirectory` includes the process id in its name.
+- Tests: `PackageFilterTests.cpp` (glob matcher and filter semantics, including the
+  backtracking case `*abc` vs `abcabc` that a greedy matcher gets wrong) and
+  `PackageSourceFactoryTests.cpp` (COM success, degradation from both a construction
+  failure and an enumeration failure, the degrade callback, empty-result-is-not-a-failure,
+  non-`PackageSourceError` propagation, and the explicit `com`/`fs` paths).
+
+### Deliberately not done
+
+- `PackageFilter` and `createPackageSource(const AppOptions&)` are not called by anything
+  yet. Nothing constructs an `AppOptions` until the M6 CLI exists, and inventing a caller
+  now would mean inventing the command pipeline ahead of its milestone. ADR-0010 records
+  what M6 has to wire up.
+- No automated test constructs a live `WingetComSource`, unchanged from ADR-0009's
+  reasoning. The switching tests inject fakes instead.
+- `FsScanSource`'s access-denied throw path has no test: it cannot be provoked reliably
+  from a non-elevated test process. The absent-directory and not-a-directory paths are
+  covered.
+
+### Verified
+
+- `Debug|x64`, `Release|x64`, `Debug|ARM64`, `Release|ARM64`: core + tests build clean at
+  `/W4 /WX`, no new warnings.
+- `vstest.console.exe /Platform:x64`: 73/73 passed in both `Debug|x64` and `Release|x64`
+  (up from 39 on PR #86).
+- `vstest.console.exe /Platform:ARM64`: 73/73 passed in both `Debug|ARM64` and
+  `Release|ARM64`. **These were actually run, not just cross-built** — the development
+  machine used for this change is Windows 11 on ARM (`Win32_Processor.Architecture` = 12,
+  and `vstest.console.exe` reports itself as arm64), so ARM64 binaries execute natively
+  here. Earlier entries in this log said "cross-built, not run" because the build was
+  driven from an x64-emulated shell; that was a claim about the shell, not the host. This
+  says nothing about whether a GitHub-hosted ARM64 runner exists — `adr.md` open item 3
+  and the CI task in `TODO.md` M0 are still open.
+- `syncwingetlink.exe` still fails `LNK1561` — expected until `main.cpp` lands in M6.
+- No dependency added (standard library + Win32 only).

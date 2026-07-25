@@ -21,7 +21,13 @@
     <ClInclude Include="core\Model.h">
       <Filter>core</Filter>
     </ClInclude>
+    <ClInclude Include="core\PackageFilter.h">
+      <Filter>core</Filter>
+    </ClInclude>
     <ClInclude Include="core\PackageSourceError.h">
+      <Filter>core</Filter>
+    </ClInclude>
+    <ClInclude Include="core\PackageSourceFactory.h">
       <Filter>core</Filter>
     </ClInclude>
     <ClInclude Include="core\Paths.h">
@@ -41,7 +47,13 @@
     <ClCompile Include="core\FsScanSource.cpp">
       <Filter>core</Filter>
     </ClCompile>
+    <ClCompile Include="core\PackageFilter.cpp">
+      <Filter>core</Filter>
+    </ClCompile>
     <ClCompile Include="core\PackageSourceError.cpp">
+      <Filter>core</Filter>
+    </ClCompile>
+    <ClCompile Include="core\PackageSourceFactory.cpp">
       <Filter>core</Filter>
     </ClCompile>
     <ClCompile Include="core\Paths.cpp">
