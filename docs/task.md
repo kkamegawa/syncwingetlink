@@ -246,3 +246,41 @@ UNC (`\\?\...` starts with `\\`), yielding an invalid `\\?\UNC\?\...` result.
   -t:syncwingetlink_core,syncwingetlink_tests`: clean, 0 warnings, 0 errors.
 - `vstest.console.exe build\x64\Debug\syncwingetlink.tests.dll /Platform:x64`: all 8
   tests pass, including the new regression test.
+
+---
+
+## 2026-07-25 (continued) — Define IPackageSource (M1 final item)
+
+**Trigger**: issue #26, the last open M1 sub-issue under milestone #3.
+
+### Completed
+
+- `src/core/IPackageSource.h`: new pure-virtual `IPackageSource` interface with a single
+  `enumeratePackages()` method returning `std::vector<InstalledPackage>`. Placed in the
+  `syncwingetlink` namespace alongside `Model.h`, matching `docs/PLAN.md` §5's plan for
+  `WingetComSource`/`FsScanSource` to both implement it. The header documents that
+  implementations signal unrecoverable failure by throwing, consistent with the existing
+  exception-based error handling in `core/Paths.cpp`.
+- `src/syncwingetlink.core.vcxproj` / `.vcxproj.filters`: registered the new header under
+  the `core` filter.
+- `docs/TODO.md`: checked off the M1 `core/IPackageSource.h` item — M1 is now fully
+  checked.
+
+### Deliberately not done
+
+No implementation (`WingetComSource`, `FsScanSource`) or unit test was added. The
+interface is pure-virtual with no logic of its own to test; `AGENTS.md` §2 rule 3 requires
+tests for `[core]` logic, and the switching logic it names is the M2 `--source` selection,
+not this header. Wiring an implementation now would guess at M2 designs (COM activation,
+FS traversal) that aren't in scope for issue #26.
+
+### Verified
+
+- `MSBuild.exe syncwingetlink.sln -p:Configuration=Debug -p:Platform=x64 -m`: the core
+  static library and the MSTest DLL both build clean (0 warnings, 0 errors) against the
+  new header. The executable project still fails to link with `LNK1561` — confirmed
+  pre-existing on `main` (no `src/main.cpp` yet; that's M6), unrelated to this change.
+- `vstest.console.exe build\x64\Debug\syncwingetlink.tests.dll /Platform:x64`: all 8
+  existing tests still pass.
+
+Closes #26.

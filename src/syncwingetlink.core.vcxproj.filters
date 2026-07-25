@@ -6,6 +6,9 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="core\IPackageSource.h">
+      <Filter>core</Filter>
+    </ClInclude>
     <ClInclude Include="core\Model.h">
       <Filter>core</Filter>
     </ClInclude>

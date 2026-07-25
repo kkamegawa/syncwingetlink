@@ -38,6 +38,7 @@
     <ClCompile Include="core\Paths.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="core\IPackageSource.h" />
     <ClInclude Include="core\Model.h" />
     <ClInclude Include="core\Paths.h" />
   </ItemGroup>

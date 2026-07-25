@@ -41,7 +41,7 @@ Build system decisions are recorded in [`adr.md`](./adr.md) (ADR-0001 … ADR-00
 - [x] `core/Paths`: resolve Links path (and Packages path for FS fallback) via
       `SHGetKnownFolderPath(FOLDERID_LocalAppData)` (support `--links-dir`/`--packages-dir` override)
 - [x] `\\?\` long-path normalization helper
-- [ ] `core/IPackageSource.h`: define the abstract interface for installed-package enumeration
+- [x] `core/IPackageSource.h`: define the abstract interface for installed-package enumeration
 
 ## M2. Package enumeration (COM first + FS fallback)
 - [ ] `[core] core/WingetComSource`: C++/WinRT `winrt::init_apartment()` →
