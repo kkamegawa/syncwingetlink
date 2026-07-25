@@ -10,21 +10,21 @@ Build system decisions are recorded in [`adr.md`](./adr.md) (ADR-0001 … ADR-00
 
 - [x] `.editorconfig` / clang-format / clang-tidy setup
 - [x] Record the build-system decisions in `docs/adr.md`
-- [ ] Create the MSBuild solution `syncwingetlink.sln`
+- [x] Create the MSBuild solution `syncwingetlink.sln`
       (VS2026 / platform toolset v145, C++20, `Debug|Release` × `x64|ARM64`)
-- [ ] Add the three projects per ADR-0002: `syncwingetlink.core` (static library),
+- [x] Add the three projects per ADR-0002: `syncwingetlink.core` (static library),
       `syncwingetlink` (executable), `syncwingetlink.tests` (MSTest DLL)
-- [ ] Create `Directory.Build.props` + `props/syncwingetlink.common.props` and import them
+- [x] Create `Directory.Build.props` + `props/syncwingetlink.common.props` and import them
       from every project (re-derive from ADR-0001 … ADR-0003; an earlier draft was
       discarded, see `task.md`)
-- [ ] Add app manifest: `longPathAware=true`, `requestedExecutionLevel=asInvoker`
-- [ ] Set up MSTest (Microsoft Unit Testing Framework for C++) with one smoke test that
+- [x] Add app manifest: `longPathAware=true`, `requestedExecutionLevel=asInvoker`
+- [x] Set up MSTest (Microsoft Unit Testing Framework for C++) with one smoke test that
       passes under `vstest.console.exe`
-- [ ] **Resolve ADR-0003**: verify whether the CppUnitTest framework library links against
+- [x] **Resolve ADR-0003**: verify whether the CppUnitTest framework library links against
       a `/MT` test DLL, then fix the `StaticRuntime` default and update the ADR
-- [ ] Use the **Windows SDK's** bundled C++/WinRT headers — no package is required
+- [x] Use the **Windows SDK's** bundled C++/WinRT headers — no package is required
       (ADR-0007). Do not add `Microsoft.Windows.CppWinRT`
-- [ ] **Spike**: determine where to source the `Microsoft.Management.Deployment` winmd,
+- [x] **Spike**: determine where to source the `Microsoft.Management.Deployment` winmd,
       then generate the projection with the SDK's `cppwinrt.exe` in a pre-build step
       (open item 1 in `adr.md`). Do not implement `WingetComSource` until this is settled
 - [ ] Add `vcpkg.json` **only if** a native dependency actually becomes necessary
@@ -37,8 +37,8 @@ Build system decisions are recorded in [`adr.md`](./adr.md) (ADR-0001 … ADR-00
       (open item 6 in `adr.md`). Until then the gate is manual; do not claim otherwise
 
 ## M1. Paths / model foundation
-- [ ] `core/Model.h`: define `InstalledPackage`, `PackageExe`, `LinkStatus{Ok,Missing,Broken,Mismatch}`, `RepairItem`, `AppOptions`
-- [ ] `core/Paths`: resolve Links path (and Packages path for FS fallback) via
+- [x] `core/Model.h`: define `InstalledPackage`, `PackageExe`, `LinkStatus{Ok,Missing,Broken,Mismatch}`, `RepairItem`, `AppOptions`
+- [x] `core/Paths`: resolve Links path (and Packages path for FS fallback) via
       `SHGetKnownFolderPath(FOLDERID_LocalAppData)` (support `--links-dir`/`--packages-dir` override)
 - [x] `\\?\` long-path normalization helper
 - [ ] `core/IPackageSource.h`: define the abstract interface for installed-package enumeration
