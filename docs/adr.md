@@ -144,9 +144,11 @@ msbuild syncwingetlink.sln -p:Configuration=Release -p:Platform=x64 `
         -p:StaticRuntime=true -t:syncwingetlink
 ```
 
-Normal development and CI builds use the dynamic CRT. Release packaging opts into the
-static CRT explicitly. The MSTest project supports either setting, which lets a release
-validation build use the same CRT as the shipping executable when required.
+Normal development builds use the dynamic CRT. This repo has no CI workflow yet (see
+open item 3 below and issue #21); once CI is added it should build with the same
+dynamic-CRT default as local development. Release packaging opts into the static CRT
+explicitly. The MSTest project supports either setting, which lets a release validation
+build use the same CRT as the shipping executable when required.
 
 ### Verification
 
@@ -155,6 +157,22 @@ and `/MT` (Release) using the Visual Studio 2026 Desktop C++ Unit Test framework
 Therefore the framework library is compatible with the project's static-CRT test builds.
 The default remains dynamic because it is the conventional development configuration;
 the static setting remains an explicit release-packaging choice.
+
+Commands used:
+
+```powershell
+msbuild syncwingetlink.sln -p:Configuration=Debug -p:Platform=x64 -p:StaticRuntime=true -m
+vstest.console.exe build\x64\Debug\syncwingetlink.tests.dll /Platform:x64
+
+msbuild syncwingetlink.sln -p:Configuration=Release -p:Platform=x64 -p:StaticRuntime=true -m
+vstest.console.exe build\x64\Release\syncwingetlink.tests.dll /Platform:x64
+
+msbuild syncwingetlink.sln -p:Configuration=Release -p:Platform=ARM64 -p:StaticRuntime=true -m
+```
+
+x64 Debug `/MTd` and Release `/MT` each passed one of one smoke tests. ARM64 Release
+`/MT` cross-built with zero warnings and errors and was **not** run on the x64 host —
+see open item 3.
 
 ---
 
