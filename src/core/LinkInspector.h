@@ -11,6 +11,7 @@
 #include <span>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 namespace syncwingetlink
 {
@@ -171,4 +172,20 @@ readSymbolicLinkTarget(const std::filesystem::path& linkPath);
 //   surfaces as LinkInspectionError, not a status a caller could plan a repair around.
 [[nodiscard]] RepairItem inspectLink(PackageExe executable, std::wstring alias,
                                       std::filesystem::path linkPath);
+
+// Groups items by alias, using ordinal case-insensitive comparison (the same
+// CompareStringOrdinal-based policy PackageFilter and isPortableInstallerType already
+// use, for the same reason: locale-dependent case folding must not change the answer).
+// Within a group, executables are deduplicated by path (also ordinal
+// case-insensitive) before counting - repeated RepairItems for the same executable
+// (e.g. observed twice across a merged scan) are one executable, not a collision by
+// themselves. A group is only reported once it has at least two distinct executables.
+//
+// Output is fully deterministic and independent of items' order: collision groups are
+// sorted by alias, and each group's executables are sorted by path, both using the same
+// ordinal comparison.
+//
+// Pure and filesystem-independent - items is consumed as given, already-computed
+// RepairItems; this performs no I/O of its own.
+[[nodiscard]] std::vector<AliasCollision> detectAliasCollisions(std::span<const RepairItem> items);
 } // namespace syncwingetlink

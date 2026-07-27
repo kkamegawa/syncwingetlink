@@ -13,6 +13,7 @@
 #include <winerror.h>
 #include <winioctl.h>
 
+#include <algorithm>
 #include <cstring>
 #include <format>
 #include <memory>
@@ -36,6 +37,42 @@ namespace
 {
     const std::u8string encoded = path.u8string();
     return std::string(reinterpret_cast<const char*>(encoded.data()), encoded.size());
+}
+
+// Ordinal (not locale-sensitive) case-insensitive comparison, matching the policy
+// PackageSourceError.cpp's isPortableInstallerType and core/PackageFilter already use:
+// a locale-dependent case fold (e.g. the Turkish dotless-i) must not change whether two
+// aliases or two paths are considered the same.
+[[nodiscard]] int compareOrdinalCaseInsensitive(std::wstring_view a, std::wstring_view b) noexcept
+{
+    return ::CompareStringOrdinal(a.data(), static_cast<int>(a.size()), b.data(),
+                                  static_cast<int>(b.size()), TRUE);
+}
+
+[[nodiscard]] bool lessOrdinalCaseInsensitive(std::wstring_view a, std::wstring_view b) noexcept
+{
+    return compareOrdinalCaseInsensitive(a, b) == CSTR_LESS_THAN;
+}
+
+// A genuine total order over aliases for sorting, not merely the case-insensitive
+// equivalence lessOrdinalCaseInsensitive() provides on its own. std::sort is not
+// guaranteed stable, so two aliases that are case-insensitively equal but spelled with
+// different casing (e.g. "codex.exe" and "CODEX.EXE" - exactly the shape of a collision
+// caused by a case difference) could otherwise end up in either relative order depending
+// on the sort implementation, making which one detectAliasCollisions() reports as the
+// group's representative alias non-deterministic. Breaking the tie with a case-sensitive
+// ordinal compare keeps the case-insensitive grouping (equal aliases still land in the
+// same run) while making the exact order - and so the chosen representative - fixed
+// regardless of input order.
+[[nodiscard]] bool lessAliasForGrouping(std::wstring_view a, std::wstring_view b) noexcept
+{
+    const int caseInsensitive = compareOrdinalCaseInsensitive(a, b);
+    if (caseInsensitive != CSTR_EQUAL)
+    {
+        return caseInsensitive == CSTR_LESS_THAN;
+    }
+    return ::CompareStringOrdinal(a.data(), static_cast<int>(a.size()), b.data(),
+                                  static_cast<int>(b.size()), FALSE) == CSTR_LESS_THAN;
 }
 
 // The Windows SDK declares FSCTL_GET_REPARSE_POINT and IO_REPARSE_TAG_SYMLINK (both in
@@ -401,5 +438,65 @@ RepairItem inspectLink(PackageExe executable, std::wstring alias,
     return classifyLink(
         LinkObservation{LinkEntryKind::SymbolicLink, decodedTarget, relation},
         std::move(executable), std::move(alias), linkPath);
+}
+
+std::vector<AliasCollision> detectAliasCollisions(std::span<const RepairItem> items)
+{
+    std::vector<const RepairItem*> sortedByAlias;
+    sortedByAlias.reserve(items.size());
+    for (const RepairItem& item : items)
+    {
+        sortedByAlias.push_back(&item);
+    }
+    std::sort(sortedByAlias.begin(), sortedByAlias.end(),
+             [](const RepairItem* a, const RepairItem* b) {
+                 return lessAliasForGrouping(a->alias, b->alias);
+             });
+
+    std::vector<AliasCollision> collisions;
+    std::size_t groupStart = 0;
+    while (groupStart < sortedByAlias.size())
+    {
+        std::size_t groupEnd = groupStart + 1;
+        while (groupEnd < sortedByAlias.size() &&
+              compareOrdinalCaseInsensitive(sortedByAlias[groupStart]->alias,
+                                            sortedByAlias[groupEnd]->alias) == CSTR_EQUAL)
+        {
+            ++groupEnd;
+        }
+
+        // [groupStart, groupEnd) all share this alias. Deduplicate by executable path
+        // first - a repeated RepairItem for the same executable is one executable, not
+        // a collision by itself.
+        std::vector<PackageExe> executables;
+        for (std::size_t k = groupStart; k < groupEnd; ++k)
+        {
+            const PackageExe& candidate = sortedByAlias[k]->executable;
+            const bool alreadyPresent = std::any_of(
+                executables.begin(), executables.end(), [&](const PackageExe& existing) {
+                    return compareOrdinalCaseInsensitive(existing.path.native(),
+                                                         candidate.path.native()) ==
+                          CSTR_EQUAL;
+                });
+            if (!alreadyPresent)
+            {
+                executables.push_back(candidate);
+            }
+        }
+
+        if (executables.size() >= 2)
+        {
+            std::sort(executables.begin(), executables.end(),
+                     [](const PackageExe& a, const PackageExe& b) {
+                         return lessOrdinalCaseInsensitive(a.path.native(), b.path.native());
+                     });
+            collisions.push_back(
+                AliasCollision{sortedByAlias[groupStart]->alias, std::move(executables)});
+        }
+
+        groupStart = groupEnd;
+    }
+
+    return collisions;
 }
 } // namespace syncwingetlink

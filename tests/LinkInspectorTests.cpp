@@ -618,4 +618,155 @@ public:
         });
     }
 };
+
+namespace
+{
+[[nodiscard]] RepairItem makeCollisionCandidate(std::wstring alias,
+                                                const std::filesystem::path& executablePath)
+{
+    RepairItem item;
+    item.alias = std::move(alias);
+    item.executable.path = executablePath;
+    item.linkPath = std::filesystem::path(LR"(C:\Links\)") / item.alias;
+    item.status = LinkStatus::Ok;
+    return item;
+}
+} // namespace
+
+// --- detectAliasCollisions(): pure, no filesystem or symlink privilege required
+// (issue #47). A colliding alias is reported separately from LinkStatus specifically so
+// M6/M7 can warn and require an explicit choice instead of ever sending it into an
+// automatic repair path - see AliasCollision's own documentation in core/Model.h. ---
+TEST_CLASS(AliasCollisionTests)
+{
+public:
+    TEST_METHOD(twoDistinctExecutablesForOneAliasCollide)
+    {
+        const std::vector<RepairItem> items{
+            makeCollisionCandidate(L"codex.exe", LR"(C:\Packages\A\codex.exe)"),
+            makeCollisionCandidate(L"codex.exe", LR"(C:\Packages\B\codex.exe)"),
+        };
+
+        const std::vector<AliasCollision> collisions = detectAliasCollisions(items);
+
+        Assert::AreEqual(std::size_t(1), collisions.size());
+        Assert::AreEqual(std::wstring(L"codex.exe"), collisions[0].alias);
+        Assert::AreEqual(std::size_t(2), collisions[0].executables.size());
+    }
+
+    TEST_METHOD(threeDistinctExecutablesForOneAliasCollide)
+    {
+        const std::vector<RepairItem> items{
+            makeCollisionCandidate(L"codex.exe", LR"(C:\Packages\A\codex.exe)"),
+            makeCollisionCandidate(L"codex.exe", LR"(C:\Packages\B\codex.exe)"),
+            makeCollisionCandidate(L"codex.exe", LR"(C:\Packages\C\codex.exe)"),
+        };
+
+        const std::vector<AliasCollision> collisions = detectAliasCollisions(items);
+
+        Assert::AreEqual(std::size_t(1), collisions.size());
+        Assert::AreEqual(std::size_t(3), collisions[0].executables.size());
+    }
+
+    TEST_METHOD(aliasesDifferingOnlyByCaseCollide)
+    {
+        const std::vector<RepairItem> items{
+            makeCollisionCandidate(L"codex.exe", LR"(C:\Packages\A\codex.exe)"),
+            makeCollisionCandidate(L"CODEX.EXE", LR"(C:\Packages\B\codex.exe)"),
+        };
+
+        const std::vector<AliasCollision> collisions = detectAliasCollisions(items);
+
+        Assert::AreEqual(std::size_t(1), collisions.size());
+        Assert::AreEqual(std::size_t(2), collisions[0].executables.size());
+    }
+
+    TEST_METHOD(distinctAliasesDoNotCollide)
+    {
+        const std::vector<RepairItem> items{
+            makeCollisionCandidate(L"codex.exe", LR"(C:\Packages\A\codex.exe)"),
+            makeCollisionCandidate(L"other.exe", LR"(C:\Packages\B\other.exe)"),
+        };
+
+        const std::vector<AliasCollision> collisions = detectAliasCollisions(items);
+
+        Assert::AreEqual(std::size_t(0), collisions.size());
+    }
+
+    TEST_METHOD(repeatedCopiesOfOneExecutableDoNotCollide)
+    {
+        const std::vector<RepairItem> items{
+            makeCollisionCandidate(L"codex.exe", LR"(C:\Packages\A\codex.exe)"),
+            makeCollisionCandidate(L"codex.exe", LR"(C:\Packages\A\codex.exe)"),
+            makeCollisionCandidate(L"CODEX.exe", LR"(C:\Packages\A\CODEX.exe)"),
+        };
+
+        const std::vector<AliasCollision> collisions = detectAliasCollisions(items);
+
+        Assert::AreEqual(std::size_t(0), collisions.size());
+    }
+
+    TEST_METHOD(noItemsYieldsNoCollisions)
+    {
+        const std::vector<RepairItem> items;
+
+        Assert::AreEqual(std::size_t(0), detectAliasCollisions(items).size());
+    }
+
+    TEST_METHOD(outputIsStableRegardlessOfInputOrder)
+    {
+        const std::vector<RepairItem> forward{
+            makeCollisionCandidate(L"aa.exe", LR"(C:\Packages\A\aa.exe)"),
+            makeCollisionCandidate(L"aa.exe", LR"(C:\Packages\B\aa.exe)"),
+            makeCollisionCandidate(L"zz.exe", LR"(C:\Packages\C\zz.exe)"),
+            makeCollisionCandidate(L"zz.exe", LR"(C:\Packages\D\zz.exe)"),
+        };
+        std::vector<RepairItem> reversed(forward.rbegin(), forward.rend());
+
+        const std::vector<AliasCollision> forwardResult = detectAliasCollisions(forward);
+        const std::vector<AliasCollision> reversedResult = detectAliasCollisions(reversed);
+
+        Assert::AreEqual(std::size_t(2), forwardResult.size());
+        Assert::AreEqual(forwardResult.size(), reversedResult.size());
+        for (std::size_t i = 0; i < forwardResult.size(); ++i)
+        {
+            Assert::AreEqual(forwardResult[i].alias, reversedResult[i].alias);
+            Assert::AreEqual(forwardResult[i].executables.size(),
+                             reversedResult[i].executables.size());
+            for (std::size_t j = 0; j < forwardResult[i].executables.size(); ++j)
+            {
+                Assert::AreEqual(forwardResult[i].executables[j].path.native(),
+                                 reversedResult[i].executables[j].path.native());
+            }
+        }
+        // Alphabetical by alias, independent of the (reverse-alphabetical) input order.
+        Assert::AreEqual(std::wstring(L"aa.exe"), forwardResult[0].alias);
+        Assert::AreEqual(std::wstring(L"zz.exe"), forwardResult[1].alias);
+    }
+
+    TEST_METHOD(representativeAliasCasingIsStableRegardlessOfInputOrder)
+    {
+        // A collision caused entirely by a case difference: lowercase-first and
+        // uppercase-first orderings must still agree on which casing is reported,
+        // since std::sort is not stable and the two spellings compare equal under
+        // ordinal case-insensitive comparison alone.
+        const std::vector<RepairItem> lowercaseFirst{
+            makeCollisionCandidate(L"codex.exe", LR"(C:\Packages\A\codex.exe)"),
+            makeCollisionCandidate(L"CODEX.EXE", LR"(C:\Packages\B\codex.exe)"),
+        };
+        const std::vector<RepairItem> uppercaseFirst{
+            makeCollisionCandidate(L"CODEX.EXE", LR"(C:\Packages\B\codex.exe)"),
+            makeCollisionCandidate(L"codex.exe", LR"(C:\Packages\A\codex.exe)"),
+        };
+
+        const std::vector<AliasCollision> lowercaseFirstResult =
+            detectAliasCollisions(lowercaseFirst);
+        const std::vector<AliasCollision> uppercaseFirstResult =
+            detectAliasCollisions(uppercaseFirst);
+
+        Assert::AreEqual(std::size_t(1), lowercaseFirstResult.size());
+        Assert::AreEqual(std::size_t(1), uppercaseFirstResult.size());
+        Assert::AreEqual(lowercaseFirstResult[0].alias, uppercaseFirstResult[0].alias);
+    }
+};
 } // namespace syncwingetlink::tests
