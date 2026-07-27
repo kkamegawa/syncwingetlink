@@ -187,11 +187,13 @@ syncwingetlink/
 3. **Alias resolution**: determine `<alias>.exe` in priority order:
    (1) `AliasResolver` regex rules → (2) raw file name. There is no COM-metadata tier —
    see §3's "Important limitation and mitigation."
-4. **Comparison**: judge the state of `Links\<alias>.exe`.
-   - `Missing`: the link does not exist
-   - `Broken`: a symlink exists but its target is missing / points to a different real file
-   - `Mismatch`: the real file points elsewhere (stale update)
-   - `Ok`: correctly linked
+4. **Comparison**: judge the state of `Links\<alias>.exe` (implemented as `LinkInspector`;
+   see `docs/adr-phase-3.md` ADR-0014 for the authoritative classification contract).
+   - `Missing`: the entry does not exist
+   - `Broken`: a symbolic link exists, but its target does not currently exist
+   - `Mismatch`: a regular file, a non-symlink reparse point, or a symbolic link that
+     resolves to a different, existing file (not the expected package executable)
+   - `Ok`: a symbolic link that resolves to the expected package executable
 5. **Plan generation**: list `Missing/Broken/Mismatch` as repair candidates.
 6. **Confirmation**: unless `--yes`, confirm one-by-one or in bulk (a checklist in TUI).
 7. **Execution**: create with `CreateSymbolicLinkW`. Delete broken links first, then

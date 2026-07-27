@@ -95,11 +95,26 @@ Build system decisions are recorded in [`adr.md`](./adr.md) (ADR-0001 … ADR-00
       "replaces, not merges" property of rule-source selection.
 
 ## M4. Link state judgment
-- [ ] `[core] core/LinkInspector`: judge the state of `Links\<alias>.exe`
-- [ ] Resolve symlink target via `GetFileAttributesW` + `FSCTL_GET_REPARSE_POINT`
-- [ ] Treat copy placement (a normal file) or a different target as `Mismatch`
-- [ ] Detect and warn on alias collisions (multiple exes → same alias)
-- [ ] Unit tests: classification of Ok/Missing/Broken/Mismatch
+- [x] `[core] core/LinkInspector`: judge the state of `Links\<alias>.exe` — the pure
+      `classifyLink()` (#44) and the production `inspectLink()` adapter (#46)
+- [x] Resolve symlink target via `GetFileAttributesW` + `FSCTL_GET_REPARSE_POINT` —
+      `readSymbolicLinkTarget()`/`decodeSymbolicLinkTarget()` (#45), wired into
+      `inspectLink()` (#46). The `REPARSE_DATA_BUFFER` layout is hand-rolled (DDK-only
+      header) per `docs/adr-phase-3.md` ADR-0015
+- [x] Treat copy placement (a normal file) or a different target as `Mismatch` —
+      `LinkEntryKind::RegularFile`/`OtherReparsePoint` and
+      `TargetRelation::DifferentFile` (#44, #46); `Broken` is limited to a symbolic link
+      whose target does not currently exist (ADR-0014), correcting the conflicting
+      `docs/PLAN.md` sentence
+- [x] Detect and warn on alias collisions (multiple exes → same alias) —
+      `detectAliasCollisions()` (#47), reported separately from `LinkStatus` so a
+      colliding alias can never enter automatic repair (ADR-0017)
+- [x] Unit tests: classification of Ok/Missing/Broken/Mismatch —
+      `tests/LinkInspectorTests.cpp` covers the pure classifier, reparse decoding,
+      file-identity comparison, collision detection, and a cross-component regression
+      matrix (#48). A real symbolic link's `Ok`/`Broken`/`Mismatch`-different-file
+      outcomes attempt real creation and log-and-skip where symlink privilege is
+      unavailable (ADR-0016) rather than being omitted
 
 ## M5. Symlink creation service
 - [ ] `core/SymlinkService`: `CreateSymbolicLinkW`
