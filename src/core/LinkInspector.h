@@ -4,9 +4,11 @@
 
 #include "Model.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <optional>
+#include <span>
 #include <stdexcept>
 #include <string>
 
@@ -106,4 +108,45 @@ private:
 [[nodiscard]] RepairItem classifyLink(const LinkObservation& observation,
                                        PackageExe executable, std::wstring alias,
                                        std::filesystem::path linkPath);
+
+// Decodes a symbolic link's target from the raw bytes a
+// DeviceIoControl(FSCTL_GET_REPARSE_POINT) call returned for linkPath. Pure and
+// filesystem-independent - reparseBuffer is consumed as given, so malformed-buffer tests
+// need no real reparse point or symlink privilege.
+//
+// Returns std::nullopt if reparseBuffer's ReparseTag is not IO_REPARSE_TAG_SYMLINK - the
+// entry is some other kind of reparse point (e.g. a mount point), which the caller
+// classifies LinkEntryKind::OtherReparsePoint rather than decoding as a symbolic link.
+// That is not an error.
+//
+// Throws LinkInspectionError(win32ErrorCode() == ERROR_INVALID_DATA) if the tag is
+// IO_REPARSE_TAG_SYMLINK but the buffer is otherwise malformed: shorter than the common
+// reparse header, a ReparseDataLength inconsistent with reparseBuffer's actual size, or a
+// substitute-name offset/length that is misaligned for UTF-16 or would read outside the
+// buffer. No read this function performs can exceed reparseBuffer's bounds.
+//
+// A relative substitute name (SYMLINK_FLAG_RELATIVE set) is resolved against
+// linkPath.parent_path(), not the process's current directory. An absolute substitute
+// name's NT-namespace ("\??\", including the "\??\UNC\" form) prefix is stripped - this
+// is not the same prefix as paths::fromExtendedLengthPath handles, which only recognizes
+// the Win32 "\\?\"/"\\?\UNC\" extended-length forms; the result is still passed through
+// that helper afterward so a target already expressed in extended-length form is
+// normalized too. Public model paths therefore never retain either kind of prefix
+// unnecessarily.
+[[nodiscard]] std::optional<std::filesystem::path>
+decodeSymbolicLinkTarget(std::span<const std::byte> reparseBuffer,
+                         const std::filesystem::path& linkPath);
+
+// Reads and decodes linkPath's symbolic-link target via CreateFileW
+// (FILE_FLAG_OPEN_REPARSE_POINT) and DeviceIoControl(FSCTL_GET_REPARSE_POINT), then
+// decodeSymbolicLinkTarget() above.
+//
+// Returns std::nullopt when linkPath is not a symbolic link: a genuine
+// ERROR_NOT_A_REPARSE_POINT result (a regular file) or a reparse point whose data
+// decodeSymbolicLinkTarget() reports is some other tag. Neither is an error.
+//
+// Throws LinkInspectionError for every other failure - CreateFileW or DeviceIoControl
+// returning an unexpected error, or a malformed buffer per decodeSymbolicLinkTarget().
+[[nodiscard]] std::optional<std::filesystem::path>
+readSymbolicLinkTarget(const std::filesystem::path& linkPath);
 } // namespace syncwingetlink
