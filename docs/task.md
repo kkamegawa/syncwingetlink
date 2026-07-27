@@ -645,3 +645,43 @@ Branch `feature/42-rule-source-priority`.
 - `Debug|ARM64`/`Release|ARM64`: cross-built, not run (this machine is x64).
 - No dependency added.
 
+## 2026-07-27 — Cross-component regression matrix (issue #41)
+
+**Trigger**: issue #5 (M3 milestone), sub-issue #41, stacked on #37/#38/#39/#42
+(PRs #88-#91). Branch `feature/41-regression-matrix`.
+
+### Completed
+
+- `tests/AliasPipelineTests.cpp`: end-to-end coverage tying `RuleSetSelector`,
+  `DefaultRules`, and `AliasResolver` together, which none of the per-component test files
+  do on their own:
+  - Representative real-world executables (the four Codex Rust-target-triple suffixes,
+    the `restic` version/arch example, and a plain `jq.exe` with no version-like
+    substring) resolve correctly with no rules file configured (i.e. through
+    `selectRuleSet()` → `defaultRules()` → `resolveAlias()`, not a hand-built `RuleSet` as
+    the per-component tests use).
+  - A user `RuleSet` **completely replaces** `defaultRules()` rather than merging with
+    it: a user file containing only a `docs/rules.md`-style fixed `map-kubelogin` rule
+    correctly rewrites `kubelogin-win-amd64.exe`, but a Codex Rust-triple file name falls
+    back to its raw form instead of being rewritten - proving the embedded rules are gone,
+    not layered underneath. This was implicit in `RuleSetSelector`'s design but not
+    previously asserted anywhere.
+  - An explicit `--rules` path wins end to end even with a differing user file present.
+  - A malformed user file fails the whole pipeline (`selectRuleSet()` throws) rather than
+    silently falling back to defaults, confirmed again at this integration level.
+
+### Deliberately not done
+
+- `docs/rules.md`/`PLAN.md`/`AGENTS.md` still need the tier-1 correction and the
+  absent-vs-malformed wording - left for #43, as before.
+- No `test-rule` command (#40, blocked on #53/#56).
+
+### Verified
+
+- `Debug|x64`, `Release|x64`, `Debug|ARM64`, `Release|ARM64`: core + tests build clean at
+  `/W4 /WX`, no new warnings. `syncwingetlink.exe` still fails `LNK1561` (expected).
+- `vstest.console.exe /Platform:x64`: 128/128 passed in both `Debug|x64` and
+  `Release|x64` (up from 124 before this issue).
+- `Debug|ARM64`/`Release|ARM64`: cross-built, not run (this machine is x64).
+- No dependency added.
+

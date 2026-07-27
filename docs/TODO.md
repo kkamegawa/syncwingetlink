@@ -79,7 +79,11 @@ Build system decisions are recorded in [`adr.md`](./adr.md) (ADR-0001 … ADR-00
       confirmed there was no writer anywhere in the codebase. See `docs/adr-phase-2.md`
       ADR-0009 and ADR-0012.
 - [ ] `test-rule` subcommand: show file name → matched rule name → alias
-- [x] Unit tests: cover cases including `codex-x86_64-pc-windows-msvc.exe → codex.exe`
+- [x] Unit tests: cover cases including `codex-x86_64-pc-windows-msvc.exe → codex.exe`.
+      `tests/AliasPipelineTests.cpp` adds cross-component coverage: `RuleSetSelector` →
+      `AliasResolver` end to end for representative real file names, and the regression
+      test that a selected user `RuleSet` *replaces* `defaultRules()` rather than merging
+      with it.
 - [x] Implement and test rule priority (`--rules` > user settings > embedded) —
       `rules/RuleSetSelector::selectRuleSet()`. An absent user rules file falls through to
       embedded defaults; a present-but-malformed one is a propagated error (never a
