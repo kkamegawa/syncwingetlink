@@ -952,3 +952,45 @@ Branch `feature/46-link-target-identity`.
 - `Debug|ARM64`/`Release|ARM64`: cross-built, not run (this machine is x64).
 - No dependency added.
 
+## 2026-07-27 — M4: detect alias collisions deterministically (issue #47)
+
+**Trigger**: issue #6 (M4 milestone), sub-issue #47, blocked only by #44 (PR #96) and
+independent of #45/#46. Branch `feature/47-alias-collisions`.
+
+### Completed
+
+- `core/Model.h`: added `AliasCollision { alias, executables }`, deliberately with no
+  `LinkStatus`-like field - it is reported separately so downstream code (M6/M7) can
+  warn and require an explicit choice rather than ever sending a colliding alias into
+  automatic repair.
+- `core/LinkInspector.{h,cpp}`: added `detectAliasCollisions(std::span<const
+  RepairItem>)`. Groups items by alias with a sort-then-scan algorithm using the same
+  `CompareStringOrdinal`-based case-insensitive comparison `isPortableInstallerType()`
+  and `PackageFilter` already use (not a hash map - see `docs/adr-phase-3.md`
+  ADR-0017 for why). Within a group, executables are deduplicated by path (same ordinal
+  comparison) before counting, so a repeated observation of the same executable is not a
+  false collision; a group is only reported once at least two distinct executables
+  remain. The outer sort already orders the result by alias, and each group's
+  executables are separately sorted by path, so output is deterministic regardless of
+  input order.
+- `tests/LinkInspectorTests.cpp`: added `AliasCollisionTests` - two- and
+  three-executable groups, case-only alias differences, distinct aliases (no collision),
+  repeated copies of one executable (no collision), an empty input, and output stability
+  verified by running the same items forward and reversed.
+
+### Deliberately not done
+
+- Cross-component regression coverage tying `detectAliasCollisions()` together with
+  `inspectLink()`/`classifyLink()` over a larger synthetic scan, and the
+  `docs/PLAN.md`/`docs/TODO.md` corrections, are #48's job per the M4 Wiki plan's
+  delivery sequence, not this issue's.
+
+### Verified
+
+- `Debug|x64`, `Release|x64`, `Debug|ARM64`, `Release|ARM64`: core + tests build clean at
+  `/W4 /WX`, no new warnings.
+- `vstest.console.exe /Platform:x64`: 178/178 passed in both `Debug|x64` and
+  `Release|x64` (up from 171 before this issue).
+- `Debug|ARM64`/`Release|ARM64`: cross-built, not run (this machine is x64).
+- No dependency added.
+

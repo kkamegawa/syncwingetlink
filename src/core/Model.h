@@ -75,6 +75,19 @@ struct RepairItem
     std::optional<std::filesystem::path> existingTarget;
 };
 
+// Reports that two or more distinct package executables resolved to the same alias.
+// Returned separately from LinkStatus - a colliding alias is never itself one of the
+// four link states - so downstream code (M6/M7) can warn about it and require an
+// explicit user choice, rather than sending it into an automatic repair path
+// (docs/adr-phase-3.md).
+struct AliasCollision
+{
+    std::wstring alias;
+    // Distinct executables that resolved to alias, sorted deterministically. Never
+    // fewer than two entries - see detectAliasCollisions() in core/LinkInspector.h.
+    std::vector<PackageExe> executables;
+};
+
 struct AppOptions
 {
     AppCommand command{AppCommand::Scan};

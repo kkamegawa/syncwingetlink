@@ -243,3 +243,57 @@ This file continues the chronological record in [`adr-phase-2.md`](./adr-phase-2
   same category of gap ADR-0009 left open for live COM enumeration, but self-resolving.
 - `#47` (alias collisions) and `#48` (the regression matrix and finalizing
   `docs/PLAN.md`/`docs/TODO.md`) are unaffected by this decision.
+
+---
+
+## ADR-0017 — Alias-collision grouping: sort-then-group by ordinal comparison, not a hash map
+
+- **Date**: 2026-07-27
+- **Affected**: `core/Model.h`, `core/LinkInspector`
+- **Status**: Accepted
+
+### Decision
+
+`detectAliasCollisions()` groups `RepairItem`s by alias with a **sort-then-scan**
+algorithm - sort all items by alias using a `CompareStringOrdinal`-derived `<`
+comparator, then walk the sorted sequence collecting runs of equal-alias items - rather
+than a hash map keyed by some case-folded alias string.
+
+Within each run, executables are deduplicated by path using the same ordinal
+case-insensitive comparison (an `O(k)` linear scan per run, `k` being the run's size),
+before counting how many distinct executables remain. A run is only turned into an
+`AliasCollision` once that count is at least two. Because the outer sort already orders
+everything by alias, the resulting `std::vector<AliasCollision>` is already sorted - no
+separate final sort is needed for that guarantee. Each collision's own `executables` are
+sorted separately, by path, using the same comparator.
+
+### Reason
+
+- `CompareStringOrdinal` gives a pairwise `<`/`==`/`>` result directly, which is exactly
+  what a sort comparator needs. Producing a canonical case-folded string for a hash-map
+  key would require a different Windows API (`LCMapStringEx` with `LOCALE_INVARIANT`) and
+  introduce a second ordinal-comparison mechanism into the codebase for no benefit at the
+  scale this function runs at - the number of executables sharing one alias is expected
+  to be tiny (a handful at most), so `O(n log n)` sorting plus small-`k` linear dedup is
+  not a real cost.
+- This keeps `detectAliasCollisions()` using the exact same
+  `CompareStringOrdinal`-based comparison primitive `isPortableInstallerType()`
+  (`PackageSourceError.cpp`) and `PackageFilter` already use, rather than adding a
+  second, differently-implemented notion of "case-insensitive" to the codebase.
+- The dedup-before-count step is what distinguishes a real collision (two or more
+  *different* executables landing on one alias) from the same executable merely being
+  observed more than once - e.g. if a future caller runs `detectAliasCollisions()` over
+  a `RepairItem` list assembled from more than one scan pass.
+
+### Consequences
+
+- `core/Model.h` gains `AliasCollision { alias, executables }`. It intentionally has no
+  `LinkStatus`-like field of its own - `docs/TODO.md`'s M6/M7 CLI/TUI work must treat
+  collision data as a separate signal layered on top of the four `LinkStatus` values, and
+  must exclude any alias appearing in a collision group from automatic repair.
+- `core/LinkInspector.h` gains `detectAliasCollisions(std::span<const RepairItem>)`,
+  pure and filesystem-independent like `classifyLink()`.
+- `tests/LinkInspectorTests.cpp` gains `AliasCollisionTests`: two- and three-executable
+  groups, case-only alias differences, distinct aliases, repeated copies of one
+  executable, an empty input, and output stability under input reordering (verified by
+  running the same items forward and reversed and asserting identical results).
