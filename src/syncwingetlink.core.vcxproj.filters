@@ -42,6 +42,9 @@
     <ClInclude Include="rules\RuleSet.h">
       <Filter>rules</Filter>
     </ClInclude>
+    <ClInclude Include="rules\DefaultRules.h">
+      <Filter>rules</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="core\ComApartment.cpp">
@@ -69,6 +72,9 @@
       <Filter>core</Filter>
     </ClCompile>
     <ClCompile Include="rules\RuleSet.cpp">
+      <Filter>rules</Filter>
+    </ClCompile>
+    <ClCompile Include="rules\DefaultRules.cpp">
       <Filter>rules</Filter>
     </ClCompile>
   </ItemGroup>

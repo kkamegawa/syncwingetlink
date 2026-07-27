@@ -520,3 +520,40 @@ runtime linker pragma test binaries would otherwise be missing.
   entry above.
 - No dependency added (standard library + Windows SDK C++/WinRT `windows.data.json.h`
   only, per ADR-0005/ADR-0007).
+
+## 2026-07-27 — Embed the default alias rules (issue #38)
+
+**Trigger**: issue #5 (M3 milestone), sub-issue #38, stacked on #37 (PR #88).
+Branch `feature/38-embedded-default-rules`.
+
+### Completed
+
+- `src/rules/DefaultRules.{h,cpp}`: `defaultRules()` builds a `RuleSet` directly from
+  `std::vector<AliasRule>` (no JSON, no apartment needed) with the two rules already
+  documented in `docs/rules.md` — `strip-rust-target-triple` (Rust's
+  `x86_64|aarch64|i686`-`pc-windows-msvc|gnu` target triples) and
+  `strip-version-and-arch` (a `v?X.Y` version marker with an optional
+  windows/win + amd64/x64/arm64 tail). The Rust-triple rule is listed first: it is the
+  more specific of the two.
+- Tests (`tests/DefaultRulesTests.cpp`): all four Rust target-triple suffixes
+  (x64+msvc, aarch64+msvc, x64+gnu, i686+msvc), case-insensitive matching, the
+  `docs/rules.md` `restic_0.15.2_windows_amd64.exe` example plus a `v`-prefixed and a
+  bare-version case, and — the negative test the M3 plan review called for — ordinary
+  file names with no version-like substring at all (`jq.exe`, `kubectl.exe`, and
+  `app-3.exe`, which has a bare integer but no `X.Y` decimal form) are confirmed **not**
+  rewritten by the deliberately broad version/arch rule.
+
+### Deliberately not done
+
+- No `AliasResolver` tier-priority logic yet (#39) — nothing calls `defaultRules()` yet.
+- No `--rules`/user-file source selection yet (#42); `defaultRules()` is the lowest tier
+  in that ordering once #42 wires it in.
+
+### Verified
+
+- `Debug|x64`, `Release|x64`, `Debug|ARM64`, `Release|ARM64`: core + tests build clean at
+  `/W4 /WX`, no new warnings. `syncwingetlink.exe` still fails `LNK1561` (expected).
+- `vstest.console.exe /Platform:x64`: 111/111 passed in both `Debug|x64` and
+  `Release|x64` (up from 106 before this issue).
+- `Debug|ARM64`/`Release|ARM64`: cross-built, not run (this machine is x64).
+- No dependency added.
