@@ -463,3 +463,60 @@ switching). Branch `feature/34-source-selection`, stacked on
   and the CI task in `TODO.md` M0 are still open.
 - `syncwingetlink.exe` still fails `LNK1561` — expected until `main.cpp` lands in M6.
 - No dependency added (standard library + Win32 only).
+
+## 2026-07-27 — RuleSet: load and validate rules JSON (issue #37)
+
+**Trigger**: issue #5 (M3 milestone), sub-issue #37. Branch `feature/37-ruleset-json`. A
+pre-implementation review of the M3 Wiki plan (posted as comments on #5/#37/#39/#41/#42/
+#43) flagged two blockers to fold in here: the WinRT-Json/apartment tension, and a
+runtime linker pragma test binaries would otherwise be missing.
+
+### Completed
+
+- `src/rules/RuleSet.{h,cpp}`: `RuleSetError`/`RuleSetErrorKind` (typed configuration
+  errors), `AliasRule` (an unparsed rule: name/pattern/replacement/ignoreCase),
+  `isValidAliasFileName()` (non-empty `.exe` file name, no path separators, stem not made
+  entirely of dots), and `RuleSet` itself — constructible directly from
+  `std::vector<AliasRule>` (validates duplicate/empty names and compiles each pattern) or
+  via `RuleSet::parse()`, which parses a version-1 `rules.json` document with
+  `winrt::Windows::Data::Json` and re-validates through the same vector-based
+  constructor so parsed and future embedded (#38) rules can never drift in what counts as
+  valid.
+- `RuleSet::resolve()` applies the first rule (in declared order) whose pattern matches a
+  file name in full (`std::regex_match`, not `std::regex_search`); a match producing an
+  invalid alias (e.g. an empty capture, or a replacement not ending in `.exe`) is treated
+  as no match at all rather than falling through to a later rule, so which rule "wins" a
+  given file name does not depend on what other rules are configured.
+- `docs/adr-phase-2.md` ADR-0011: resolves the ADR-0005 "known tension" explicitly —
+  `winrt::Windows::Data::Json` requires an initialized apartment at runtime, so
+  `RuleSet::parse()` constructs its own `core::ComApartment`, and `RuleSetTests.cpp`
+  initializes one apartment for the whole test module via `TEST_MODULE_INITIALIZE`/
+  `TEST_MODULE_CLEANUP`. `RuleSet.cpp` carries its own
+  `#pragma comment(lib, "runtimeobject.lib")`, since the existing one in
+  `WingetComSource.cpp` only propagates into links that pull that object file in.
+- Tests (`tests/RuleSetTests.cpp`): alias-file-name validation edge cases (empty stem,
+  wrong/missing extension, path separators, an all-dots stem); rule construction
+  (duplicate/empty names, invalid regex, the reported error kind); resolution (first-match
+  wins, whole-string matching, `ignorecase`, numbered captures, invalid-alias-is-no-match);
+  and JSON parsing (well-formed and empty-rules documents, malformed JSON, a non-object
+  root, missing/wrong-type `version`/`rules`/rule fields, an unsupported flag, a duplicate
+  name across two rules, an invalid pattern, and non-ASCII rule names).
+
+### Deliberately not done
+
+- No embedded default rules yet (#38) and no `AliasResolver` tier-priority logic yet
+  (#39) — `RuleSet` only loads, validates, and matches; nothing calls it yet.
+- `%LOCALAPPDATA%\syncwingetlink\rules.json` / `--rules <path>` source selection is #42's
+  scope, not this one.
+
+### Verified
+
+- `Debug|x64`, `Release|x64`, `Debug|ARM64`, `Release|ARM64`: core + tests build clean at
+  `/W4 /WX`, no new warnings. `syncwingetlink.exe` still fails `LNK1561` (expected).
+- `vstest.console.exe /Platform:x64`: 106/106 passed in both `Debug|x64` and
+  `Release|x64` (up from 73 before this issue).
+- `Debug|ARM64`/`Release|ARM64`: cross-built, not run — this development machine is x64
+  (`Win32_Processor.Architecture` = 9), unlike the ARM64 host used for the 2026-07-26
+  entry above.
+- No dependency added (standard library + Windows SDK C++/WinRT `windows.data.json.h`
+  only, per ADR-0005/ADR-0007).

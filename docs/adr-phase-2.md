@@ -216,3 +216,55 @@ build error when either Desktop App Installer or the SDK compiler is unavailable
 - `FsScanSource`'s access-denied throw path has no automated test: it cannot be provoked
   reliably from a non-elevated test process. The absent-directory and
   not-a-directory paths are covered.
+
+---
+
+## ADR-0011 — RuleSet parses rules.json with winrt::Windows::Data::Json, which needs an initialized apartment
+
+- **Date**: 2026-07-27
+- **Affected**: `rules/RuleSet`, `tests/RuleSetTests.cpp`, `docs/adr.md` ADR-0005
+- **Status**: Accepted
+
+### Decision
+
+`RuleSet::parse()` parses `rules.json` with `winrt::Windows::Data::Json` (`JsonObject`,
+`JsonArray`, `IJsonValue`), the same choice ADR-0005 anticipated and left as a "known
+tension": these WinRT types require an initialized apartment on the calling thread at
+runtime. `RuleSet::parse()` therefore constructs its own `core::ComApartment` before
+touching any `Json` type, tolerating (not requiring) a thread that already has one - the
+same pattern `WingetComSource` already uses.
+
+Because of this, `RuleSetTests.cpp` initializes one `ComApartment` for the whole test
+module via `TEST_MODULE_INITIALIZE`/`TEST_MODULE_CLEANUP`, rather than per test method:
+`RuleSet::parse()` is exercised across many test methods in that file, and constructing a
+fresh apartment for each would be redundant given `vstest.console.exe` runs a module's
+tests on one thread.
+
+The translation unit that calls into `winrt::Windows::Data::Json`
+(`src/rules/RuleSet.cpp`) carries its own `#pragma comment(lib, "runtimeobject.lib")`,
+matching `WingetComSource.cpp`. The existing pragma in `WingetComSource.cpp` only
+propagates into a link that pulls `WingetComSource.obj` in; a test link exercising
+`RuleSet` alone does not, so `RuleSet.cpp` needs the pragma independently.
+
+### Reason
+
+- ADR-0005 already ruled out a header-only JSON parser as a new dependency, and confirmed
+  `windows.data.json.h` ships in the Windows SDK at no dependency cost. The one piece
+  ADR-0005 left open was what to do about the apartment requirement; this entry resolves
+  it instead of leaving it implicit, since `rules/RuleSet` (`PLAN.md` §5, `AGENTS.md` §3)
+  is otherwise documented as pure logic with no WinRT dependency, which is true of
+  `RuleSet::resolve()` but not of `RuleSet::parse()`.
+- A pre-implementation review of the M3 Wiki plan (issue #5 comments on #37) flagged that
+  no existing test initializes an apartment - COM-dependent tests are otherwise absent per
+  ADR-0009 - so `RuleSetTests.cpp` needed new fixture code, not just a call to `parse()`.
+
+### Consequences
+
+- `RuleSet.h` itself declares no WinRT type in its public interface - only
+  `RuleSet::parse()`'s implementation in `RuleSet.cpp` touches `winrt::Windows::Data::Json`
+  - so consumers of `RuleSet::resolve()` (the regex-matching tier, used per scanned
+    executable) still have no WinRT dependency on the hot path.
+- Any future JSON-parsing code added to this codebase should reuse
+  `winrt::Windows::Data::Json` rather than reaching for a different parser, and must repeat
+  both the `ComApartment` requirement and the `runtimeobject.lib` pragma in its own
+  translation unit.

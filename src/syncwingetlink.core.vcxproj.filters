@@ -4,6 +4,9 @@
     <Filter Include="core">
       <UniqueIdentifier>{51758740-1205-4D35-A511-A6472770767A}</UniqueIdentifier>
     </Filter>
+    <Filter Include="rules">
+      <UniqueIdentifier>{6A2E9C3D-6E0C-4E1C-9C1E-6C8E6E6C7A11}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="core\ComApartment.h">
@@ -36,6 +39,9 @@
     <ClInclude Include="core\WingetComSource.h">
       <Filter>core</Filter>
     </ClInclude>
+    <ClInclude Include="rules\RuleSet.h">
+      <Filter>rules</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="core\ComApartment.cpp">
@@ -61,6 +67,9 @@
     </ClCompile>
     <ClCompile Include="core\WingetComSource.cpp">
       <Filter>core</Filter>
+    </ClCompile>
+    <ClCompile Include="rules\RuleSet.cpp">
+      <Filter>rules</Filter>
     </ClCompile>
   </ItemGroup>
 </Project>
