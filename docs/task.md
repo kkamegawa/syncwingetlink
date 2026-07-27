@@ -833,5 +833,64 @@ M3 decisions) and corrected it to `docs/adr-phase-3.md` before this issue starte
 - `vstest.console.exe /Platform:x64`: 149/149 passed in both `Debug|x64` and
   `Release|x64` (up from 136 before this issue).
 - `Debug|ARM64`/`Release|ARM64`: cross-built, not run (this machine is x64).
+
+## 2026-07-27 — M4: decode symbolic-link reparse targets (issue #45)
+
+**Trigger**: issue #6 (M4 milestone), sub-issue #45, stacked on #44 (PR #96). Branch
+`feature/45-reparse-target-decoder`.
+
+### Completed
+
+- `core/LinkInspector.{h,cpp}`: added `decodeSymbolicLinkTarget()`, a pure function that
+  parses a raw `IO_REPARSE_TAG_SYMLINK` buffer (the bytes
+  `DeviceIoControl(FSCTL_GET_REPARSE_POINT)` returns) as plain byte offsets - the
+  `REPARSE_DATA_BUFFER` struct itself is DDK-only, so this project reads the
+  publicly-documented ([MS-FSCC] 2.1.2.4) layout by hand, the same choice
+  `tests/TempDirectory.h` already made for the reverse (write) direction. Validates the
+  common header, `ReparseDataLength` consistency, and the substitute-name offset/length
+  for both bounds and UTF-16 alignment before ever reading it; returns `std::nullopt` for
+  a non-symlink tag (not an error) and throws `LinkInspectionError(ERROR_INVALID_DATA)`
+  for anything else malformed.
+- `core/LinkInspector.{h,cpp}`: added `readSymbolicLinkTarget()`, the Win32 I/O half -
+  opens `linkPath` via `CreateFileW`/`FILE_FLAG_OPEN_REPARSE_POINT`, reads the reparse
+  buffer via `DeviceIoControl`, and calls `decodeSymbolicLinkTarget()`. Maps
+  `ERROR_NOT_A_REPARSE_POINT` to `std::nullopt` (an ordinary file, not an error); any
+  other Win32 failure throws `LinkInspectionError` with the real `GetLastError()`.
+- Decoded targets are normalized before being returned: a relative substitute name
+  resolves against `linkPath.parent_path()` (not the process working directory); an
+  absolute substitute name's NT-namespace (`\??\`, `\??\UNC\...`) prefix is stripped by
+  new code (`stripNtNamespacePrefix()`) that is distinct from
+  `paths::fromExtendedLengthPath()` - a plan defect caught during the M4 Wiki review,
+  before #44 started, since the existing helper only recognizes the Win32 `\\?\`/
+  `\\?\UNC\` forms. The extended-length prefix is stripped before `lexically_normal()`
+  runs, not after, avoiding any dependency on how the standard library's path
+  normalization treats a `\\?\`-prefixed root-name.
+- `docs/adr-phase-3.md` ADR-0015: records the hand-rolled buffer layout, the
+  nullopt-vs-`LinkInspectionError` split, and the NT-namespace/extended-length prefix
+  handling above.
+- `tests/LinkInspectorTests.cpp`: added `ReparseTargetDecoderTests` (drive-absolute,
+  UNC-absolute, relative, already-extended-length, and unrecognized-tag targets; a
+  too-short header; an inconsistent `ReparseDataLength`; fixed fields too small; an
+  oversized substitute-name length; and both an odd substitute-name length and an odd
+  substitute-name offset) and `SymbolicLinkTargetReaderTests` (a nonexistent path throws
+  with the `CreateFileW` operation; an ordinary file yields `std::nullopt`).
+
+### Deliberately not done
+
+- Creating and reading a real symbolic link is not tested here: per the M4 Wiki plan's
+  test-plan split, filesystem-backed tests covering `Ok`/`Broken`/`Mismatch` against an
+  actual symlink are #46's `inspectLink()` work, which also needs `GetFileAttributesW`
+  classification and `FILE_ID_INFO` identity comparison that do not exist yet.
+- `readSymbolicLinkTarget()` is not called from any production code path yet - wiring it,
+  `GetFileAttributesW`, and file-identity comparison into `inspectLink()` is #46.
+
+### Verified
+
+- `Debug|x64`, `Release|x64`, `Debug|ARM64`, `Release|ARM64`: core + tests build clean at
+  `/W4 /WX`, no new warnings.
+- `vstest.console.exe /Platform:x64`: 162/162 passed in both `Debug|x64` and
+  `Release|x64` (up from 149 before this issue).
+- `Debug|ARM64`/`Release|ARM64`: cross-built, not run (this machine is x64).
+- No dependency added.
 - No dependency added.
 
