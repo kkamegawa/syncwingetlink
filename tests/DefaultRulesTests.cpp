@@ -77,13 +77,18 @@ public:
 
     TEST_METHOD(theRustTargetTripleRuleIsTriedBeforeTheVersionAndArchRule)
     {
-        // codex-x86_64-pc-windows-msvc.exe contains no \d+\.\d+ substring, so this does
-        // not by itself prove ordering, but pins the expectation down explicitly: the more
-        // specific rule must win when both could plausibly apply to a related name.
+        // "codex-v1.2.0-x86_64-pc-windows-msvc.exe" matches BOTH embedded rules, and they
+        // disagree on the result: the version/arch rule's own lazy group stops right
+        // after "codex" (alias "codex.exe"), while the Rust-triple rule's fixed
+        // "-pc-windows-(msvc|gnu)" anchor forces its group to extend through the version
+        // segment too (alias "codex-v1.2.0.exe"). An input that only one rule could match
+        // (as an earlier version of this test used) cannot catch an accidental
+        // reordering; this one can, because the two rules produce different output here.
         const RuleSet rules = defaultRules();
-        const auto match = rules.resolve(L"codex-x86_64-pc-windows-msvc.exe");
+        const auto match = rules.resolve(L"codex-v1.2.0-x86_64-pc-windows-msvc.exe");
         Assert::IsTrue(match.has_value());
         Assert::AreEqual(std::wstring(L"strip-rust-target-triple"), match->ruleName);
+        Assert::AreEqual(std::wstring(L"codex-v1.2.0.exe"), match->alias);
     }
 };
 } // namespace syncwingetlink::tests

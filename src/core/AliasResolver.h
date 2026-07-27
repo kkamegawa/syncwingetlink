@@ -2,7 +2,7 @@
 
 #pragma once
 
-#include "../rules/RuleSet.h"
+#include "rules/RuleSet.h"
 
 #include <filesystem>
 #include <optional>

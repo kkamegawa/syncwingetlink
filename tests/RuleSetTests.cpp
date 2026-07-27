@@ -2,10 +2,8 @@
 
 #include <CppUnitTest.h>
 
-#include <core/ComApartment.h>
 #include <rules/RuleSet.h>
 
-#include <memory>
 #include <optional>
 #include <string>
 
@@ -13,24 +11,11 @@ using namespace Microsoft::VisualStudio::CppUnitTestFramework;
 
 namespace syncwingetlink::tests
 {
-namespace
-{
 // winrt::Windows::Data::Json (used by RuleSet::parse()) requires an initialized
-// apartment at runtime - see docs/adr-phase-2.md ADR-0011. No other test in this module
-// depends on COM, so this is scoped to this one module via TEST_MODULE_INITIALIZE /
-// TEST_MODULE_CLEANUP rather than adding a process-wide apartment for every test.
-std::unique_ptr<ComApartment> g_apartment;
-} // namespace
-
-TEST_MODULE_INITIALIZE(RuleSetModuleInitialize)
-{
-    g_apartment = std::make_unique<ComApartment>();
-}
-
-TEST_MODULE_CLEANUP(RuleSetModuleCleanup)
-{
-    g_apartment.reset();
-}
+// apartment at runtime - see docs/adr-phase-2.md ADR-0011. No module-level fixture is
+// needed here: RuleSet::parse() constructs its own core::ComApartment internally for
+// every call, tolerating a thread that already has one, so each parse() in the tests
+// below is already self-sufficient.
 
 TEST_CLASS(IsValidAliasFileNameTests)
 {
@@ -70,6 +55,50 @@ public:
     {
         Assert::IsFalse(isValidAliasFileName(L"..exe"));
         Assert::IsFalse(isValidAliasFileName(L"...exe"));
+    }
+
+    TEST_METHOD(win32ReservedCharactersAreRejected)
+    {
+        Assert::IsFalse(isValidAliasFileName(L"co<dex.exe"));
+        Assert::IsFalse(isValidAliasFileName(L"co>dex.exe"));
+        Assert::IsFalse(isValidAliasFileName(L"co:dex.exe"));
+        Assert::IsFalse(isValidAliasFileName(L"co\"dex.exe"));
+        Assert::IsFalse(isValidAliasFileName(L"co|dex.exe"));
+        Assert::IsFalse(isValidAliasFileName(L"co?dex.exe"));
+        Assert::IsFalse(isValidAliasFileName(L"co*dex.exe"));
+    }
+
+    TEST_METHOD(controlCharactersAreRejected)
+    {
+        Assert::IsFalse(isValidAliasFileName(L"co\x01" L"dex.exe"));
+        Assert::IsFalse(isValidAliasFileName(L"co\tdex.exe"));
+    }
+
+    TEST_METHOD(aTrailingSpaceOrDotInTheStemIsRejected)
+    {
+        // Windows silently strips a trailing space or dot from a file name component, so
+        // the file actually created would not match this alias text.
+        Assert::IsFalse(isValidAliasFileName(L"codex .exe"));
+        Assert::IsFalse(isValidAliasFileName(L"codex..exe"));
+    }
+
+    TEST_METHOD(reservedDeviceNamesAreRejectedRegardlessOfExtension)
+    {
+        Assert::IsFalse(isValidAliasFileName(L"CON.exe"));
+        Assert::IsFalse(isValidAliasFileName(L"con.exe"));
+        Assert::IsFalse(isValidAliasFileName(L"PRN.exe"));
+        Assert::IsFalse(isValidAliasFileName(L"AUX.exe"));
+        Assert::IsFalse(isValidAliasFileName(L"NUL.exe"));
+        Assert::IsFalse(isValidAliasFileName(L"COM1.exe"));
+        Assert::IsFalse(isValidAliasFileName(L"LPT9.exe"));
+    }
+
+    TEST_METHOD(namesThatMerelyContainAReservedWordAreAccepted)
+    {
+        // Only an exact stem match is reserved - "console.exe" is a perfectly ordinary
+        // alias and must not be rejected just because it starts with "con".
+        Assert::IsTrue(isValidAliasFileName(L"console.exe"));
+        Assert::IsTrue(isValidAliasFileName(L"nullable.exe"));
     }
 };
 

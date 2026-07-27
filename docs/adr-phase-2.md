@@ -234,11 +234,13 @@ runtime. `RuleSet::parse()` therefore constructs its own `core::ComApartment` be
 touching any `Json` type, tolerating (not requiring) a thread that already has one - the
 same pattern `WingetComSource` already uses.
 
-Because of this, `RuleSetTests.cpp` initializes one `ComApartment` for the whole test
-module via `TEST_MODULE_INITIALIZE`/`TEST_MODULE_CLEANUP`, rather than per test method:
-`RuleSet::parse()` is exercised across many test methods in that file, and constructing a
-fresh apartment for each would be redundant given `vstest.console.exe` runs a module's
-tests on one thread.
+`RuleSetTests.cpp` needs no test-side apartment fixture of its own as a result:
+`RuleSet::parse()` already constructs and tears down its own `ComApartment` on every
+call, so each test method that calls it is self-sufficient. An earlier draft of this work
+added a `TEST_MODULE_INITIALIZE`/`TEST_MODULE_CLEANUP` fixture anyway; a review comment on
+the originating PR (#88) pointed out that it was redundant with `parse()`'s own apartment
+and made the test file's requirements look more complicated than they are. It was
+removed.
 
 The translation unit that calls into `winrt::Windows::Data::Json`
 (`src/rules/RuleSet.cpp`) carries its own `#pragma comment(lib, "runtimeobject.lib")`,

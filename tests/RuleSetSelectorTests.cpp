@@ -158,5 +158,33 @@ public:
         Assert::IsTrue(match.has_value());
         Assert::AreEqual(std::wstring(L"codex-alias.exe"), match->alias);
     }
+
+    TEST_METHOD(loadRuleSetFromFileRejectsInvalidUtf8WithAClearError)
+    {
+        // A lone continuation byte (0x80) is never valid on its own in UTF-8. Before the
+        // MB_ERR_INVALID_CHARS fix, MultiByteToWideChar silently produced an empty wide
+        // string here, and RuleSet::parse("") failed with a confusing ParseError instead
+        // of reporting the actual encoding problem.
+        const TempDirectory temp(L"selector-invalid-utf8");
+        const std::filesystem::path invalid = temp.path() / L"invalid.json";
+        writeUtf8File(invalid, "\x80\x80\x80");
+
+        try
+        {
+            static_cast<void>(loadRuleSetFromFile(invalid));
+            Assert::Fail(L"expected RuleSetError");
+        }
+        catch (const RuleSetError& error)
+        {
+            Assert::IsTrue(RuleSetErrorKind::FileReadError == error.kind());
+            // Pins down the actual diagnostic text, not just the error kind - a kind
+            // check alone would still pass even if what() regressed to an empty or
+            // unrelated message, which would defeat the point of the
+            // MB_ERR_INVALID_CHARS fix this test exists to guard.
+            const std::string message = error.what();
+            Assert::IsTrue(message.find("UTF-8") != std::string::npos, L"expected the "
+                          L"error message to mention UTF-8");
+        }
+    }
 };
 } // namespace syncwingetlink::tests
