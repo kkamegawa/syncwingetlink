@@ -48,6 +48,7 @@
     <ClCompile Include="core\ComApartment.cpp" />
     <ClCompile Include="core\ExecutableScanner.cpp" />
     <ClCompile Include="core\FsScanSource.cpp" />
+    <ClCompile Include="core\LinkInspector.cpp" />
     <ClCompile Include="core\PackageFilter.cpp" />
     <ClCompile Include="core\PackageSourceError.cpp" />
     <ClCompile Include="core\PackageSourceFactory.cpp" />
@@ -63,6 +64,7 @@
     <ClInclude Include="core\ExecutableScanner.h" />
     <ClInclude Include="core\FsScanSource.h" />
     <ClInclude Include="core\IPackageSource.h" />
+    <ClInclude Include="core\LinkInspector.h" />
     <ClInclude Include="core\Model.h" />
     <ClInclude Include="core\PackageFilter.h" />
     <ClInclude Include="core\PackageSourceError.h" />

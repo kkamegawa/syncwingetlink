@@ -17,6 +17,17 @@ enum class LinkStatus
     Mismatch,
 };
 
+// What LinkInspector found at Links\<alias>.exe before classification. Distinct from
+// LinkStatus: this is the raw observed filesystem entry type, not the verdict derived
+// from it (docs/adr-phase-3.md).
+enum class LinkEntryKind
+{
+    None,
+    RegularFile,
+    SymbolicLink,
+    OtherReparsePoint,
+};
+
 enum class AppCommand
 {
     Scan,
@@ -60,6 +71,7 @@ struct RepairItem
     std::wstring alias;
     std::filesystem::path linkPath;
     LinkStatus status{LinkStatus::Missing};
+    LinkEntryKind entryKind{LinkEntryKind::None};
     std::optional<std::filesystem::path> existingTarget;
 };
 
