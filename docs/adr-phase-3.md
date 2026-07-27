@@ -13,8 +13,10 @@ This file continues the chronological record in [`adr-phase-2.md`](./adr-phase-2
 
 ### Decision
 
-1. **Classification contract.** `LinkInspector::classifyLink()` implements exactly the
-   six-row table the M4 Wiki plan and issue #44 specify:
+1. **Classification contract.** `classifyLink()` (a free function in the
+   `syncwingetlink` namespace, declared in `core/LinkInspector.h` - there is no
+   `LinkInspector` class) implements exactly the six-row table the M4 Wiki plan and
+   issue #44 specify:
 
    | Observation | Status | Existing target |
    |---|---|---|

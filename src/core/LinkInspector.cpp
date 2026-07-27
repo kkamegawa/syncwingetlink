@@ -13,6 +13,16 @@ namespace
     throw std::invalid_argument(std::string("Invalid LinkObservation: ") + reason);
 }
 
+// path.string() transcodes through the process's narrow (ACP) locale, which can mangle
+// or throw on a non-ASCII path. path.u8string() transcodes to UTF-8 independently of any
+// locale; the reinterpret_cast from char8_t to char is the standard, compiler-supported
+// interop idiom for consuming a u8string as a narrow std::string (P1423).
+[[nodiscard]] std::string toUtf8(const std::filesystem::path& path)
+{
+    const std::u8string encoded = path.u8string();
+    return std::string(reinterpret_cast<const char*>(encoded.data()), encoded.size());
+}
+
 void validateObservation(const LinkObservation& observation)
 {
     if (observation.entryKind == LinkEntryKind::SymbolicLink)
@@ -71,7 +81,7 @@ std::string LinkInspectionError::buildMessage(const std::string& operation,
                                                const std::filesystem::path& path,
                                                std::uint32_t win32ErrorCode)
 {
-    return std::format("{} failed for '{}' (Win32 error {})", operation, path.string(),
+    return std::format("{} failed for '{}' (Win32 error {})", operation, toUtf8(path),
                         win32ErrorCode);
 }
 
