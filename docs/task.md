@@ -994,3 +994,54 @@ independent of #45/#46. Branch `feature/47-alias-collisions`.
 - `Debug|ARM64`/`Release|ARM64`: cross-built, not run (this machine is x64).
 - No dependency added.
 
+## 2026-07-27 — M4: regression matrix and finalize documentation (issue #48)
+
+**Trigger**: issue #6 (M4 milestone), sub-issue #48, blocked by #46 (PR #98) and #47
+(PR #99), completing the milestone. Branch `feature/48-link-inspection-regression`.
+
+### Completed
+
+- `tests/LinkInspectorTests.cpp`: added `LinkInspectionRegressionTests`, tying
+  `inspectLink()` and `detectAliasCollisions()` together over a simulated four-package
+  scan (`Missing`, `Mismatch` via a regular file, and two packages colliding on one
+  alias) - the "cross-component regression matrix" the M4 plan called for, mirroring
+  M3's `AliasPipelineTests.cpp`. A second test attempts a real symbolic link (log-and-
+  skip if unavailable, per ADR-0016) and inspects it twice to confirm an `Ok` link is
+  never mutated by inspection.
+- `docs/PLAN.md` §6: corrected the conflicting `Broken` sentence - `Broken` is now
+  stated as limited to a symbolic link whose target does not currently exist; an
+  existing but different target is `Mismatch`, matching `docs/adr-phase-3.md`
+  ADR-0014. Added a pointer to that ADR as the authoritative contract.
+- `docs/TODO.md` M4: checked off every item, with pointers to the sub-issue and ADR that
+  implemented each.
+- `docs/adr-phase-2.md`: appended a forward pointer to `docs/adr-phase-3.md`, completing
+  the ADR index chain (`adr.md` → `adr-phase-2.md` → `adr-phase-3.md`).
+- Confirmed every M4 source and test file (`core/LinkInspector.{h,cpp}`,
+  `tests/LinkInspectorTests.cpp`) was already registered in both `.vcxproj` and
+  `.vcxproj.filters` incrementally across #44-#47; no further registration was needed.
+
+### Deliberately not done
+
+- `docs/PLAN_ja.md` and `docs/TODO_ja.md` were not touched - they are Japanese
+  translations and, per `AGENTS.md`'s language policy, agents do not edit `*_ja.md`
+  files without explicit authorization.
+- `docs/PLAN.md` §11's release-wide Definition of Done checklist
+  ("`AliasResolver`/`RuleSet`/`LinkInspector` have MSTest unit tests") was left as-is:
+  it is the whole-project release checklist, not an M4-specific one, and this issue's
+  scope is the M4 milestone.
+
+### Verified
+
+- `Debug|x64`, `Release|x64`, `Debug|ARM64`, `Release|ARM64`: core + tests build clean at
+  `/W4 /WX`, no new warnings.
+- `vstest.console.exe /Platform:x64`: 181/181 passed in both `Debug|x64` and
+  `Release|x64` (up from 178 before this issue).
+- `Debug|ARM64`/`Release|ARM64`: cross-built, not run (this machine is x64).
+- The executable project's known missing-entry-point linker failure is unchanged and
+  remains expected until M6; core and test projects are the completion evidence.
+- No dependency added.
+- No `*_ja.md` file was read or changed.
+
+M4 (issue #6) is complete: #44, #45, #46, #47, and #48 are all merged, and this entry
+closes the milestone's work log.
+

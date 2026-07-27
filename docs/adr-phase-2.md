@@ -372,3 +372,8 @@ one:
 - `selectRuleSet()` is not wired to `AppOptions::rulesPath` yet; like `PackageFilter` and
   `createPackageSource(const AppOptions&)` before it (ADR-0010), that wiring is M6's CLI,
   the first code with a parsed `AppOptions` to hand.
+
+---
+
+Records added for the M4 milestone are kept in
+[`adr-phase-3.md`](./adr-phase-3.md).

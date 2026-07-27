@@ -10,6 +10,7 @@
 
 #include <cstring>
 #include <filesystem>
+#include <fstream>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -767,6 +768,107 @@ public:
         Assert::AreEqual(std::size_t(1), lowercaseFirstResult.size());
         Assert::AreEqual(std::size_t(1), uppercaseFirstResult.size());
         Assert::AreEqual(lowercaseFirstResult[0].alias, uppercaseFirstResult[0].alias);
+    }
+};
+
+// End-to-end coverage tying inspectLink() and detectAliasCollisions() together over a
+// simulated multi-package scan - each is unit tested on its own (InspectLinkTests,
+// AliasCollisionTests), but nothing else exercises the full M4 pipeline a real `scan`
+// performs: probe every package's link, then look for collisions across the results.
+// This is the "cross-component regression matrix" called for in the M4 plan (issue #48).
+TEST_CLASS(LinkInspectionRegressionTests)
+{
+public:
+    TEST_METHOD(aSimulatedScanClassifiesEveryStatusAndFindsExactlyOneCollision)
+    {
+        const TempDirectory temp(L"link-inspection-regression");
+        const std::filesystem::path linksDir = temp.createDirectory(L"Links");
+
+        // Package A: no link at all.
+        const std::filesystem::path aExe = temp.createFile(L"PackageA\\a-real.exe");
+        const std::filesystem::path aLink = linksDir / L"a.exe";
+
+        // Package B: the link exists but is a plain file, not a symbolic link.
+        const std::filesystem::path bExe = temp.createFile(L"PackageB\\b-real.exe");
+        const std::filesystem::path bLink = temp.createFile(L"Links\\b.exe");
+
+        // Packages C and D: two different executables that both resolved to the same
+        // alias - a collision - and neither has a link created yet.
+        const std::filesystem::path cExe = temp.createFile(L"PackageC\\shared-real.exe");
+        const std::filesystem::path dExe = temp.createFile(L"PackageD\\shared-real.exe");
+        const std::filesystem::path sharedLink = linksDir / L"shared.exe";
+
+        PackageExe packageA;
+        packageA.path = aExe;
+        PackageExe packageB;
+        packageB.path = bExe;
+        PackageExe packageC;
+        packageC.path = cExe;
+        PackageExe packageD;
+        packageD.path = dExe;
+
+        std::vector<RepairItem> items;
+        items.push_back(inspectLink(packageA, L"a.exe", aLink));
+        items.push_back(inspectLink(packageB, L"b.exe", bLink));
+        items.push_back(inspectLink(packageC, L"shared.exe", sharedLink));
+        items.push_back(inspectLink(packageD, L"shared.exe", sharedLink));
+
+        Assert::IsTrue(items[0].status == LinkStatus::Missing);
+        Assert::IsTrue(items[1].status == LinkStatus::Mismatch);
+        Assert::IsTrue(items[1].entryKind == LinkEntryKind::RegularFile);
+        // C and D each observe the same (currently absent) shared link independently -
+        // that is a Missing status for both, exactly like A. The collision is a
+        // property of the alias resolution that produced two RepairItems for one
+        // alias, not of either individual RepairItem's own status.
+        Assert::IsTrue(items[2].status == LinkStatus::Missing);
+        Assert::IsTrue(items[3].status == LinkStatus::Missing);
+
+        const std::vector<AliasCollision> collisions = detectAliasCollisions(items);
+
+        Assert::AreEqual(std::size_t(1), collisions.size());
+        Assert::AreEqual(std::wstring(L"shared.exe"), collisions[0].alias);
+        Assert::AreEqual(std::size_t(2), collisions[0].executables.size());
+
+        // M4 is read-only: none of the above may have created, deleted, or modified
+        // anything under Links.
+        Assert::IsFalse(std::filesystem::exists(aLink));
+        Assert::IsTrue(std::filesystem::exists(bLink));
+        Assert::IsFalse(std::filesystem::exists(sharedLink));
+        Assert::AreEqual(std::string("test"), [&] {
+            std::ifstream stream(bLink, std::ios::binary);
+            std::string content;
+            stream >> content;
+            return content;
+        }());
+    }
+
+    TEST_METHOD(aHealthySymbolicLinkIsNeverMutatedByInspection)
+    {
+        const TempDirectory temp(L"link-inspection-regression-ok");
+        const std::filesystem::path executablePath = temp.createFile(L"codex-real.exe");
+        const std::filesystem::path linkPath = temp.path() / L"codex.exe";
+        if (!createFileSymlink(executablePath, linkPath))
+        {
+            Logger::WriteMessage(
+                L"Skipped: symbolic link creation needs Developer Mode or elevation, "
+                L"neither of which is available here.\n");
+            return;
+        }
+
+        PackageExe executable;
+        executable.path = executablePath;
+        const RepairItem before =
+            inspectLink(executable, L"codex.exe", linkPath);
+        Assert::IsTrue(before.status == LinkStatus::Ok);
+
+        // Inspecting an already-Ok link a second time must be side-effect-free: the
+        // same link, read again, still resolves to the same executable.
+        const RepairItem after = inspectLink(executable, L"codex.exe", linkPath);
+
+        Assert::IsTrue(after.status == LinkStatus::Ok);
+        Assert::IsTrue(std::filesystem::exists(linkPath));
+        Assert::IsTrue(after.existingTarget.has_value());
+        Assert::AreEqual(before.existingTarget->native(), after.existingTarget->native());
     }
 };
 } // namespace syncwingetlink::tests
