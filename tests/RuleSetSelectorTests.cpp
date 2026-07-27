@@ -177,6 +177,13 @@ public:
         catch (const RuleSetError& error)
         {
             Assert::IsTrue(RuleSetErrorKind::FileReadError == error.kind());
+            // Pins down the actual diagnostic text, not just the error kind - a kind
+            // check alone would still pass even if what() regressed to an empty or
+            // unrelated message, which would defeat the point of the
+            // MB_ERR_INVALID_CHARS fix this test exists to guard.
+            const std::string message = error.what();
+            Assert::IsTrue(message.find("UTF-8") != std::string::npos, L"expected the "
+                          L"error message to mention UTF-8");
         }
     }
 };
