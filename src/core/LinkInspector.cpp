@@ -54,6 +54,27 @@ namespace
     return compareOrdinalCaseInsensitive(a, b) == CSTR_LESS_THAN;
 }
 
+// A genuine total order over aliases for sorting, not merely the case-insensitive
+// equivalence lessOrdinalCaseInsensitive() provides on its own. std::sort is not
+// guaranteed stable, so two aliases that are case-insensitively equal but spelled with
+// different casing (e.g. "codex.exe" and "CODEX.EXE" - exactly the shape of a collision
+// caused by a case difference) could otherwise end up in either relative order depending
+// on the sort implementation, making which one detectAliasCollisions() reports as the
+// group's representative alias non-deterministic. Breaking the tie with a case-sensitive
+// ordinal compare keeps the case-insensitive grouping (equal aliases still land in the
+// same run) while making the exact order - and so the chosen representative - fixed
+// regardless of input order.
+[[nodiscard]] bool lessAliasForGrouping(std::wstring_view a, std::wstring_view b) noexcept
+{
+    const int caseInsensitive = compareOrdinalCaseInsensitive(a, b);
+    if (caseInsensitive != CSTR_EQUAL)
+    {
+        return caseInsensitive == CSTR_LESS_THAN;
+    }
+    return ::CompareStringOrdinal(a.data(), static_cast<int>(a.size()), b.data(),
+                                  static_cast<int>(b.size()), FALSE) == CSTR_LESS_THAN;
+}
+
 // The Windows SDK declares FSCTL_GET_REPARSE_POINT and IO_REPARSE_TAG_SYMLINK (both in
 // <Windows.h>) but not the REPARSE_DATA_BUFFER layout needed to interpret what it
 // returns - that struct lives in the DDK-only ntifs.h. This is the well-known symbolic-
@@ -429,7 +450,7 @@ std::vector<AliasCollision> detectAliasCollisions(std::span<const RepairItem> it
     }
     std::sort(sortedByAlias.begin(), sortedByAlias.end(),
              [](const RepairItem* a, const RepairItem* b) {
-                 return lessOrdinalCaseInsensitive(a->alias, b->alias);
+                 return lessAliasForGrouping(a->alias, b->alias);
              });
 
     std::vector<AliasCollision> collisions;

@@ -267,6 +267,19 @@ everything by alias, the resulting `std::vector<AliasCollision>` is already sort
 separate final sort is needed for that guarantee. Each collision's own `executables` are
 sorted separately, by path, using the same comparator.
 
+The outer sort's comparator (`lessAliasForGrouping()`) is **not** the same
+case-insensitive comparator used for the run-boundary equality test: it breaks a
+case-insensitive tie with a secondary case-*sensitive* ordinal compare. A Copilot review
+comment on PR #99 caught why this matters: `std::sort` has no stability guarantee, so
+two aliases that compare case-insensitively equal but are spelled differently (`"codex.exe"`
+vs. `"CODEX.EXE"` - precisely the shape of a case-difference collision) could land in
+either relative order depending on the sort implementation, making
+`sortedByAlias[groupStart]->alias` - the string `detectAliasCollisions()` reports as the
+group's representative alias - non-deterministic across otherwise-identical input given
+in a different order. The tie-break makes the sort a genuine total order without
+changing which items land in the same run (the run boundary still uses the
+case-*insensitive* comparison).
+
 ### Reason
 
 - `CompareStringOrdinal` gives a pairwise `<`/`==`/`>` result directly, which is exactly
@@ -295,5 +308,8 @@ sorted separately, by path, using the same comparator.
   pure and filesystem-independent like `classifyLink()`.
 - `tests/LinkInspectorTests.cpp` gains `AliasCollisionTests`: two- and three-executable
   groups, case-only alias differences, distinct aliases, repeated copies of one
-  executable, an empty input, and output stability under input reordering (verified by
-  running the same items forward and reversed and asserting identical results).
+  executable, an empty input, output stability under input reordering, and (added for
+  the tie-break fix above) `representativeAliasCasingIsStableRegardlessOfInputOrder`,
+  which specifically checks that a case-difference collision reports the same
+  representative alias casing whether the lowercase or uppercase spelling appears first
+  in the input.

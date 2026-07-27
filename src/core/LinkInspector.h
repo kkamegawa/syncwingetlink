@@ -181,7 +181,7 @@ readSymbolicLinkTarget(const std::filesystem::path& linkPath);
 // (e.g. observed twice across a merged scan) are one executable, not a collision by
 // themselves. A group is only reported once it has at least two distinct executables.
 //
-// Output is fully deterministic and independent of items's order: collision groups are
+// Output is fully deterministic and independent of items' order: collision groups are
 // sorted by alias, and each group's executables are sorted by path, both using the same
 // ordinal comparison.
 //

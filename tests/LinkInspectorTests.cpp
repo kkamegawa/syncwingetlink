@@ -743,5 +743,30 @@ public:
         Assert::AreEqual(std::wstring(L"aa.exe"), forwardResult[0].alias);
         Assert::AreEqual(std::wstring(L"zz.exe"), forwardResult[1].alias);
     }
+
+    TEST_METHOD(representativeAliasCasingIsStableRegardlessOfInputOrder)
+    {
+        // A collision caused entirely by a case difference: lowercase-first and
+        // uppercase-first orderings must still agree on which casing is reported,
+        // since std::sort is not stable and the two spellings compare equal under
+        // ordinal case-insensitive comparison alone.
+        const std::vector<RepairItem> lowercaseFirst{
+            makeCollisionCandidate(L"codex.exe", LR"(C:\Packages\A\codex.exe)"),
+            makeCollisionCandidate(L"CODEX.EXE", LR"(C:\Packages\B\codex.exe)"),
+        };
+        const std::vector<RepairItem> uppercaseFirst{
+            makeCollisionCandidate(L"CODEX.EXE", LR"(C:\Packages\B\codex.exe)"),
+            makeCollisionCandidate(L"codex.exe", LR"(C:\Packages\A\codex.exe)"),
+        };
+
+        const std::vector<AliasCollision> lowercaseFirstResult =
+            detectAliasCollisions(lowercaseFirst);
+        const std::vector<AliasCollision> uppercaseFirstResult =
+            detectAliasCollisions(uppercaseFirst);
+
+        Assert::AreEqual(std::size_t(1), lowercaseFirstResult.size());
+        Assert::AreEqual(std::size_t(1), uppercaseFirstResult.size());
+        Assert::AreEqual(lowercaseFirstResult[0].alias, uppercaseFirstResult[0].alias);
+    }
 };
 } // namespace syncwingetlink::tests
