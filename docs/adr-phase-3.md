@@ -190,17 +190,21 @@ This file continues the chronological record in [`adr-phase-2.md`](./adr-phase-2
    entry under `Links` is only ever expected to be a symbolic link or (if reparse points
    are unsupported) a copy of the file, so a directory found there is exactly as wrong as
    a plain-file copy would be, and is reported the same way (`Mismatch`).
-3. **The expected-executable identity check surfacing `LinkInspectionError`, not a
-   target-side `LinkInspectionError`, is only reachable through a real symbolic link** -
-   and this environment cannot create one. `SeCreateSymbolicLinkPrivilege` is unavailable
-   here even with `SYMBOLIC_LINK_FLAG_ALLOW_UNPRIVILEGED_CREATE`
-   (`New-Item -ItemType SymbolicLink` fails with
-   `NewItemSymbolicLinkElevationRequired`), so `tests/LinkInspectorTests.cpp`'s
-   `InspectLinkTests` covers every branch reachable without a real
-   `IO_REPARSE_TAG_SYMLINK` entry - absence, a regular file, a directory, and another
-   reparse point (`tests/TempDirectory.h`'s existing `createJunction()`, which needs no
-   privilege) - and does not attempt `Ok`, `Broken`, `Mismatch`-different-file, or the
-   executable-disappears scenario.
+3. **The `Ok`/`Broken`/`Mismatch`-different-file/executable-disappears tests attempt a
+   real symbolic link and skip gracefully, rather than being omitted, when creation
+   fails.** `tests/TempDirectory.h` gains `createFileSymlink()`
+   (`CreateSymbolicLinkW` + `SYMBOLIC_LINK_FLAG_ALLOW_UNPRIVILEGED_CREATE`), and each of
+   the four `InspectLinkTests` methods that needs a real `IO_REPARSE_TAG_SYMLINK` entry
+   calls it first. This environment has neither Developer Mode nor elevation
+   (`SeCreateSymbolicLinkPrivilege` is unavailable even with the unprivileged-create
+   flag - confirmed independently via `New-Item -ItemType SymbolicLink`, which fails with
+   `NewItemSymbolicLinkElevationRequired`), so here each of the four logs a message via
+   `Logger::WriteMessage()` and returns early rather than asserting anything. Native C++
+   MSTest (`CppUnitTestFramework`) has no `Assert::Inconclusive()` - unlike managed
+   MSTest - so log-and-return is the closest equivalent available. The remaining
+   branches - absence, a regular file, a directory, and another reparse point via
+   `tests/TempDirectory.h`'s existing `createJunction()` - need no privilege and always
+   run unconditionally.
 
 ### Reason
 
@@ -215,18 +219,27 @@ This file continues the chronological record in [`adr-phase-2.md`](./adr-phase-2
   simply not the healthy symbolic link `syncwingetlink` expects.
 - `docs/adr-phase-2.md` ADR-0009 and ADR-0010 already established this project's practice
   for a condition an automated test genuinely cannot provoke in its environment: state it
-  plainly rather than silently skip or fabricate coverage. This entry does the same for
-  symlink privilege, which is a full category of scenario, not one edge case.
+  plainly rather than silently skip or fabricate coverage. Attempting real creation and
+  logging-and-returning on failure goes one step further than those two precedents,
+  since it costs nothing extra and turns a permanently-documented gap into one that
+  closes itself the moment the *test-running* environment (not just the target
+  environment) supports it.
 
 ### Consequences
 
 - `core/LinkInspector.h` gains `inspectLink()`, completing the read-only production probe
   M4 set out to build.
-- `tests/LinkInspectorTests.cpp` gains `InspectLinkTests` (absence, a regular file, a
-  directory, another reparse point via a junction, and field passthrough).
-- Manually verifying `Ok`/`Broken`/`Mismatch`-different-file and the
-  executable-disappears path against a real symbolic link, once Developer Mode or an
-  elevated/CI environment is available, remains an open item - the same category of gap
-  ADR-0009 already left open for live COM enumeration.
+- `tests/TempDirectory.h` gains `createFileSymlink()`.
+- `tests/LinkInspectorTests.cpp` gains `InspectLinkTests`: absence, a regular file, a
+  directory, another reparse point via a junction, and field passthrough run
+  unconditionally; `healthySymbolicLinkIsOk`, `symbolicLinkToAMissingTargetIsBroken`,
+  `symbolicLinkToADifferentExistingFileIsMismatch`, and
+  `expectedExecutableDisappearingDuringInspectionIsAnError` attempt a real symbolic link
+  and log-and-skip in an environment without symlink privilege - confirmed to do exactly
+  that here (`vstest.console.exe` reports all four passing with a logged skip message,
+  not a false pass through some other path).
+- Running the full suite once Developer Mode or an elevated/CI environment is available
+  will exercise all four skip-capable tests for real, with no further code change - the
+  same category of gap ADR-0009 left open for live COM enumeration, but self-resolving.
 - `#47` (alias collisions) and `#48` (the regression matrix and finalizing
   `docs/PLAN.md`/`docs/TODO.md`) are unaffected by this decision.

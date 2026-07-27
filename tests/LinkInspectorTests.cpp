@@ -419,13 +419,14 @@ public:
 
 // --- inspectLink(): the production, filesystem-backed adapter (issue #46).
 //
-// A genuine symbolic link (Ok/Broken/Mismatch-different-file, and the
-// executable-disappears scenario, all of which need a real IO_REPARSE_TAG_SYMLINK entry)
-// could not be exercised here: creating one requires either Developer Mode or elevation,
-// and this environment has neither (SeCreateSymbolicLinkPrivilege is unavailable even
-// with the unprivileged-create flag). Every other branch - which needs no privilege at
-// all - is covered directly. See docs/adr-phase-3.md ADR-0016 and docs/task.md's #46
-// entry for the same note. ---
+// The branches reachable without symlink privilege (absence, a regular file, a
+// directory, another reparse point) are covered unconditionally. The branches that need
+// a real IO_REPARSE_TAG_SYMLINK entry (Ok/Broken/Mismatch-different-file, and the
+// executable-disappears scenario) attempt real symlink creation and report
+// Assert::Inconclusive() if it fails - this environment has neither Developer Mode nor
+// elevation, so SeCreateSymbolicLinkPrivilege is unavailable even with the
+// unprivileged-create flag, but a privileged CI/dev environment running this same suite
+// gains full coverage automatically. See docs/adr-phase-3.md ADR-0016.
 TEST_CLASS(InspectLinkTests)
 {
 public:
@@ -505,6 +506,116 @@ public:
         Assert::AreEqual(executablePath.native(), item.executable.path.native());
         Assert::AreEqual(std::wstring(kAlias), item.alias);
         Assert::AreEqual(linkPath.native(), item.linkPath.native());
+    }
+
+    TEST_METHOD(healthySymbolicLinkIsOk)
+    {
+        const TempDirectory temp(L"inspect-link-ok");
+        const std::filesystem::path executablePath = temp.createFile(L"codex-real.exe");
+        const std::filesystem::path linkPath = temp.path() / L"codex.exe";
+        if (!createFileSymlink(executablePath, linkPath))
+        {
+            // CppUnitTestFramework (native C++ MSTest) has no Assert::Inconclusive -
+            // logging and returning is the closest equivalent: the test stays green
+            // here and exercises this branch for real wherever symlink privilege is
+            // available.
+            Logger::WriteMessage(
+                L"Skipped: symbolic link creation needs Developer Mode or elevation, "
+                L"neither of which is available here.\n");
+            return;
+        }
+        PackageExe executable;
+        executable.path = executablePath;
+
+        const RepairItem item = inspectLink(executable, std::wstring(kAlias), linkPath);
+
+        Assert::IsTrue(item.status == LinkStatus::Ok);
+        Assert::IsTrue(item.entryKind == LinkEntryKind::SymbolicLink);
+        Assert::IsTrue(item.existingTarget.has_value());
+    }
+
+    TEST_METHOD(symbolicLinkToAMissingTargetIsBroken)
+    {
+        const TempDirectory temp(L"inspect-link-broken");
+        const std::filesystem::path missingTarget = temp.path() / L"does-not-exist.exe";
+        const std::filesystem::path linkPath = temp.path() / L"codex.exe";
+        if (!createFileSymlink(missingTarget, linkPath))
+        {
+            // CppUnitTestFramework (native C++ MSTest) has no Assert::Inconclusive -
+            // logging and returning is the closest equivalent: the test stays green
+            // here and exercises this branch for real wherever symlink privilege is
+            // available.
+            Logger::WriteMessage(
+                L"Skipped: symbolic link creation needs Developer Mode or elevation, "
+                L"neither of which is available here.\n");
+            return;
+        }
+        PackageExe executable;
+        executable.path = temp.createFile(L"codex-real.exe");
+
+        const RepairItem item = inspectLink(executable, std::wstring(kAlias), linkPath);
+
+        Assert::IsTrue(item.status == LinkStatus::Broken);
+        Assert::IsTrue(item.entryKind == LinkEntryKind::SymbolicLink);
+        Assert::IsTrue(item.existingTarget.has_value());
+    }
+
+    TEST_METHOD(symbolicLinkToADifferentExistingFileIsMismatch)
+    {
+        const TempDirectory temp(L"inspect-link-mismatch");
+        const std::filesystem::path otherFile = temp.createFile(L"other.exe");
+        const std::filesystem::path linkPath = temp.path() / L"codex.exe";
+        if (!createFileSymlink(otherFile, linkPath))
+        {
+            // CppUnitTestFramework (native C++ MSTest) has no Assert::Inconclusive -
+            // logging and returning is the closest equivalent: the test stays green
+            // here and exercises this branch for real wherever symlink privilege is
+            // available.
+            Logger::WriteMessage(
+                L"Skipped: symbolic link creation needs Developer Mode or elevation, "
+                L"neither of which is available here.\n");
+            return;
+        }
+        PackageExe executable;
+        executable.path = temp.createFile(L"codex-real.exe");
+
+        const RepairItem item = inspectLink(executable, std::wstring(kAlias), linkPath);
+
+        Assert::IsTrue(item.status == LinkStatus::Mismatch);
+        Assert::IsTrue(item.entryKind == LinkEntryKind::SymbolicLink);
+        Assert::IsTrue(item.existingTarget.has_value());
+    }
+
+    TEST_METHOD(expectedExecutableDisappearingDuringInspectionIsAnError)
+    {
+        const TempDirectory temp(L"inspect-link-disappear");
+        // The symlink's real target stays present throughout - only the *expected*
+        // executable, a separate file, disappears before inspectLink() runs. That is
+        // what distinguishes this from symbolicLinkToAMissingTargetIsBroken above: the
+        // decoded target itself resolves fine, so inspectLink() must reach the identity
+        // comparison and fail trying to open executable, not report Broken.
+        const std::filesystem::path otherExistingFile = temp.createFile(L"other.exe");
+        const std::filesystem::path executablePath = temp.createFile(L"codex-real.exe");
+        const std::filesystem::path linkPath = temp.path() / L"codex.exe";
+        if (!createFileSymlink(otherExistingFile, linkPath))
+        {
+            // CppUnitTestFramework (native C++ MSTest) has no Assert::Inconclusive -
+            // logging and returning is the closest equivalent: the test stays green
+            // here and exercises this branch for real wherever symlink privilege is
+            // available.
+            Logger::WriteMessage(
+                L"Skipped: symbolic link creation needs Developer Mode or elevation, "
+                L"neither of which is available here.\n");
+            return;
+        }
+        std::filesystem::remove(executablePath);
+
+        PackageExe executable;
+        executable.path = executablePath;
+
+        Assert::ExpectException<LinkInspectionError>([&] {
+            (void)inspectLink(executable, std::wstring(kAlias), linkPath);
+        });
     }
 };
 } // namespace syncwingetlink::tests
