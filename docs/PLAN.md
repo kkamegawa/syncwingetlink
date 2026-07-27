@@ -61,12 +61,14 @@ sqlite `PortableIndex` directly**.
 
 ### Important limitation and mitigation (be honest)
 - The COM API exposes metadata such as identifier, version, and install location, but it
-  may not fully expose the **per-file symlink alias mapping** (real exe → `<alias>.exe`)
-  held by the PortableIndex.
+  does **not** expose the **per-file symlink alias mapping** (real exe → `<alias>.exe`)
+  held by the PortableIndex — confirmed empirically (`docs/adr-phase-2.md` ADR-0009):
+  `PackageVersionMetadataField` and `IPackageVersionInfo2/3/4` have no such field, so
+  there is no `PortableCommandAlias`-equivalent to read. This is not merely "may not fully
+  expose" — the API has no alias field at all, so this source is never consulted.
 - Therefore **decide the alias name in this priority order**:
-  1. COM API metadata (when a `PortableCommandAlias`-equivalent is available)
-  2. the regex replacement rules in §7
-  3. the raw file name as-is
+  1. the regex replacement rules in §7
+  2. the raw file name as-is
 - Use the two-stage approach "authoritative enumeration via COM → verify real files on
   the filesystem": resolve install location via COM, then scan under it (§6) and compare.
 
@@ -145,12 +147,13 @@ syncwingetlink/
 │  │  ├─ PackageSourceFactory.{h,cpp} # --source com|fs|auto selection + COM→FS degrade
 │  │  ├─ PackageFilter.{h,cpp} # --include/--exclude glob filtering over enumerated packages
 │  │  ├─ LinkInspector.{h,cpp} # judge symlink state under Links (missing/broken/OK)
-│  │  ├─ AliasResolver.{h,cpp} # decide alias by metadata > regex > raw name
+│  │  ├─ AliasResolver.{h,cpp} # decide alias by regex rule > raw name (no COM tier: see §3)
 │  │  ├─ SymlinkService.{h,cpp}# symlink create/delete/verify (Win32)
 │  │  └─ Model.h               # PackageExe / InstalledPackage / LinkStatus / Plan types
 │  ├─ rules/
-│  │  ├─ RuleSet.{h,cpp}       # load/apply replacement rules
-│  │  └─ default_rules.*       # default rules (embedded or JSON)
+│  │  ├─ RuleSet.{h,cpp}       # load/validate/apply replacement rules
+│  │  ├─ DefaultRules.{h,cpp}  # the embedded default rules
+│  │  └─ RuleSetSelector.{h,cpp} # explicit --rules > user rules.json > embedded (ADR-0013)
 │  └─ tui/
 │     └─ TuiApp.{h,cpp}        # interactive UI for --tui (Console Virtual Terminal)
 ├─ tests/
@@ -167,8 +170,8 @@ syncwingetlink/
   are interchangeable.
 - Select via `--source com|fs|auto` (default `auto`). `auto` tries COM and degrades to FS
   on failure.
-- `WingetComSource` returns "identifier, version, install location, and alias if
-  available"; `LinkInspector` / `AliasResolver` are shared source-independent logic.
+- `WingetComSource` returns identifier, version, and install location (never a per-file
+  alias — see §3); `LinkInspector` / `AliasResolver` are shared source-independent logic.
 
 ## 6. Processing flow
 
@@ -182,8 +185,8 @@ syncwingetlink/
      to collect `*.exe` (`recursive_directory_iterator`). Reparse points are not followed
      by default (loop prevention).
 3. **Alias resolution**: determine `<alias>.exe` in priority order:
-   (1) COM metadata (`PortableCommandAlias`-equivalent) → (2) `AliasResolver` regex rules
-   → (3) raw file name.
+   (1) `AliasResolver` regex rules → (2) raw file name. There is no COM-metadata tier —
+   see §3's "Important limitation and mitigation."
 4. **Comparison**: judge the state of `Links\<alias>.exe`.
    - `Missing`: the link does not exist
    - `Broken`: a symlink exists but its target is missing / points to a different real file
@@ -230,6 +233,12 @@ syncwingetlink/
   1. JSON specified via `--rules <path>`
   2. `%LOCALAPPDATA%\syncwingetlink\rules.json` (user settings)
   3. default rules embedded in the binary
+
+  Once selected, a tier's rules **replace** any lower tier entirely rather than merging
+  with it. An explicit `--rules <path>` must exist and parse — any failure is a
+  configuration error (exit code 3). The user rules file is optional: absence falls
+  through to the embedded defaults, but a file that exists and fails to parse is a
+  configuration error too, not a silent fallback — see `docs/adr-phase-2.md` ADR-0013.
 - Provide a `test-rule "<filename>"` subcommand to dry-check which rule applies to a given
   real file name and what alias it yields.
 

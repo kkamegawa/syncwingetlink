@@ -21,7 +21,7 @@ PackageManager
         └─ PackageCatalogReference.Connect()  →  PackageCatalog
              └─ FindPackages(FindPackagesOptions)  →  [CatalogPackage]
                   └─ CatalogPackage.InstalledVersion (PackageVersionInfo)
-                        →  Id / Name / Version / install location / (alias if available)
+                        →  Id / Name / Version / install location (no per-file alias)
 ```
 
 1. Create a `PackageManager` (COM activation via a factory).
