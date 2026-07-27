@@ -22,6 +22,9 @@ enum class RuleSetErrorKind
     InvalidRuleName,    // a rule name is empty, or duplicates an earlier rule's name
     InvalidFlag,        // rules[].flags contains a value other than "ignorecase"
     InvalidRegex,       // rules[].pattern does not compile as an ECMAScript regex
+    FileReadError,      // a selected rules file (--rules, or the user rules file once it
+                        // is known to exist) could not be opened or read - see
+                        // rules/RuleSetSelector.h
 };
 
 class RuleSetError : public std::runtime_error

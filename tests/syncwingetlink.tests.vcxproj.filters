@@ -27,6 +27,9 @@
     <ClCompile Include="PackageSourceFactoryTests.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
+    <ClCompile Include="RuleSetSelectorTests.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
     <ClCompile Include="RuleSetTests.cpp">
       <Filter>Tests</Filter>
     </ClCompile>

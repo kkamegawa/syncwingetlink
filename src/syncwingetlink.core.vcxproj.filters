@@ -48,6 +48,9 @@
     <ClInclude Include="rules\DefaultRules.h">
       <Filter>rules</Filter>
     </ClInclude>
+    <ClInclude Include="rules\RuleSetSelector.h">
+      <Filter>rules</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="core\AliasResolver.cpp">
@@ -81,6 +84,9 @@
       <Filter>rules</Filter>
     </ClCompile>
     <ClCompile Include="rules\DefaultRules.cpp">
+      <Filter>rules</Filter>
+    </ClCompile>
+    <ClCompile Include="rules\RuleSetSelector.cpp">
       <Filter>rules</Filter>
     </ClCompile>
   </ItemGroup>

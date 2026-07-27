@@ -600,3 +600,48 @@ Branch `feature/39-alias-resolver`.
   `Release|x64` (111 before this issue, minus the one removed test, plus six new ones).
 - `Debug|ARM64`/`Release|ARM64`: cross-built, not run (this machine is x64).
 - No dependency added.
+
+## 2026-07-27 — Rule source priority: explicit, user, embedded (issue #42)
+
+**Trigger**: issue #5 (M3 milestone), sub-issue #42, stacked on #37-#39 (PRs #88-#90).
+Branch `feature/42-rule-source-priority`.
+
+### Completed
+
+- `src/core/Paths::getUserRulesFilePath()`: `%LOCALAPPDATA%\syncwingetlink\rules.json`,
+  following the same known-folder pattern as `getLinksDirectory()`/
+  `getPackagesDirectory()`.
+- `src/rules/RuleSetSelector.{h,cpp}`: `loadRuleSetFromFile()` (reads a rules file as
+  UTF-8, tolerating a leading BOM, and parses it via `RuleSet::parse()`) and
+  `selectRuleSet()`, which chooses among an explicit `--rules` path, the user rules file,
+  and `defaultRules()`. The user-file path lookup is injectable
+  (`UserRulesPathProvider`) so tests never touch the real user profile.
+- `src/rules/RuleSet.h`: added `RuleSetErrorKind::FileReadError` for a rules file that
+  cannot be opened or read (distinct from `ParseError`'s "opened fine, content invalid").
+- `docs/adr-phase-2.md` ADR-0013: records the decision a pre-implementation plan review
+  had flagged as ambiguous - an absent user rules file falls through to embedded defaults,
+  but a present-and-malformed one is a propagated error, identical to an explicit
+  `--rules` file. Never a silent fallback in that case.
+- Tests (`tests/RuleSetSelectorTests.cpp`): explicit path wins even when a differing user
+  file exists; the user file is used when present; an absent user file falls back to
+  embedded defaults; a missing explicit path, a malformed explicit file, and a malformed
+  user file all throw rather than falling back to anything; `loadRuleSetFromFile()`
+  reports a missing file as `FileReadError`; a leading UTF-8 BOM is stripped correctly.
+
+### Deliberately not done
+
+- `selectRuleSet()` is not wired to `AppOptions::rulesPath` - that is M6's CLI, matching
+  how `PackageFilter`/`createPackageSource(const AppOptions&)` were left unwired after M2
+  (ADR-0010).
+- `docs/rules.md`'s "Rule file location and priority" section still needs the
+  absent-vs-malformed distinction folded in - left for #43.
+
+### Verified
+
+- `Debug|x64`, `Release|x64`, `Debug|ARM64`, `Release|ARM64`: core + tests build clean at
+  `/W4 /WX`, no new warnings. `syncwingetlink.exe` still fails `LNK1561` (expected).
+- `vstest.console.exe /Platform:x64`: 124/124 passed in both `Debug|x64` and
+  `Release|x64` (up from 116 before this issue).
+- `Debug|ARM64`/`Release|ARM64`: cross-built, not run (this machine is x64).
+- No dependency added.
+

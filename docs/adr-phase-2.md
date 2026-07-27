@@ -316,3 +316,57 @@ shaped this issue's scope asked for it to be checked rather than assumed).
   adds a new field and a new tier explicitly, rather than resurrecting
   `metadataAlias` - there is no reason to expect its shape would match what was speculated
   here.
+
+---
+
+## ADR-0013 — Rule source priority: absent user file falls through, a malformed one never does
+
+- **Date**: 2026-07-27
+- **Affected**: `rules/RuleSetSelector`, `core/Paths::getUserRulesFilePath`,
+  `docs/TODO.md` M3, `docs/rules.md`
+- **Status**: Accepted
+
+### Decision
+
+`rules/RuleSetSelector::selectRuleSet()` selects among three tiers - an explicit
+`--rules <path>`, the auto-discovered user file
+(`%LOCALAPPDATA%\syncwingetlink\rules.json`, `core::paths::getUserRulesFilePath()`), and
+`defaultRules()` - with one asymmetry between the two file-backed tiers and the embedded
+one:
+
+- An **explicit** path is required to exist and parse. Any failure (missing, unreadable,
+  invalid JSON/schema) is a propagated `RuleSetError` - the user named this file, so its
+  condition is never silently substituted for.
+- The **user** file is optional by nature - most installations will never create one.
+  An **absent** file is therefore not a failure: `selectRuleSet()` falls through to
+  `defaultRules()`. But a file that **exists** and is unreadable or malformed is treated
+  exactly like the explicit-path case: a propagated `RuleSetError`, never a silent
+  fallback to embedded defaults.
+- `RuleSetSelector`'s file-reading path (`loadRuleSetFromFile()`) assumes UTF-8 on disk
+  (tolerating a leading BOM) and converts to the `std::wstring` `RuleSet::parse()` expects
+  - the one place this codebase's internal UTF-16 convention is crossed, since JSON files
+  are conventionally UTF-8 regardless of platform.
+- The user-file path lookup is injectable (`UserRulesPathProvider`) specifically so tests
+  never touch the real user profile directory; production code uses the default
+  parameter, `paths::getUserRulesFilePath()`.
+
+### Reason
+
+- A pre-implementation review of the M3 Wiki plan (posted as a comment on issue #42) asked
+  this question explicitly: "if the user rules file exists but is malformed, does it exit
+  3, or fall back to embedded defaults?" Silently falling back would hide a config mistake
+  the user made in a file they wrote themselves, which is worse than failing loudly - the
+  same reasoning `docs/adr-phase-2.md` ADR-0010 already applied to `FsScanSource`'s
+  unrecoverable-error path (an absent directory is normal; an access error is not).
+- Distinguishing "absent" from "malformed" (rather than treating any failure to load the
+  user file the same way) is what lets the common case - no user file at all - stay quiet,
+  while still surfacing an actual mistake.
+
+### Consequences
+
+- `docs/TODO.md` M3's rule-priority item is checked off; `docs/rules.md`'s "Rule file
+  location and priority" section still describes only the priority order, not this
+  absent/malformed distinction - #43 corrects that.
+- `selectRuleSet()` is not wired to `AppOptions::rulesPath` yet; like `PackageFilter` and
+  `createPackageSource(const AppOptions&)` before it (ADR-0010), that wiring is M6's CLI,
+  the first code with a parsed `AppOptions` to hand.

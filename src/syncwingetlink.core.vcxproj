@@ -46,6 +46,7 @@
     <ClCompile Include="core\WingetComSource.cpp" />
     <ClCompile Include="rules\DefaultRules.cpp" />
     <ClCompile Include="rules\RuleSet.cpp" />
+    <ClCompile Include="rules\RuleSetSelector.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="core\AliasResolver.h" />
@@ -61,6 +62,7 @@
     <ClInclude Include="core\WingetComSource.h" />
     <ClInclude Include="rules\DefaultRules.h" />
     <ClInclude Include="rules\RuleSet.h" />
+    <ClInclude Include="rules\RuleSetSelector.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

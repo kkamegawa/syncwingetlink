@@ -49,6 +49,11 @@ getPackagesDirectory(const std::optional<std::filesystem::path>& overridePath)
     return getLocalAppDataDirectory() / L"Microsoft" / L"WinGet" / L"Packages";
 }
 
+std::filesystem::path getUserRulesFilePath()
+{
+    return getLocalAppDataDirectory() / L"syncwingetlink" / L"rules.json";
+}
+
 std::filesystem::path toExtendedLengthPath(const std::filesystem::path& path)
 {
     if (path.empty())
