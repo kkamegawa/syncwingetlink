@@ -15,6 +15,12 @@ getLinksDirectory(const std::optional<std::filesystem::path>& overridePath = std
 [[nodiscard]] std::filesystem::path
 getPackagesDirectory(const std::optional<std::filesystem::path>& overridePath = std::nullopt);
 
+// The auto-discovered user rules file: %LOCALAPPDATA%\syncwingetlink\rules.json
+// (docs/PLAN.md §7). Its presence is optional - rules/RuleSetSelector falls back to the
+// embedded defaults when it does not exist - so this only computes the path, without
+// checking whether anything is actually there.
+[[nodiscard]] std::filesystem::path getUserRulesFilePath();
+
 [[nodiscard]] std::filesystem::path
 toExtendedLengthPath(const std::filesystem::path& path);
 

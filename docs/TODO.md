@@ -80,7 +80,11 @@ Build system decisions are recorded in [`adr.md`](./adr.md) (ADR-0001 … ADR-00
       ADR-0009 and ADR-0012.
 - [ ] `test-rule` subcommand: show file name → matched rule name → alias
 - [x] Unit tests: cover cases including `codex-x86_64-pc-windows-msvc.exe → codex.exe`
-- [ ] Implement and test rule priority (`--rules` > user settings > embedded)
+- [x] Implement and test rule priority (`--rules` > user settings > embedded) —
+      `rules/RuleSetSelector::selectRuleSet()`. An absent user rules file falls through to
+      embedded defaults; a present-but-malformed one is a propagated error (never a
+      silent fallback), same as an explicit `--rules` file. Not yet wired to `AppOptions`
+      — that is M6's CLI, which is the first code with a parsed `AppOptions` to hand.
 - [ ] `docs/rules.md`: document format, captures, replacement syntax, samples
 
 ## M4. Link state judgment
