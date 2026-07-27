@@ -24,6 +24,9 @@
     <ClInclude Include="core\IPackageSource.h">
       <Filter>core</Filter>
     </ClInclude>
+    <ClInclude Include="core\LinkInspector.h">
+      <Filter>core</Filter>
+    </ClInclude>
     <ClInclude Include="core\Model.h">
       <Filter>core</Filter>
     </ClInclude>
@@ -63,6 +66,9 @@
       <Filter>core</Filter>
     </ClCompile>
     <ClCompile Include="core\FsScanSource.cpp">
+      <Filter>core</Filter>
+    </ClCompile>
+    <ClCompile Include="core\LinkInspector.cpp">
       <Filter>core</Filter>
     </ClCompile>
     <ClCompile Include="core\PackageFilter.cpp">

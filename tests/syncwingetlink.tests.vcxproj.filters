@@ -21,6 +21,9 @@
     <ClCompile Include="FsScanSourceTests.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
+    <ClCompile Include="LinkInspectorTests.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
     <ClCompile Include="PackageFilterTests.cpp">
       <Filter>Tests</Filter>
     </ClCompile>

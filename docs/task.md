@@ -787,3 +787,51 @@ since they are small, tightly related corrections rather than new functionality.
 - `Debug|ARM64`/`Release|ARM64`: cross-built, not run (this machine is x64).
 - No dependency added.
 
+## 2026-07-27 — M4: link-inspection model and classification contract (issue #44)
+
+**Trigger**: issue #6 (M4 milestone), sub-issue #44. Branch
+`feature/44-link-inspection-contract`. A pre-implementation review of the M4 Wiki plan
+(`plan/syncwingetlink/m4-link-state-inspection`) found the `docs/adr-phase-4.md` filename
+in the plan broke the sequential ADR file numbering (`adr-phase-2.md` already holds the
+M3 decisions) and corrected it to `docs/adr-phase-3.md` before this issue started.
+
+### Completed
+
+- `core/Model.h`: added `LinkEntryKind { None, RegularFile, SymbolicLink,
+  OtherReparsePoint }` and a `RepairItem::entryKind` field recording which was observed,
+  independent of the derived `LinkStatus`.
+- `core/LinkInspector.{h,cpp}`: added `TargetRelation { NotApplicable, Missing, SameFile,
+  DifferentFile }`, `LinkObservation` (entry kind + optional decoded target + target
+  relation), `LinkInspectionError` (operation, path, Win32 error code), and the pure
+  `classifyLink()` that converts a `LinkObservation` plus an already-known
+  `PackageExe`/alias/link path into a complete `RepairItem`. Performs no I/O.
+- `docs/adr-phase-3.md` ADR-0014: records the six-row classification contract, why an
+  invalid `LinkObservation` throws `std::invalid_argument` rather than
+  `LinkInspectionError` (no Win32 operation was actually attempted), and that M5 must
+  re-inspect an entry immediately before any mutation rather than reusing an
+  earlier-computed `RepairItem`.
+- `tests/LinkInspectorTests.cpp`: covers all six classification rows, passthrough of
+  `executable`/`alias`/`linkPath`, five invalid-observation combinations (each rejected
+  with `std::invalid_argument`), and `LinkInspectionError`'s accessors/message.
+- Registered `LinkInspector.{h,cpp}` and `LinkInspectorTests.cpp` in both `.vcxproj` and
+  `.vcxproj.filters`.
+
+### Deliberately not done
+
+- `docs/PLAN.md` §6's conflicting `Broken`/`Mismatch` sentence and `docs/TODO.md` M4's
+  checklist are left as-is, per the Wiki plan's delivery sequence: both are corrected in
+  #48, once the full milestone (Win32 probe, reparse decoding, collision detection) is
+  implemented.
+- `inspectLink()` (the production Win32 adapter), the reparse-buffer decoder, and
+  `detectAliasCollisions()` are not part of this issue - they are #45, #46 (which also
+  completes `inspectLink()`), and #47.
+
+### Verified
+
+- `Debug|x64`, `Release|x64`, `Debug|ARM64`, `Release|ARM64`: core + tests build clean at
+  `/W4 /WX`, no new warnings.
+- `vstest.console.exe /Platform:x64`: 149/149 passed in both `Debug|x64` and
+  `Release|x64` (up from 136 before this issue).
+- `Debug|ARM64`/`Release|ARM64`: cross-built, not run (this machine is x64).
+- No dependency added.
+
