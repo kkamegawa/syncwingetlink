@@ -892,5 +892,4 @@ M3 decisions) and corrected it to `docs/adr-phase-3.md` before this issue starte
   `Release|x64` (up from 149 before this issue).
 - `Debug|ARM64`/`Release|ARM64`: cross-built, not run (this machine is x64).
 - No dependency added.
-- No dependency added.
 

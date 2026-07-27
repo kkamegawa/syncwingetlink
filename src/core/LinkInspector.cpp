@@ -256,16 +256,18 @@ readSymbolicLinkTarget(const std::filesystem::path& linkPath)
 {
     const std::filesystem::path extendedPath = paths::toExtendedLengthPath(linkPath);
 
-    const std::unique_ptr<void, decltype(&::CloseHandle)> handle(
-        ::CreateFileW(extendedPath.c_str(), FILE_READ_ATTRIBUTES,
-                     FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
-                     OPEN_EXISTING,
-                     FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr),
-        &::CloseHandle);
-    if (handle.get() == INVALID_HANDLE_VALUE)
+    // Checked before the HANDLE is wrapped in RAII: CloseHandle(INVALID_HANDLE_VALUE) is
+    // itself an invalid call, so the wrapper must not be given a chance to run its
+    // deleter on a handle CreateFileW never actually produced.
+    const HANDLE rawHandle = ::CreateFileW(
+        extendedPath.c_str(), FILE_READ_ATTRIBUTES,
+        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING,
+        FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
+    if (rawHandle == INVALID_HANDLE_VALUE)
     {
         throw LinkInspectionError("CreateFileW", linkPath, ::GetLastError());
     }
+    const std::unique_ptr<void, decltype(&::CloseHandle)> handle(rawHandle, &::CloseHandle);
 
     // MAXIMUM_REPARSE_DATA_BUFFER_SIZE (16 KiB) is documented publicly but, like
     // REPARSE_DATA_BUFFER itself, only declared in the DDK-only ntifs.h.
