@@ -2,7 +2,7 @@
 
 #include "RuleSet.h"
 
-#include "../core/ComApartment.h"
+#include "core/ComApartment.h"
 
 // WIN32_LEAN_AND_MEAN (set project-wide in props/syncwingetlink.common.props) excludes
 // <ole2.h> from <Windows.h>, which is where CompareStringOrdinal lives via <winnls.h>
@@ -22,6 +22,7 @@
 // WingetComSource.cpp.
 #pragma comment(lib, "runtimeobject.lib")
 
+#include <array>
 #include <regex>
 #include <unordered_set>
 #include <utility>
@@ -68,6 +69,28 @@ using namespace winrt::Windows::Data::Json;
 
     return std::wstring(value.GetString());
 }
+
+// True for a stem matching one of Windows' reserved device names, case-insensitively and
+// regardless of extension - CreateFileW rejects "CON.exe" exactly as it rejects "CON".
+[[nodiscard]] bool isReservedDeviceName(std::wstring_view stem) noexcept
+{
+    constexpr std::array<std::wstring_view, 22> kReservedNames = {
+        L"CON",  L"PRN",  L"AUX",  L"NUL",  L"COM1", L"COM2", L"COM3", L"COM4",
+        L"COM5", L"COM6", L"COM7", L"COM8", L"COM9", L"LPT1", L"LPT2", L"LPT3",
+        L"LPT4", L"LPT5", L"LPT6", L"LPT7", L"LPT8", L"LPT9",
+    };
+
+    for (const std::wstring_view reserved : kReservedNames)
+    {
+        if (stem.size() == reserved.size() &&
+            ::CompareStringOrdinal(stem.data(), static_cast<int>(stem.size()), reserved.data(),
+                                   static_cast<int>(reserved.size()), TRUE) == CSTR_EQUAL)
+        {
+            return true;
+        }
+    }
+    return false;
+}
 } // namespace
 
 bool isValidAliasFileName(std::wstring_view candidate) noexcept
@@ -78,10 +101,17 @@ bool isValidAliasFileName(std::wstring_view candidate) noexcept
     {
         return false;
     }
-    if (candidate.find(L'\\') != std::wstring_view::npos ||
-        candidate.find(L'/') != std::wstring_view::npos)
+
+    // Every character Win32 refuses in any file name component, not just the path
+    // separators this check originally covered - '<>:"|?*' and the C0 control range are
+    // rejected by CreateFileW regardless of position.
+    for (const wchar_t ch : candidate)
     {
-        return false;
+        if (ch < 0x20 || ch == L'<' || ch == L'>' || ch == L':' || ch == L'"' ||
+            ch == L'|' || ch == L'?' || ch == L'*' || ch == L'\\' || ch == L'/')
+        {
+            return false;
+        }
     }
 
     const std::wstring_view suffix = candidate.substr(candidate.size() - kExeExtension.size());
@@ -99,7 +129,19 @@ bool isValidAliasFileName(std::wstring_view candidate) noexcept
     const std::wstring_view stem = candidate.substr(0, candidate.size() - kExeExtension.size());
     // Rejects a stem made up entirely of dots (e.g. "..exe" -> stem ".."), which would
     // otherwise smuggle a "." or ".." path segment through as an alias file name.
-    return stem.find_first_not_of(L'.') != std::wstring_view::npos;
+    if (stem.find_first_not_of(L'.') == std::wstring_view::npos)
+    {
+        return false;
+    }
+
+    // Windows silently strips a trailing space or dot from a file name component, so
+    // "name .exe" or "name..exe" would not create the file the alias text implies.
+    if (stem.back() == L' ' || stem.back() == L'.')
+    {
+        return false;
+    }
+
+    return !isReservedDeviceName(stem);
 }
 
 RuleSet::RuleSet(std::vector<AliasRule> rules)

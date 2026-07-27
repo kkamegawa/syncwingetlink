@@ -34,6 +34,15 @@
   <ImportGroup Label="Shared" />
   <ImportGroup Label="PropertySheets" />
   <PropertyGroup Label="UserMacros" />
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <!-- Lets code under one subfolder (e.g. rules/) include a header from another
+           (e.g. core/) as "core/Header.h" instead of a relative "../core/Header.h",
+           matching how tests/syncwingetlink.tests.vcxproj already resolves the same
+           headers via its own "$(ProjectDir)..\src" entry. -->
+      <AdditionalIncludeDirectories>$(ProjectDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+  </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="core\AliasResolver.cpp" />
     <ClCompile Include="core\ComApartment.cpp" />

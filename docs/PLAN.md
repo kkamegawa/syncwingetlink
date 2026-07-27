@@ -179,8 +179,8 @@ syncwingetlink/
    `SHGetKnownFolderPath(FOLDERID_LocalAppData)` (overridable with `--links-dir`).
 2. **Enumerate installed packages (COM first)**: `WingetComSource` runs
    `PackageManager` → `GetLocalPackageCatalog(InstalledPackages)` → `Connect()` →
-   `FindPackages()` to get portable packages plus their **install location**, alias (if
-   available), and version.
+   `FindPackages()` to get portable packages plus their **install location** and version
+   (never a per-file alias — see §3).
    - When COM is unavailable, fall back to `FsScanSource` and recursively scan `Packages`
      to collect `*.exe` (`recursive_directory_iterator`). Reparse points are not followed
      by default (loop prevention).

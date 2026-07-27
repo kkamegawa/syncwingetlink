@@ -8,9 +8,11 @@
 
 #include "TempDirectory.h"
 
+#include <filesystem>
 #include <fstream>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 using namespace Microsoft::VisualStudio::CppUnitTestFramework;
@@ -50,6 +52,7 @@ public:
             {L"codex-x86_64-pc-windows-msvc.exe", L"codex.exe"},
             {L"codex-aarch64-pc-windows-msvc.exe", L"codex.exe"},
             {L"codex-x86_64-pc-windows-gnu.exe", L"codex.exe"},
+            {L"codex-aarch64-pc-windows-gnu.exe", L"codex.exe"},
             {L"restic_0.15.2_windows_amd64.exe", L"restic.exe"},
             // No version-like substring at all: falls all the way through to the raw
             // file name, exercising AliasResolver's tier 3 with defaultRules() specifically

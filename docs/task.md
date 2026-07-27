@@ -724,3 +724,66 @@ Branch `feature/42-rule-source-priority`.
 - `Debug|ARM64`/`Release|ARM64`: cross-built, not run (this machine is x64).
 - No dependency added.
 
+## 2026-07-27 — Address Copilot review feedback on the M3 PRs (issue #94)
+
+**Trigger**: issue #94. PRs #88-#93 were auto-merged before GitHub Copilot's automated
+review comments could be folded in; this issue addresses all nine findings in one branch
+since they are small, tightly related corrections rather than new functionality.
+
+### Completed
+
+- `isValidAliasFileName()` (`src/rules/RuleSet.cpp`) now rejects every Win32-invalid
+  character (`<>:"|?*`, C0 control range), a trailing space or dot in the stem (Windows
+  silently strips these, so the file actually created would not match the alias text),
+  and reserved DOS device names (CON, PRN, AUX, NUL, COM1-9, LPT1-9) regardless of
+  extension - not just path separators as before. `AliasResolver` inherits the
+  strengthening for free since it calls the same function. Added matching tests to
+  `RuleSetTests.cpp` and `AliasResolverTests.cpp` (a rule producing a reserved name falls
+  back to the raw file name; a raw file name that is itself reserved is rejected
+  outright).
+- Cross-folder includes (`../core/ComApartment.h`, `../core/Paths.h`,
+  `../rules/RuleSet.h`) replaced with project-root-relative ones (`core/ComApartment.h`,
+  etc.), backed by a new `AdditionalIncludeDirectories` entry
+  (`$(ProjectDir)`) on `syncwingetlink.core.vcxproj` - matching how
+  `syncwingetlink.tests.vcxproj` already resolves the same headers.
+- Removed the redundant `TEST_MODULE_INITIALIZE`/`TEST_MODULE_CLEANUP` `ComApartment`
+  fixture from `RuleSetTests.cpp`: `RuleSet::parse()` already owns its own apartment per
+  call, so the module-level one added nothing. Corrected ADR-0011 to match.
+- `DefaultRulesTests.cpp`'s rule-ordering test used an input the version/arch rule could
+  never match, so it could not have caught an accidental reordering. Replaced with
+  `codex-v1.2.0-x86_64-pc-windows-msvc.exe`, which both embedded rules match but with
+  *different* results (`codex-v1.2.0.exe` vs. `codex.exe`), making the assertion
+  meaningful.
+- `RuleSetSelector::selectRuleSet()` no longer treats an error from
+  `std::filesystem::exists()` the same as "file absent" - only a clean "not found" falls
+  through to embedded defaults; any other outcome is a propagated `RuleSetError`, per the
+  absent-vs-malformed policy in ADR-0013. Not covered by an automated test: reliably
+  provoking this from a non-elevated test process has the same difficulty already
+  documented for `FsScanSource`'s access-denied path (ADR-0010).
+- `RuleSetSelector`'s `utf8ToWide()` now passes `MB_ERR_INVALID_CHARS` to
+  `MultiByteToWideChar` and checks its return value, so invalid UTF-8 in a rules file is a
+  clear `RuleSetError(FileReadError)` instead of silently becoming an empty string and a
+  confusing `ParseError`. Added a test with a lone UTF-8 continuation byte.
+- `AliasPipelineTests.cpp` now includes `<filesystem>`/`<string_view>` explicitly instead
+  of relying on transitive includes, and its representative-executables case list gained
+  a fourth Rust-target-triple variant (`codex-aarch64-pc-windows-gnu.exe`) so the "four"
+  claim in the #41 work-log entry is accurate and the previously-untested aarch64+gnu
+  combination gets covered somewhere.
+- `docs/PLAN.md` processing-flow step 2 still said `WingetComSource` returns an alias "(if
+  available)", one step away from the corrected statement in step 3 - fixed to match.
+
+### Deliberately not done
+
+- No test for the `std::filesystem::exists()` error path (see above) - consistent with
+  the project's existing precedent for hard-to-provoke filesystem error conditions.
+
+### Verified
+
+- `Debug|x64`, `Release|x64`, `Debug|ARM64`, `Release|ARM64`: core + tests build clean at
+  `/W4 /WX`, no new warnings (the include-path change touched every source file's
+  compilation but not its behavior).
+- `vstest.console.exe /Platform:x64`: 136/136 passed in both `Debug|x64` and
+  `Release|x64` (up from 128 before this issue).
+- `Debug|ARM64`/`Release|ARM64`: cross-built, not run (this machine is x64).
+- No dependency added.
+
