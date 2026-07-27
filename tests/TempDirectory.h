@@ -103,6 +103,22 @@ struct MountPointReparseBuffer
     return true;
 }
 
+// Creates linkPath as a real NTFS *file* symbolic link targeting target (this project
+// only ever creates portable-command-alias entries, which are always files, never
+// directory symlinks). Passes SYMBOLIC_LINK_FLAG_ALLOW_UNPRIVILEGED_CREATE, but that
+// flag alone is not sufficient everywhere: on a machine with neither Developer Mode nor
+// elevation, creation still fails and this returns false. Callers without an
+// alternative, privilege-free way to exercise the same code path should report
+// Assert::Inconclusive() rather than fail, so the suite stays green here and gains real
+// coverage automatically wherever symlink privilege is available (docs/adr-phase-3.md
+// ADR-0016).
+[[nodiscard]] inline bool createFileSymlink(const std::filesystem::path& target,
+                                            const std::filesystem::path& linkPath)
+{
+    return ::CreateSymbolicLinkW(linkPath.c_str(), target.c_str(),
+                                 SYMBOLIC_LINK_FLAG_ALLOW_UNPRIVILEGED_CREATE) != 0;
+}
+
 // Creates a unique directory under the system temp folder and removes it (and everything
 // below it) on destruction, so a failing assertion cannot leave test data behind.
 class TempDirectory

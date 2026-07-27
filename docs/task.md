@@ -893,3 +893,62 @@ M3 decisions) and corrected it to `docs/adr-phase-3.md` before this issue starte
 - `Debug|ARM64`/`Release|ARM64`: cross-built, not run (this machine is x64).
 - No dependency added.
 
+## 2026-07-27 — M4: probe link entries and compare target identity (issue #46)
+
+**Trigger**: issue #6 (M4 milestone), sub-issue #46, stacked on #44/#45 (PRs #96/#97).
+Branch `feature/46-link-target-identity`.
+
+### Completed
+
+- `core/LinkInspector.{h,cpp}`: added `inspectLink()`, the production, filesystem-backed
+  probe. `GetFileAttributesW` distinguishes absence (only a clean
+  `ERROR_FILE_NOT_FOUND`/`ERROR_PATH_NOT_FOUND` is `LinkEntryKind::None`; any other
+  failure throws `LinkInspectionError`), a non-reparse-point entry
+  (`LinkEntryKind::RegularFile` - a directory falls in here too, see ADR-0016), and a
+  reparse point. `readSymbolicLinkTarget()` (#45) then either reports another reparse
+  tag (`LinkEntryKind::OtherReparsePoint`) or a decoded symbolic-link target.
+- Added `getFileIdentity()`/`tryGetFileIdentity()` (internal): open a path for
+  `FILE_READ_ATTRIBUTES` and read its `FILE_ID_INFO` (volume serial + 128-bit file id)
+  via `GetFileInformationByHandleEx`. `tryGetFileIdentity()` maps a clean absence to
+  `std::nullopt`; every other failure (access denial, a sharing violation, ...) still
+  throws, so it is never mislabeled as a missing target.
+- The expected executable's identity is read lazily: only once the decoded target's own
+  identity is confirmed to exist. `docs/adr-phase-3.md` ADR-0016 records why (the
+  executable-disappeared error should only fire when it is actually about to be compared
+  against, not as a blanket precondition) and the directory-as-`RegularFile` decision.
+- `tests/TempDirectory.h`: added `createFileSymlink()`
+  (`CreateSymbolicLinkW` + `SYMBOLIC_LINK_FLAG_ALLOW_UNPRIVILEGED_CREATE`).
+- `tests/LinkInspectorTests.cpp`: added `InspectLinkTests`. The branches reachable
+  without symlink privilege (absence, a regular file, a directory, and another reparse
+  point via `tests/TempDirectory.h`'s existing `createJunction()`, plus field
+  passthrough) run unconditionally. `healthySymbolicLinkIsOk`,
+  `symbolicLinkToAMissingTargetIsBroken`,
+  `symbolicLinkToADifferentExistingFileIsMismatch`, and
+  `expectedExecutableDisappearingDuringInspectionIsAnError` each attempt a real
+  `createFileSymlink()` first and log-and-return if it fails, per a Copilot review
+  comment on PR #98 suggesting exactly this - gaining real coverage automatically
+  wherever symlink privilege is available, rather than omitting the scenario outright.
+
+### Deliberately not done
+
+- This environment itself cannot exercise the four privilege-gated tests above for
+  real: it has neither Developer Mode nor elevation
+  (`SeCreateSymbolicLinkPrivilege` is unavailable even with the unprivileged-create flag
+  - confirmed independently via `New-Item -ItemType SymbolicLink`, which fails with
+  `NewItemSymbolicLinkElevationRequired`). Verified directly that all four report a
+  logged skip message rather than passing through some other path
+  (`vstest.console.exe ... /Tests:... /logger:console;verbosity=detailed`). ADR-0016
+  records this the same way `docs/adr-phase-2.md` ADR-0009/ADR-0010 already recorded
+  other environment-gated gaps, except this one closes itself automatically once the
+  test-running environment supports symlink creation - no further code change needed.
+
+### Verified
+
+- `Debug|x64`, `Release|x64`, `Debug|ARM64`, `Release|ARM64`: core + tests build clean at
+  `/W4 /WX`, no new warnings.
+- `vstest.console.exe /Platform:x64`: 171/171 passed in both `Debug|x64` and
+  `Release|x64` (up from 162 before this issue) - the four privilege-gated tests above
+  passed via their logged skip path in this run, not via real symlink creation.
+- `Debug|ARM64`/`Release|ARM64`: cross-built, not run (this machine is x64).
+- No dependency added.
+
