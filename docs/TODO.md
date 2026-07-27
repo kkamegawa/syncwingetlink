@@ -89,7 +89,10 @@ Build system decisions are recorded in [`adr.md`](./adr.md) (ADR-0001 … ADR-00
       embedded defaults; a present-but-malformed one is a propagated error (never a
       silent fallback), same as an explicit `--rules` file. Not yet wired to `AppOptions`
       — that is M6's CLI, which is the first code with a parsed `AppOptions` to hand.
-- [ ] `docs/rules.md`: document format, captures, replacement syntax, samples
+- [x] `docs/rules.md`: document format, captures, replacement syntax, samples. Corrected
+      to drop the never-implemented COM-metadata priority tier (ADR-0009/ADR-0012) and to
+      document the absent-vs-malformed user-rules-file distinction (ADR-0013) and the
+      "replaces, not merges" property of rule-source selection.
 
 ## M4. Link state judgment
 - [ ] `[core] core/LinkInspector`: judge the state of `Links\<alias>.exe`

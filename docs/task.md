@@ -601,7 +601,46 @@ Branch `feature/39-alias-resolver`.
 - `Debug|ARM64`/`Release|ARM64`: cross-built, not run (this machine is x64).
 - No dependency added.
 
-## 2026-07-27 — Rule source priority: explicit, user, embedded (issue #42)
+## 2026-07-27 — Finalize M3 alias-rule documentation (issue #43)
+
+**Trigger**: issue #5 (M3 milestone), sub-issue #43, stacked on #37/#38/#39/#41/#42
+(PRs #88-#92). Branch `feature/43-finalize-alias-docs`. A pre-implementation review of
+the M3 Wiki plan asked that this issue treat the doc changes as **corrections** (an
+earlier draft described an API that does not exist), not a cosmetic sync.
+
+### Completed
+
+- `docs/rules.md`: dropped the "COM metadata" alias-priority tier (it never existed —
+  ADR-0009/ADR-0012), renumbered to regex rules → raw file name. Added the
+  absent-vs-malformed distinction for the user rules file (ADR-0013), the "a selected
+  tier replaces rather than merges with a lower one" property (`AliasPipelineTests`), and
+  precise "Evaluation rules" wording (whole-string matching, an invalid alias from a
+  matching rule counts as no match at all rather than falling through to a later rule).
+- `docs/PLAN.md` §3: corrected "may not fully expose" (hedged, speculative) to a
+  definitive statement that the COM API has no per-file alias field at all, citing
+  ADR-0009's confirmed finding. §5's file tree: replaced the stale `default_rules.*`
+  entry with the actual `DefaultRules.{h,cpp}`/`RuleSetSelector.{h,cpp}` names, and
+  corrected the sentence claiming `WingetComSource` returns "alias if available." §6/§7:
+  removed the COM tier from the alias-resolution priority list and documented the
+  replace-vs-merge and absent-vs-malformed properties in the rule-load-priority bullet.
+- `AGENTS.md` §6: same alias-resolution-priority correction.
+- `docs/com-api.md`: the enumeration-flow diagram still said "(alias if available)" one
+  line above where the same document's own "no per-file alias mapping in this API at all"
+  paragraph already contradicted it; corrected the diagram to match.
+- `docs/TODO.md` M3: checked off the `docs/rules.md` item — every M3 item except the
+  `test-rule` subcommand (#40, blocked on #53/#56) is now done.
+
+### Deliberately not done
+
+- `docs/rules_ja.md` was not touched — it is a Japanese translation and per `AGENTS.md`'s
+  language policy, agents do not edit `*_ja.md` files without explicit authorization.
+- Issue #5 stays open: `test-rule` (#40) is still blocked on #53/#56, so the parent
+  milestone issue is not closed by this change.
+
+### Verified
+
+- Documentation-only change; no C++ source was touched, so the build/test matrix from
+  prior M3 issues is unaffected. No dependency added.
 
 **Trigger**: issue #5 (M3 milestone), sub-issue #42, stacked on #37-#39 (PRs #88-#90).
 Branch `feature/42-rule-source-priority`.

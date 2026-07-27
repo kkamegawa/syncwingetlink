@@ -177,9 +177,11 @@ The essentials:
   keep direct sqlite (`PortableIndex`) reads as a last-resort fallback only (the schema
   is internal and may change).
 - **Alias resolution priority**:
-  1. COM metadata (when a `PortableCommandAlias`-equivalent is available)
-  2. regex replacement rules in `rules/` (e.g. `codex-x86_64-pc-windows-msvc.exe → codex.exe`)
-  3. the raw file name as-is
+  1. regex replacement rules in `rules/` (e.g. `codex-x86_64-pc-windows-msvc.exe → codex.exe`)
+  2. the raw file name as-is
+
+  There is no COM-metadata tier: the winget COM API has no per-file alias field, so
+  `WingetComSource` can never supply one (`docs/adr-phase-2.md` ADR-0009/ADR-0012).
 - **Permissions / Developer Mode**: pass
   `SYMBOLIC_LINK_FLAG_ALLOW_UNPRIVILEGED_CREATE` when creating symlinks. If it fails when
   Developer Mode is off and the process is non-admin, diagnose the cause, state it
