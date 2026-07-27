@@ -6,7 +6,6 @@
 
 #include <algorithm>
 #include <filesystem>
-#include <optional>
 #include <string>
 #include <vector>
 
@@ -26,7 +25,7 @@ namespace
 
     for (const std::wstring& name : executableNames)
     {
-        package.executables.push_back(PackageExe{package.installLocation / name, std::nullopt});
+        package.executables.push_back(PackageExe{package.installLocation / name});
     }
 
     return package;

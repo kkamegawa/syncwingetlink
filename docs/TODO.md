@@ -69,15 +69,17 @@ Build system decisions are recorded in [`adr.md`](./adr.md) (ADR-0001 … ADR-00
       (ADR-0009 explains why no test constructs a live `WingetComSource`)
 
 ## M3. Alias resolution + regex rules (most important)
-- [ ] `[core] rules/RuleSet`: load/validate rules JSON (exit code 3 on invalid)
-- [ ] Embed default rules in the binary (rust target triple stripping, etc.)
-- [ ] `[core] core/AliasResolver`: decide alias by priority
-      ((1) COM metadata `PortableCommandAlias` → (2) regex rules → (3) raw file name).
-      **Tier 1 is permanently unreachable** — `WingetComSource` never populates
-      `PackageExe::metadataAlias` because the COM API exposes no such field; see
-      `docs/adr-phase-2.md` ADR-0009. Implement starting from tier 2.
+- [x] `[core] rules/RuleSet`: load/validate rules JSON (exit code 3 on invalid)
+- [x] Embed default rules in the binary (rust target triple stripping, etc.)
+- [x] `[core] core/AliasResolver`: decide alias by priority ((1) regex rules →
+      (2) raw file name). The originally planned tier 1 ("COM metadata
+      `PortableCommandAlias`") is permanently unreachable and is not implemented at all —
+      `WingetComSource` can never populate a per-file alias because the COM API exposes no
+      such field, and the now-removed `PackageExe::metadataAlias` field it would have used
+      confirmed there was no writer anywhere in the codebase. See `docs/adr-phase-2.md`
+      ADR-0009 and ADR-0012.
 - [ ] `test-rule` subcommand: show file name → matched rule name → alias
-- [ ] Unit tests: cover cases including `codex-x86_64-pc-windows-msvc.exe → codex.exe`
+- [x] Unit tests: cover cases including `codex-x86_64-pc-windows-msvc.exe → codex.exe`
 - [ ] Implement and test rule priority (`--rules` > user settings > embedded)
 - [ ] `docs/rules.md`: document format, captures, replacement syntax, samples
 

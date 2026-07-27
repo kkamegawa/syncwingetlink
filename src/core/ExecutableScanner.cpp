@@ -102,7 +102,7 @@ std::vector<PackageExe> collectExecutables(const std::filesystem::path& root)
         }
         displayPath = paths::fromExtendedLengthPath(displayPath);
 
-        executables.push_back(PackageExe{displayPath, std::nullopt});
+        executables.push_back(PackageExe{displayPath});
     }
 
     std::sort(executables.begin(), executables.end(),

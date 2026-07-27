@@ -557,3 +557,46 @@ Branch `feature/38-embedded-default-rules`.
   `Release|x64` (up from 106 before this issue).
 - `Debug|ARM64`/`Release|ARM64`: cross-built, not run (this machine is x64).
 - No dependency added.
+
+## 2026-07-27 — AliasResolver, and removing the dead metadataAlias field (issue #39)
+
+**Trigger**: issue #5 (M3 milestone), sub-issue #39, stacked on #37/#38 (PRs #88/#89).
+Branch `feature/39-alias-resolver`.
+
+### Completed
+
+- `src/core/AliasResolver.{h,cpp}`: `resolveAlias()` implements the two live tiers - the
+  first matching `RuleSet` rule, then the raw executable file name - and returns
+  `nullopt` only if neither tier produces a valid alias (`isValidAliasFileName()` is
+  applied to the raw-name fallback too, not just to rule output).
+- `src/core/Model.h`: removed `PackageExe::metadataAlias`. Updated every construction site
+  (`ExecutableScanner.cpp`, `PackageFilterTests.cpp`, `PackageSourceFactoryTests.cpp`) and
+  removed `ExecutableScannerTests::metadataAliasIsNotSuppliedByTheFilesystem`, which
+  asserted on the field directly and would otherwise have failed to compile.
+- `docs/adr-phase-2.md` ADR-0012: records why the COM-metadata tier is omitted from the
+  code entirely (not coded as an always-false branch) and why the field was deleted
+  rather than left in place "documented as always empty."
+- `docs/TODO.md` M3: checked off the RuleSet, embedded-rules, and AliasResolver items;
+  corrected the tier-1 wording to past tense and to reference the field's removal.
+- Tests (`tests/AliasResolverTests.cpp`): a matching rule wins over the raw name; the
+  documented Codex Rust-triple example resolves through `defaultRules()`; no matching rule
+  falls back to the raw name; an empty `RuleSet` always falls back; a rule match that
+  produces an invalid alias falls back to the (valid) raw file name rather than the
+  invalid one; and a raw file name that is itself not well-formed (`.exe` alone) is
+  rejected outright.
+
+### Deliberately not done
+
+- No `--rules`/user-file source selection yet (#42) - nothing outside tests constructs a
+  non-default `RuleSet` yet.
+- `docs/rules.md`/`PLAN.md`/`AGENTS.md` still describe the original three-tier priority
+  table; #43 corrects that prose, per the M3 plan review.
+
+### Verified
+
+- `Debug|x64`, `Release|x64`, `Debug|ARM64`, `Release|ARM64`: core + tests build clean at
+  `/W4 /WX`, no new warnings. `syncwingetlink.exe` still fails `LNK1561` (expected).
+- `vstest.console.exe /Platform:x64`: 116/116 passed in both `Debug|x64` and
+  `Release|x64` (111 before this issue, minus the one removed test, plus six new ones).
+- `Debug|ARM64`/`Release|ARM64`: cross-built, not run (this machine is x64).
+- No dependency added.
