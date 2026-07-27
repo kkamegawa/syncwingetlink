@@ -38,7 +38,7 @@ public:
         InstalledPackage package;
         package.id = m_packageId;
         package.name = m_packageId;
-        package.executables.push_back(PackageExe{std::filesystem::path(L"tool.exe"), std::nullopt});
+        package.executables.push_back(PackageExe{std::filesystem::path(L"tool.exe")});
         return {package};
     }
 

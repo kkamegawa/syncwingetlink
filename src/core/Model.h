@@ -43,7 +43,6 @@ enum class LogLevel
 struct PackageExe
 {
     std::filesystem::path path;
-    std::optional<std::wstring> metadataAlias;
 };
 
 struct InstalledPackage

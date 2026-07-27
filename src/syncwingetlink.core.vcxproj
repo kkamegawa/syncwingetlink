@@ -35,6 +35,7 @@
   <ImportGroup Label="PropertySheets" />
   <PropertyGroup Label="UserMacros" />
   <ItemGroup>
+    <ClCompile Include="core\AliasResolver.cpp" />
     <ClCompile Include="core\ComApartment.cpp" />
     <ClCompile Include="core\ExecutableScanner.cpp" />
     <ClCompile Include="core\FsScanSource.cpp" />
@@ -47,6 +48,7 @@
     <ClCompile Include="rules\RuleSet.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="core\AliasResolver.h" />
     <ClInclude Include="core\ComApartment.h" />
     <ClInclude Include="core\ExecutableScanner.h" />
     <ClInclude Include="core\FsScanSource.h" />

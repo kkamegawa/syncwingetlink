@@ -9,6 +9,9 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="core\AliasResolver.h">
+      <Filter>core</Filter>
+    </ClInclude>
     <ClInclude Include="core\ComApartment.h">
       <Filter>core</Filter>
     </ClInclude>
@@ -47,6 +50,9 @@
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="core\AliasResolver.cpp">
+      <Filter>core</Filter>
+    </ClCompile>
     <ClCompile Include="core\ComApartment.cpp">
       <Filter>core</Filter>
     </ClCompile>

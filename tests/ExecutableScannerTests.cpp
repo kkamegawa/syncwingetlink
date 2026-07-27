@@ -79,17 +79,6 @@ public:
         Assert::AreEqual(static_cast<std::size_t>(2), collectExecutables(temp.path()).size());
     }
 
-    TEST_METHOD(metadataAliasIsNotSuppliedByTheFilesystem)
-    {
-        const TempDirectory temp(L"scanner-alias");
-        temp.createFile(L"tool.exe");
-
-        const auto executables = collectExecutables(temp.path());
-
-        Assert::AreEqual(static_cast<std::size_t>(1), executables.size());
-        Assert::IsFalse(executables.front().metadataAlias.has_value());
-    }
-
     TEST_METHOD(directoriesBeyondTheDepthCapAreNotWalked)
     {
         const TempDirectory temp(L"scanner-depth");

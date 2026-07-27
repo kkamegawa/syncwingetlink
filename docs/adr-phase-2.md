@@ -268,3 +268,51 @@ propagates into a link that pulls `WingetComSource.obj` in; a test link exercisi
   `winrt::Windows::Data::Json` rather than reaching for a different parser, and must repeat
   both the `ComApartment` requirement and the `runtimeobject.lib` pragma in its own
   translation unit.
+
+---
+
+## ADR-0012 — AliasResolver omits the dead COM-metadata tier; PackageExe::metadataAlias removed
+
+- **Date**: 2026-07-27
+- **Affected**: `core/AliasResolver`, `core/Model.h`, `docs/PLAN.md` §3/§6/§7,
+  `docs/TODO.md` M3, `AGENTS.md` §6
+- **Status**: Accepted
+
+### Decision
+
+`core/AliasResolver::resolveAlias()` implements only two tiers - the first matching
+`RuleSet` rule, then the raw executable file name - rather than coding a first tier for
+"COM metadata" that can never fire. ADR-0009 already established that
+`WingetComSource` can never populate a per-file alias (the COM API exposes no such field);
+this entry acts on that by deleting `PackageExe::metadataAlias` itself, not just leaving it
+unused. Every construction site
+(`ExecutableScanner.cpp`, `PackageFilterTests.cpp`, `PackageSourceFactoryTests.cpp`) and
+the one test that asserted on it (`ExecutableScannerTests::metadataAliasIsNotSupplied
+ByTheFilesystem`) are updated in the same change.
+
+The raw-file-name fallback tier is validated with `isValidAliasFileName()` before being
+returned, the same check tier 2's rule-produced aliases go through - `resolveAlias()`
+returns `nullopt`, not a guessed-at alias, if even the raw file name is not well-formed
+(this is not expected to happen in practice, since both `IPackageSource` implementations
+only ever report `*.exe` files reached by a directory walk, but the M3 plan review that
+shaped this issue's scope asked for it to be checked rather than assumed).
+
+### Reason
+
+- Implementing a tier-1 branch that can structurally never execute would be dead code with
+  no test able to exercise it honestly - worse than omitting it, since a future reader
+  could mistake the branch for a live code path pending only a data source that will never
+  arrive.
+- Keeping `PackageExe::metadataAlias` around "documented as always empty" is a smaller
+  change, but a struct field with no writer anywhere in the codebase is exactly the kind of
+  drift `AGENTS.md` §2 asks agents not to leave behind once its purpose is confirmed gone.
+
+### Consequences
+
+- `docs/PLAN.md` §3/§6/§7, `docs/TODO.md` M3, and `AGENTS.md` §6 still describe the
+  original three-tier priority tables; #43 (documentation finalization) corrects that
+  wording to match this decision and ADR-0009, rather than this entry doing so piecemeal.
+- Any future data source that *does* expose a real per-file alias (were one ever to exist)
+  adds a new field and a new tier explicitly, rather than resurrecting
+  `metadataAlias` - there is no reason to expect its shape would match what was speculated
+  here.
