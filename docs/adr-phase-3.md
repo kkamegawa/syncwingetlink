@@ -167,3 +167,66 @@ This file continues the chronological record in [`adr-phase-2.md`](./adr-phase-2
   still takes an already-built `LinkObservation`. Wiring `GetFileAttributesW` classification
   and file-identity comparison around these two functions into the production
   `inspectLink()` adapter is #46.
+
+---
+
+## ADR-0016 — inspectLink()'s identity comparison is lazy, and its filesystem-backed test coverage stops where symlink privilege begins
+
+- **Date**: 2026-07-27
+- **Affected**: `core/LinkInspector`, `tests/LinkInspectorTests.cpp`
+- **Status**: Accepted
+
+### Decision
+
+1. **`inspectLink()` only opens the expected executable for identity comparison once a
+   decoded symbolic-link target is confirmed to exist.** The order is: `GetFileAttributesW`
+   classification → (for a reparse point) `readSymbolicLinkTarget()` → (for a decoded
+   target) check the target's own existence/identity first → only if it exists, open
+   `executable` to compare. `LinkEntryKind::None`, `RegularFile`, `OtherReparsePoint`, and
+   `TargetRelation::Missing` therefore never touch `executable` at all - a missing or
+   otherwise-broken link never depends on the package executable still being reachable.
+2. **A directory at `linkPath` is treated the same as a regular file** - `RegularFile`,
+   not a new model kind. `LinkEntryKind` has no `Directory` variant; a winget-created
+   entry under `Links` is only ever expected to be a symbolic link or (if reparse points
+   are unsupported) a copy of the file, so a directory found there is exactly as wrong as
+   a plain-file copy would be, and is reported the same way (`Mismatch`).
+3. **The expected-executable identity check surfacing `LinkInspectionError`, not a
+   target-side `LinkInspectionError`, is only reachable through a real symbolic link** -
+   and this environment cannot create one. `SeCreateSymbolicLinkPrivilege` is unavailable
+   here even with `SYMBOLIC_LINK_FLAG_ALLOW_UNPRIVILEGED_CREATE`
+   (`New-Item -ItemType SymbolicLink` fails with
+   `NewItemSymbolicLinkElevationRequired`), so `tests/LinkInspectorTests.cpp`'s
+   `InspectLinkTests` covers every branch reachable without a real
+   `IO_REPARSE_TAG_SYMLINK` entry - absence, a regular file, a directory, and another
+   reparse point (`tests/TempDirectory.h`'s existing `createJunction()`, which needs no
+   privilege) - and does not attempt `Ok`, `Broken`, `Mismatch`-different-file, or the
+   executable-disappears scenario.
+
+### Reason
+
+- Issue #46 says an expected executable that disappears "during inspection" is an error,
+  which only makes sense as a live race between package enumeration and this specific
+  call - not a blanket precondition. Deferring the executable open until it is actually
+  needed for comparison keeps every non-comparison branch free of an I/O call this
+  project has no other reason to make, and matches the issue's own step ordering.
+- The directory case was left out of `LinkEntryKind` rather than adding a fifth variant,
+  because the M4 classification contract (ADR-0014) does not distinguish it from a
+  regular-file copy in any way that would change the resulting `LinkStatus` - both are
+  simply not the healthy symbolic link `syncwingetlink` expects.
+- `docs/adr-phase-2.md` ADR-0009 and ADR-0010 already established this project's practice
+  for a condition an automated test genuinely cannot provoke in its environment: state it
+  plainly rather than silently skip or fabricate coverage. This entry does the same for
+  symlink privilege, which is a full category of scenario, not one edge case.
+
+### Consequences
+
+- `core/LinkInspector.h` gains `inspectLink()`, completing the read-only production probe
+  M4 set out to build.
+- `tests/LinkInspectorTests.cpp` gains `InspectLinkTests` (absence, a regular file, a
+  directory, another reparse point via a junction, and field passthrough).
+- Manually verifying `Ok`/`Broken`/`Mismatch`-different-file and the
+  executable-disappears path against a real symbolic link, once Developer Mode or an
+  elevated/CI environment is available, remains an open item - the same category of gap
+  ADR-0009 already left open for live COM enumeration.
+- `#47` (alias collisions) and `#48` (the regression matrix and finalizing
+  `docs/PLAN.md`/`docs/TODO.md`) are unaffected by this decision.

@@ -893,3 +893,53 @@ M3 decisions) and corrected it to `docs/adr-phase-3.md` before this issue starte
 - `Debug|ARM64`/`Release|ARM64`: cross-built, not run (this machine is x64).
 - No dependency added.
 
+## 2026-07-27 — M4: probe link entries and compare target identity (issue #46)
+
+**Trigger**: issue #6 (M4 milestone), sub-issue #46, stacked on #44/#45 (PRs #96/#97).
+Branch `feature/46-link-target-identity`.
+
+### Completed
+
+- `core/LinkInspector.{h,cpp}`: added `inspectLink()`, the production, filesystem-backed
+  probe. `GetFileAttributesW` distinguishes absence (only a clean
+  `ERROR_FILE_NOT_FOUND`/`ERROR_PATH_NOT_FOUND` is `LinkEntryKind::None`; any other
+  failure throws `LinkInspectionError`), a non-reparse-point entry
+  (`LinkEntryKind::RegularFile` - a directory falls in here too, see ADR-0016), and a
+  reparse point. `readSymbolicLinkTarget()` (#45) then either reports another reparse
+  tag (`LinkEntryKind::OtherReparsePoint`) or a decoded symbolic-link target.
+- Added `getFileIdentity()`/`tryGetFileIdentity()` (internal): open a path for
+  `FILE_READ_ATTRIBUTES` and read its `FILE_ID_INFO` (volume serial + 128-bit file id)
+  via `GetFileInformationByHandleEx`. `tryGetFileIdentity()` maps a clean absence to
+  `std::nullopt`; every other failure (access denial, a sharing violation, ...) still
+  throws, so it is never mislabeled as a missing target.
+- The expected executable's identity is read lazily: only once the decoded target's own
+  identity is confirmed to exist. `docs/adr-phase-3.md` ADR-0016 records why (the
+  executable-disappeared error should only fire when it is actually about to be compared
+  against, not as a blanket precondition) and the directory-as-`RegularFile` decision.
+- `tests/LinkInspectorTests.cpp`: added `InspectLinkTests` covering every branch
+  reachable without symlink privilege - absence, a regular file, a directory, and another
+  reparse point (via `tests/TempDirectory.h`'s existing `createJunction()`) - plus field
+  passthrough.
+
+### Deliberately not done
+
+- A real symbolic link's `Ok`, `Broken`, and `Mismatch`-different-file outcomes, and the
+  executable-disappears-during-inspection scenario, are **not** covered by an automated
+  test. Creating one needs `SeCreateSymbolicLinkPrivilege`; this environment has neither
+  Developer Mode nor elevation available -
+  `New-Item -ItemType SymbolicLink` itself fails with
+  `NewItemSymbolicLinkElevationRequired`. ADR-0016 records this the same way
+  `docs/adr-phase-2.md` ADR-0009/ADR-0010 already recorded other environment-gated gaps
+  (live COM enumeration, an access-denied filesystem scan) rather than silently omitting
+  or fabricating coverage. Manual verification once Developer Mode is available remains
+  an open item.
+
+### Verified
+
+- `Debug|x64`, `Release|x64`, `Debug|ARM64`, `Release|ARM64`: core + tests build clean at
+  `/W4 /WX`, no new warnings.
+- `vstest.console.exe /Platform:x64`: 167/167 passed in both `Debug|x64` and
+  `Release|x64` (up from 162 before this issue).
+- `Debug|ARM64`/`Release|ARM64`: cross-built, not run (this machine is x64).
+- No dependency added.
+

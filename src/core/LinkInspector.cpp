@@ -155,6 +155,60 @@ LinkStatus statusFor(const LinkObservation& observation)
     // validateObservation().
     return LinkStatus::Mismatch;
 }
+
+[[nodiscard]] bool sameFileIdentity(const FILE_ID_INFO& a, const FILE_ID_INFO& b) noexcept
+{
+    return a.VolumeSerialNumber == b.VolumeSerialNumber &&
+           std::memcmp(a.FileId.Identifier, b.FileId.Identifier,
+                      sizeof(a.FileId.Identifier)) == 0;
+}
+
+// Opens path (following any reparse points along the way, so identity reflects the real
+// final file) for FILE_READ_ATTRIBUTES and retrieves its FILE_ID_INFO. Throws
+// LinkInspectionError for absence, access denial, or any other failure - callers that
+// need to treat absence specially use tryGetFileIdentity() below instead of catching
+// this directly.
+[[nodiscard]] FILE_ID_INFO getFileIdentity(const std::filesystem::path& path)
+{
+    const std::filesystem::path extendedPath = paths::toExtendedLengthPath(path);
+    const HANDLE rawHandle = ::CreateFileW(
+        extendedPath.c_str(), FILE_READ_ATTRIBUTES,
+        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING,
+        FILE_FLAG_BACKUP_SEMANTICS, nullptr);
+    if (rawHandle == INVALID_HANDLE_VALUE)
+    {
+        throw LinkInspectionError("CreateFileW", path, ::GetLastError());
+    }
+    const std::unique_ptr<void, decltype(&::CloseHandle)> handle(rawHandle, &::CloseHandle);
+
+    FILE_ID_INFO info{};
+    if (!::GetFileInformationByHandleEx(handle.get(), FileIdInfo, &info, sizeof(info)))
+    {
+        throw LinkInspectionError("GetFileInformationByHandleEx", path, ::GetLastError());
+    }
+    return info;
+}
+
+// Same as getFileIdentity(), except a clean absence (ERROR_FILE_NOT_FOUND or
+// ERROR_PATH_NOT_FOUND - the decoded symlink target does not exist) is std::nullopt
+// rather than an exception. Any other failure (access denied, a sharing violation, ...)
+// still throws, so it is never mislabeled as a merely-missing target.
+[[nodiscard]] std::optional<FILE_ID_INFO> tryGetFileIdentity(const std::filesystem::path& path)
+{
+    try
+    {
+        return getFileIdentity(path);
+    }
+    catch (const LinkInspectionError& error)
+    {
+        if (error.win32ErrorCode() == ERROR_FILE_NOT_FOUND ||
+            error.win32ErrorCode() == ERROR_PATH_NOT_FOUND)
+        {
+            return std::nullopt;
+        }
+        throw;
+    }
+}
 } // namespace
 
 std::string LinkInspectionError::buildMessage(const std::string& operation,
@@ -289,5 +343,63 @@ readSymbolicLinkTarget(const std::filesystem::path& linkPath)
 
     buffer.resize(bytesReturned);
     return decodeSymbolicLinkTarget(buffer, linkPath);
+}
+
+RepairItem inspectLink(PackageExe executable, std::wstring alias,
+                       std::filesystem::path linkPath)
+{
+    const std::filesystem::path extendedLinkPath = paths::toExtendedLengthPath(linkPath);
+    const DWORD attributes = ::GetFileAttributesW(extendedLinkPath.c_str());
+    if (attributes == INVALID_FILE_ATTRIBUTES)
+    {
+        const DWORD error = ::GetLastError();
+        if (error != ERROR_FILE_NOT_FOUND && error != ERROR_PATH_NOT_FOUND)
+        {
+            throw LinkInspectionError("GetFileAttributesW", linkPath, error);
+        }
+        return classifyLink(
+            LinkObservation{LinkEntryKind::None, std::nullopt, TargetRelation::NotApplicable},
+            std::move(executable), std::move(alias), linkPath);
+    }
+
+    if ((attributes & FILE_ATTRIBUTE_REPARSE_POINT) == 0)
+    {
+        // A directory falls in here too - Links\<alias>.exe is only ever expected to be
+        // a symbolic link or a file, so any other entry (file or directory) is reported
+        // the same way: not what syncwingetlink put there or would recognize.
+        return classifyLink(LinkObservation{LinkEntryKind::RegularFile, std::nullopt,
+                                            TargetRelation::NotApplicable},
+                           std::move(executable), std::move(alias), linkPath);
+    }
+
+    const std::optional<std::filesystem::path> decodedTarget =
+        readSymbolicLinkTarget(linkPath);
+    if (!decodedTarget.has_value())
+    {
+        return classifyLink(LinkObservation{LinkEntryKind::OtherReparsePoint, std::nullopt,
+                                            TargetRelation::NotApplicable},
+                           std::move(executable), std::move(alias), linkPath);
+    }
+
+    const std::optional<FILE_ID_INFO> targetIdentity = tryGetFileIdentity(*decodedTarget);
+    TargetRelation relation;
+    if (!targetIdentity.has_value())
+    {
+        relation = TargetRelation::Missing;
+    }
+    else
+    {
+        // The decoded target exists; only now is executable's own identity needed, to
+        // compare. If executable disappeared since it was enumerated, this throws -
+        // see inspectLink's own documentation for why that must not become a status.
+        const FILE_ID_INFO expectedIdentity = getFileIdentity(executable.path);
+        relation = sameFileIdentity(*targetIdentity, expectedIdentity)
+                       ? TargetRelation::SameFile
+                       : TargetRelation::DifferentFile;
+    }
+
+    return classifyLink(
+        LinkObservation{LinkEntryKind::SymbolicLink, decodedTarget, relation},
+        std::move(executable), std::move(alias), linkPath);
 }
 } // namespace syncwingetlink

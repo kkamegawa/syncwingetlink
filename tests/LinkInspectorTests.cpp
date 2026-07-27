@@ -416,4 +416,95 @@ public:
         Assert::IsFalse(result.has_value());
     }
 };
+
+// --- inspectLink(): the production, filesystem-backed adapter (issue #46).
+//
+// A genuine symbolic link (Ok/Broken/Mismatch-different-file, and the
+// executable-disappears scenario, all of which need a real IO_REPARSE_TAG_SYMLINK entry)
+// could not be exercised here: creating one requires either Developer Mode or elevation,
+// and this environment has neither (SeCreateSymbolicLinkPrivilege is unavailable even
+// with the unprivileged-create flag). Every other branch - which needs no privilege at
+// all - is covered directly. See docs/adr-phase-3.md ADR-0016 and docs/task.md's #46
+// entry for the same note. ---
+TEST_CLASS(InspectLinkTests)
+{
+public:
+    TEST_METHOD(absentEntryIsMissing)
+    {
+        const TempDirectory temp(L"inspect-link-absent");
+        const std::filesystem::path linkPath = temp.path() / L"codex.exe";
+        PackageExe executable;
+        executable.path = temp.createFile(L"codex-real.exe");
+
+        const RepairItem item =
+            inspectLink(executable, std::wstring(kAlias), linkPath);
+
+        Assert::IsTrue(item.status == LinkStatus::Missing);
+        Assert::IsTrue(item.entryKind == LinkEntryKind::None);
+        Assert::IsFalse(item.existingTarget.has_value());
+    }
+
+    TEST_METHOD(regularFileIsMismatch)
+    {
+        const TempDirectory temp(L"inspect-link-file");
+        const std::filesystem::path linkPath = temp.createFile(L"codex.exe");
+        PackageExe executable;
+        executable.path = temp.createFile(L"codex-real.exe");
+
+        const RepairItem item =
+            inspectLink(executable, std::wstring(kAlias), linkPath);
+
+        Assert::IsTrue(item.status == LinkStatus::Mismatch);
+        Assert::IsTrue(item.entryKind == LinkEntryKind::RegularFile);
+        Assert::IsFalse(item.existingTarget.has_value());
+    }
+
+    TEST_METHOD(directoryIsMismatch)
+    {
+        const TempDirectory temp(L"inspect-link-dir");
+        const std::filesystem::path linkPath = temp.createDirectory(L"codex.exe");
+        PackageExe executable;
+        executable.path = temp.createFile(L"codex-real.exe");
+
+        const RepairItem item =
+            inspectLink(executable, std::wstring(kAlias), linkPath);
+
+        Assert::IsTrue(item.status == LinkStatus::Mismatch);
+        Assert::IsTrue(item.entryKind == LinkEntryKind::RegularFile);
+        Assert::IsFalse(item.existingTarget.has_value());
+    }
+
+    TEST_METHOD(nonSymlinkReparsePointIsMismatch)
+    {
+        const TempDirectory temp(L"inspect-link-junction");
+        const std::filesystem::path targetDir = temp.createDirectory(L"target-dir");
+        const std::filesystem::path linkPath = temp.path() / L"codex.exe";
+        Assert::IsTrue(createJunction(targetDir, linkPath));
+        PackageExe executable;
+        executable.path = temp.createFile(L"codex-real.exe");
+
+        const RepairItem item =
+            inspectLink(executable, std::wstring(kAlias), linkPath);
+
+        Assert::IsTrue(item.status == LinkStatus::Mismatch);
+        Assert::IsTrue(item.entryKind == LinkEntryKind::OtherReparsePoint);
+        Assert::IsFalse(item.existingTarget.has_value());
+    }
+
+    TEST_METHOD(fieldsArePassedThroughUnchanged)
+    {
+        const TempDirectory temp(L"inspect-link-passthrough");
+        const std::filesystem::path linkPath = temp.path() / L"codex.exe";
+        PackageExe executable;
+        executable.path = temp.createFile(L"codex-real.exe");
+        const std::filesystem::path executablePath = executable.path;
+
+        const RepairItem item =
+            inspectLink(executable, std::wstring(kAlias), linkPath);
+
+        Assert::AreEqual(executablePath.native(), item.executable.path.native());
+        Assert::AreEqual(std::wstring(kAlias), item.alias);
+        Assert::AreEqual(linkPath.native(), item.linkPath.native());
+    }
+};
 } // namespace syncwingetlink::tests

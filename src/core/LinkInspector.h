@@ -149,4 +149,26 @@ decodeSymbolicLinkTarget(std::span<const std::byte> reparseBuffer,
 // returning an unexpected error, or a malformed buffer per decodeSymbolicLinkTarget().
 [[nodiscard]] std::optional<std::filesystem::path>
 readSymbolicLinkTarget(const std::filesystem::path& linkPath);
+
+// The production, filesystem-backed M4 probe: inspects linkPath and returns a complete
+// RepairItem, combining GetFileAttributesW classification, readSymbolicLinkTarget()
+// above, a FILE_ID_INFO (volume serial + 128-bit file id) identity comparison against
+// executable, and classifyLink()'s classification contract. Read-only - performs no
+// filesystem mutation.
+//
+// - GetFileAttributesW distinguishes absence from a regular file from a reparse point.
+//   Only a clean ERROR_FILE_NOT_FOUND/ERROR_PATH_NOT_FOUND result is
+//   LinkEntryKind::None; any other GetFileAttributesW failure throws
+//   LinkInspectionError - it is never mislabeled Missing.
+// - A reparse point that readSymbolicLinkTarget() reports is not a symbolic link becomes
+//   LinkEntryKind::OtherReparsePoint (classifyLink then reports Mismatch); it is never
+//   treated as a healthy link.
+// - For a symbolic link, the decoded target's existence and identity are checked only
+//   once a target was actually decoded: a clean absence is TargetRelation::Missing (an
+//   access or sharing failure on the target is not mislabeled this way - it throws).
+//   Only when the decoded target does exist is executable's own identity read, to
+//   compare - so executable disappearing between package enumeration and this call
+//   surfaces as LinkInspectionError, not a status a caller could plan a repair around.
+[[nodiscard]] RepairItem inspectLink(PackageExe executable, std::wstring alias,
+                                      std::filesystem::path linkPath);
 } // namespace syncwingetlink
