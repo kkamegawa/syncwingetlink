@@ -1,6 +1,8 @@
 # Architecture Decision Records — M4 Phase
 
 This file continues the chronological record in [`adr-phase-2.md`](./adr-phase-2.md).
+Records added once M5 (the symlink repair service) begins are kept in
+[`adr-phase-4.md`](./adr-phase-4.md).
 
 ---
 
