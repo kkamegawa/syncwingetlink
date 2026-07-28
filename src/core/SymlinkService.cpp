@@ -8,6 +8,7 @@
 #include <Windows.h>
 
 #include <format>
+#include <memory>
 #include <utility>
 
 namespace syncwingetlink
@@ -65,9 +66,9 @@ void validateCandidate(const RepairItem& candidate)
 }
 
 // Classifies a delete/create/verification failure, upgrading it to
-// InsufficientPermission when win32ErrorCode is access-denied or privilege-not-held.
-// Until #51 wires the real Developer Mode/elevation queries into production operations,
-// both states report Unknown here rather than being guessed.
+// InsufficientPermission when win32ErrorCode is access-denied or privilege-not-held, and
+// querying the Developer Mode/elevation state at that point - never inferred from the
+// failure itself, and never queried for an unrelated failure kind.
 [[nodiscard]] SymlinkServiceError buildError(SymlinkServiceErrorKind kind, std::string operation,
                                              const std::filesystem::path& path,
                                              std::uint32_t win32ErrorCode,
@@ -87,12 +88,73 @@ void validateCandidate(const RepairItem& candidate)
     return SymlinkServiceError(kind, std::move(operation), path, win32ErrorCode);
 }
 
-// Builds the production SymlinkServiceOperations around the real Win32 APIs and
-// inspectLink(). Both Win32-facing paths are normalized through
-// paths::toExtendedLengthPath() before the call, matching LinkInspector.cpp's own
-// convention. queryDeveloperMode/queryElevation are placeholders until #51 adds the real
-// registry and process-token queries - reporting Unknown unconditionally is honest,
-// whereas guessing a state this code has not actually queried would not be.
+// Windows Developer Mode is recorded as a DWORD value under this documented machine-wide
+// registry key - the same setting the Settings app's "Developer Mode" toggle writes.
+// [[nodiscard]] queryDeveloperModeFromRegistry() below is the only reader; no other code
+// path infers this state.
+constexpr wchar_t kDeveloperModeKeyPath[] =
+    LR"(SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock)";
+constexpr wchar_t kDeveloperModeValueName[] = L"AllowDevelopmentWithoutDevLicense";
+
+[[nodiscard]] DeveloperModeState classifyDeveloperMode(bool querySucceeded,
+                                                       DWORD allowDevelopmentValue)
+{
+    if (!querySucceeded)
+    {
+        return DeveloperModeState::Unknown;
+    }
+    return allowDevelopmentValue == 1 ? DeveloperModeState::Enabled
+                                      : DeveloperModeState::Disabled;
+}
+
+// Reads Developer Mode from the registry. Any failure - the key or value is absent, or
+// RegGetValueW fails for another reason - reports Unknown rather than Disabled: an
+// unreadable setting is not the same claim as a setting confirmed off.
+[[nodiscard]] DeveloperModeState queryDeveloperModeFromRegistry()
+{
+    DWORD value = 0;
+    DWORD valueSize = sizeof(value);
+    const LSTATUS status =
+        ::RegGetValueW(HKEY_LOCAL_MACHINE, kDeveloperModeKeyPath, kDeveloperModeValueName,
+                       RRF_RT_REG_DWORD, nullptr, &value, &valueSize);
+    return classifyDeveloperMode(status == ERROR_SUCCESS, value);
+}
+
+[[nodiscard]] ElevationState classifyElevation(bool querySucceeded, bool tokenIsElevated)
+{
+    if (!querySucceeded)
+    {
+        return ElevationState::Unknown;
+    }
+    return tokenIsElevated ? ElevationState::Elevated : ElevationState::NotElevated;
+}
+
+// Reads the current process token's elevation state via OpenProcessToken +
+// GetTokenInformation(TokenElevation). Either call failing reports Unknown rather than
+// guessing NotElevated - the same "do not infer" rule as the Developer Mode query above.
+[[nodiscard]] ElevationState queryElevationFromProcessToken()
+{
+    HANDLE rawToken = nullptr;
+    if (!::OpenProcessToken(::GetCurrentProcess(), TOKEN_QUERY, &rawToken))
+    {
+        return ElevationState::Unknown;
+    }
+    const std::unique_ptr<void, decltype(&::CloseHandle)> token(rawToken, &::CloseHandle);
+
+    TOKEN_ELEVATION elevation{};
+    DWORD returnedSize = 0;
+    if (!::GetTokenInformation(token.get(), TokenElevation, &elevation, sizeof(elevation),
+                               &returnedSize))
+    {
+        return ElevationState::Unknown;
+    }
+    return classifyElevation(true, elevation.TokenIsElevated != 0);
+}
+
+// Builds the production SymlinkServiceOperations around the real Win32 APIs,
+// inspectLink(), and the Developer Mode/process-token queries above. Both Win32-facing
+// paths are normalized through paths::toExtendedLengthPath() before the call, matching
+// LinkInspector.cpp's own convention.
 [[nodiscard]] SymlinkServiceOperations makeProductionOperations()
 {
     SymlinkServiceOperations operations;
@@ -119,8 +181,8 @@ void validateCandidate(const RepairItem& candidate)
         }
         return ::GetLastError();
     };
-    operations.queryDeveloperMode = [] { return DeveloperModeState::Unknown; };
-    operations.queryElevation = [] { return ElevationState::Unknown; };
+    operations.queryDeveloperMode = &queryDeveloperModeFromRegistry;
+    operations.queryElevation = &queryElevationFromProcessToken;
     return operations;
 }
 } // namespace

@@ -98,3 +98,71 @@ This file continues the chronological record in [`adr-phase-3.md`](./adr-phase-3
   replacing the `Unknown`-only placeholders this ADR describes.
 - #52 proves `DryRun` invokes zero mutation/permission-query callbacks across all four
   states and finalizes `docs/PLAN.md`/`docs/TODO.md`/`docs/task.md` for M5.
+
+---
+
+## ADR-0019 — Developer Mode and elevation queries: registry/token source, and the exit-code boundary M5 does not own
+
+- **Date**: 2026-07-29
+- **Affected**: `core/SymlinkService`, `docs/TODO.md` M6 (forward reference only)
+- **Status**: Accepted
+
+### Decision
+
+1. **Developer Mode** is read from
+   `HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock`, value
+   `AllowDevelopmentWithoutDevLicense`, via `RegGetValueW`. Value `1` is `Enabled`; any
+   other successfully-read value is `Disabled`; **any** read failure - including the
+   ordinary case of the key or value never having been created, which is exactly what an
+   unmodified installation looks like - is `Unknown`, never `Disabled`. Confirmed against
+   this development host, where the key does not exist and the query correctly reports
+   `Unknown` (see `tests/SymlinkServiceTests.cpp`'s
+   `productionPermissionQueriesReflectRealHostStateOnAGenuineFailure`, which logs this
+   rather than asserting a fixed value for exactly that reason).
+2. **Elevation** is read via `OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, ...)` +
+   `GetTokenInformation(TokenElevation, ...)`. Unlike the registry read, this has no
+   legitimate reason to fail for the current process, so the same test asserts it is never
+   `Unknown` in practice, while still coding the `Unknown` fallback for defensiveness if
+   either Win32 call ever does fail.
+3. **Both queries are invoked only from `buildError()`**, at the moment a
+   `DeleteFileW`/`CreateSymbolicLinkW` failure is already known to be
+   `ERROR_ACCESS_DENIED` or `ERROR_PRIVILEGE_NOT_HELD` - never speculatively, and never to
+   pre-empt or explain a failure that turns out to be something else.
+4. **M5 still returns no process exit code.** This ADR documents the query
+   implementation only. The mapping from `SymlinkServiceErrorKind::InsufficientPermission`
+   to exit code 2, other per-item failures to the partial-failure exit code 10, and the
+   four `(elevation, developerMode)` guidance messages the Wiki plan lists remain M6's
+   responsibility, consuming `SymlinkServiceError::developerModeState()`/`elevationState()`
+   as-is.
+
+### Reason
+
+- The registry key location is Microsoft's documented mechanism for Developer Mode and is
+  the same setting the Settings app's toggle writes; no undocumented or reverse-engineered
+  state is relied upon.
+- Treating an absent registry value as `Unknown` rather than `Disabled` matters
+  operationally: M6's guidance text for "non-elevated + Developer Mode disabled" (enable
+  Developer Mode or run elevated) differs from "non-elevated + Developer Mode unknown"
+  (check Developer Mode or run elevated) per the Wiki plan - collapsing "never configured"
+  into "confirmed off" would overstate what was actually observed.
+- Deriving the classification logic as two small, injectable-independent pure functions
+  (`classifyDeveloperMode`/`classifyElevation` in `SymlinkService.cpp`'s anonymous
+  namespace) keeps the Win32-calling wrappers thin, though the primary test coverage for
+  the classification itself runs through the `SymlinkServiceOperations` seam (the
+  3x3 matrix in `tests/SymlinkServiceTests.cpp`) rather than by exposing these two
+  functions directly - consistent with the seam being the one documented, public way to
+  test `SymlinkService` deterministically.
+
+### Consequences
+
+- `core/SymlinkService.cpp`'s `makeProductionOperations()` now wires
+  `queryDeveloperModeFromRegistry` and `queryElevationFromProcessToken` in place of the
+  `Unknown`-only placeholders #49 shipped.
+- `tests/SymlinkServiceTests.cpp` gains the full 3x3 `DeveloperModeState` x
+  `ElevationState` matrix (via the operations seam), confirmation that unrelated failures
+  never query permission state at all, and one filesystem-backed test exercising the real
+  registry/token code paths against this host's actual (non-elevated, no Developer Mode)
+  state.
+- M6, when it exists, is responsible for the exit-code mapping and guidance text; this ADR
+  only guarantees the state values it will consume are accurate and honestly `Unknown`
+  where genuinely unknown.

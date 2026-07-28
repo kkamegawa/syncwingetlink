@@ -1149,3 +1149,46 @@ closes the milestone's work log.
 - `Debug|ARM64`/`Release|ARM64`: cross-built, not run (this machine is x64).
 - No dependency added.
 
+## 2026-07-29 — SymlinkService: diagnose Developer Mode/elevation permission failures (issue #51)
+
+**Trigger**: issue #7 (M5 milestone), sub-issue #51, stacked on #50 (PR #102). Branch
+`feature/51-diagnose-symlink-permissions`.
+
+### Completed
+
+- `src/core/SymlinkService.cpp`: `queryDeveloperModeFromRegistry()` (`RegGetValueW` against
+  `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock\AllowDevelopmentWithoutDevLicense`)
+  and `queryElevationFromProcessToken()` (`OpenProcessToken` + `GetTokenInformation
+  (TokenElevation)`), each backed by a small pure classifier
+  (`classifyDeveloperMode`/`classifyElevation`). Wired into `makeProductionOperations()` in
+  place of the `Unknown`-only placeholders #49 shipped. Any query failure - including the
+  ordinary case of the Developer Mode registry key never having been created - reports
+  `Unknown` rather than being guessed.
+- `docs/adr-phase-4.md` ADR-0019: records the registry/token source, why an absent
+  registry value is `Unknown` rather than `Disabled`, and the exit-code boundary this
+  milestone still does not own (M6's responsibility).
+- Tests (`tests/SymlinkServiceTests.cpp`): the full 3x3 `DeveloperModeState` x
+  `ElevationState` matrix carried unchanged through `InsufficientPermission`
+  classification via the operations seam; confirmation that unrelated `CreateFailed` and
+  `VerificationFailed` failures never invoke either query; and a filesystem-backed test
+  exercising the real registry/token queries against this host's actual state - confirmed
+  Developer Mode correctly reports `Unknown` here (the registry key does not exist) while
+  elevation reliably reports a real (non-`Unknown`) value.
+
+### Deliberately not done
+
+- No process exit code is returned by M5 - the `InsufficientPermission` -> exit code 2
+  mapping and the four elevation/Developer-Mode guidance messages the Wiki plan
+  describes remain M6's responsibility, as ADR-0019 states explicitly.
+- Dry-run completeness proof and `docs/PLAN.md`/`docs/TODO.md`/`docs/task.md`
+  finalization (#52).
+
+### Verified
+
+- `Debug|x64`, `Release|x64`, `Debug|ARM64`, `Release|ARM64`: core + tests build clean at
+  `/W4 /WX`, no new warnings.
+- `vstest.console.exe /Platform:x64`: 210/210 passed in both `Debug|x64` and `Release|x64`
+  (up from 206 before this issue).
+- `Debug|ARM64`/`Release|ARM64`: cross-built, not run (this machine is x64).
+- No dependency added.
+
