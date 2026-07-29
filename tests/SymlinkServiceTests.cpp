@@ -157,6 +157,19 @@ public:
         Assert::AreEqual(0, fake.createCalls);
     }
 
+    // The same contract violation must be rejected in DryRun too - it must not be
+    // reported as WouldReplaceBroken just because DryRun never mutates anything.
+    TEST_METHOD(brokenStatusWithNonSymlinkEntryKindThrowsInvalidArgumentInDryRunToo)
+    {
+        const RepairItem candidate = makeCandidate(LinkStatus::Missing);
+        FakeOperations fake;
+        fake.inspectResults = {makeCandidate(LinkStatus::Broken, LinkEntryKind::RegularFile)};
+
+        Assert::ExpectException<std::invalid_argument>([&] {
+            (void)repairLink(candidate, RepairMode::DryRun, fake.toOperations());
+        });
+    }
+
     // --- Missing: create ---
 
     TEST_METHOD(missingExecuteCreatesAndVerifies)
@@ -671,6 +684,13 @@ public:
         }
         catch (const SymlinkServiceError& error)
         {
+            if (error.kind() != SymlinkServiceErrorKind::InsufficientPermission)
+            {
+                // Any other kind is a genuine regression (disk full, invalid parameter,
+                // ...), not the expected "no symlink privilege here" gap - let it fail
+                // the test rather than being swallowed into a false-green skip.
+                throw;
+            }
             // CppUnitTestFramework (native C++ MSTest) has no Assert::Inconclusive -
             // logging and returning is the closest equivalent: the test stays green
             // here and exercises this branch for real wherever symlink privilege is
@@ -679,8 +699,6 @@ public:
             Logger::WriteMessage(
                 L"Skipped: symbolic link creation needs Developer Mode or elevation, "
                 L"neither of which is available here.\n");
-            Assert::IsTrue(error.kind() == SymlinkServiceErrorKind::CreateFailed ||
-                          error.kind() == SymlinkServiceErrorKind::InsufficientPermission);
         }
     }
 
