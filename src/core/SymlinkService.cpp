@@ -144,8 +144,12 @@ constexpr wchar_t kDeveloperModeValueName[] = L"AllowDevelopmentWithoutDevLicens
     TOKEN_ELEVATION elevation{};
     DWORD returnedSize = 0;
     if (!::GetTokenInformation(token.get(), TokenElevation, &elevation, sizeof(elevation),
-                               &returnedSize))
+                               &returnedSize) ||
+        returnedSize != sizeof(elevation))
     {
+        // A successful call that returns an unexpected size would mean elevation was
+        // only partially filled in - treat that exactly like a failed call rather than
+        // trusting a possibly-incomplete TokenIsElevated value.
         return ElevationState::Unknown;
     }
     return classifyElevation(true, elevation.TokenIsElevated != 0);
@@ -226,6 +230,15 @@ SymlinkRepairResult repairLink(const RepairItem& candidate, RepairMode mode,
     const RepairItem fresh =
         operations.inspect(candidate.executable, candidate.alias, candidate.linkPath);
 
+    // Checked before the mode branch below, not just inside the Execute/Broken case: an
+    // invalid observation is a programming-contract violation regardless of which mode
+    // the caller asked for, and DryRun must not silently report WouldReplaceBroken for a
+    // fresh state inspectLink() should never actually produce.
+    if (fresh.status == LinkStatus::Broken && fresh.entryKind != LinkEntryKind::SymbolicLink)
+    {
+        rejectCandidate("a Broken fresh status requires a symbolic-link entry kind");
+    }
+
     if (mode == RepairMode::DryRun)
     {
         return SymlinkRepairResult{fresh, dryRunOutcomeFor(fresh.status), std::nullopt};
@@ -241,10 +254,6 @@ SymlinkRepairResult repairLink(const RepairItem& candidate, RepairMode mode,
     }
     if (fresh.status == LinkStatus::Broken)
     {
-        if (fresh.entryKind != LinkEntryKind::SymbolicLink)
-        {
-            rejectCandidate("a Broken fresh status requires a symbolic-link entry kind");
-        }
         const std::uint32_t deleteError = operations.deleteEntry(fresh.linkPath);
         if (deleteError != 0)
         {
