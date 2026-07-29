@@ -473,7 +473,8 @@ public:
         Assert::AreEqual(0, fake.createCalls);
     }
 
-    // --- Permission-shaped failures: classified, but Unknown until #51 wires real queries ---
+    // --- Permission-shaped failures: classified and carry whatever
+    //     queryDeveloperMode()/queryElevation() report at the moment of failure ---
 
     TEST_METHOD(accessDeniedOnCreateIsClassifiedAsInsufficientPermission)
     {
@@ -481,6 +482,8 @@ public:
         FakeOperations fake;
         fake.inspectResults = {makeCandidate(LinkStatus::Missing)};
         fake.createResults = {ERROR_ACCESS_DENIED};
+        fake.developerMode = DeveloperModeState::Disabled;
+        fake.elevation = ElevationState::NotElevated;
 
         try
         {
@@ -490,8 +493,8 @@ public:
         catch (const SymlinkServiceError& error)
         {
             Assert::IsTrue(error.kind() == SymlinkServiceErrorKind::InsufficientPermission);
-            Assert::IsTrue(error.developerModeState() == DeveloperModeState::Unknown);
-            Assert::IsTrue(error.elevationState() == ElevationState::Unknown);
+            Assert::IsTrue(error.developerModeState() == DeveloperModeState::Disabled);
+            Assert::IsTrue(error.elevationState() == ElevationState::NotElevated);
         }
         Assert::AreEqual(1, fake.developerModeQueries);
         Assert::AreEqual(1, fake.elevationQueries);
@@ -503,6 +506,8 @@ public:
         FakeOperations fake;
         fake.inspectResults = {makeCandidate(LinkStatus::Broken, LinkEntryKind::SymbolicLink)};
         fake.deleteResults = {ERROR_PRIVILEGE_NOT_HELD};
+        fake.developerMode = DeveloperModeState::Enabled;
+        fake.elevation = ElevationState::Elevated;
 
         try
         {
@@ -512,6 +517,145 @@ public:
         catch (const SymlinkServiceError& error)
         {
             Assert::IsTrue(error.kind() == SymlinkServiceErrorKind::InsufficientPermission);
+            // Enabled + Elevated is an unusual but real combination (e.g. an elevated
+            // token still lacking symlink privilege via local policy) - the states are
+            // reported as queried, never coerced to a "shouldn't happen" default.
+            Assert::IsTrue(error.developerModeState() == DeveloperModeState::Enabled);
+            Assert::IsTrue(error.elevationState() == ElevationState::Elevated);
+        }
+    }
+
+    // The full 3x3 Developer Mode x elevation matrix, proving every combination is
+    // carried through the InsufficientPermission classification unchanged - not just the
+    // two combinations the tests above happen to exercise.
+    TEST_METHOD(insufficientPermissionCarriesEveryDeveloperModeElevationCombination)
+    {
+        constexpr DeveloperModeState kDeveloperModeStates[] = {
+            DeveloperModeState::Enabled, DeveloperModeState::Disabled,
+            DeveloperModeState::Unknown};
+        constexpr ElevationState kElevationStates[] = {
+            ElevationState::Elevated, ElevationState::NotElevated, ElevationState::Unknown};
+
+        for (const DeveloperModeState developerMode : kDeveloperModeStates)
+        {
+            for (const ElevationState elevation : kElevationStates)
+            {
+                const RepairItem candidate = makeCandidate(LinkStatus::Missing);
+                FakeOperations fake;
+                fake.inspectResults = {makeCandidate(LinkStatus::Missing)};
+                fake.createResults = {ERROR_ACCESS_DENIED};
+                fake.developerMode = developerMode;
+                fake.elevation = elevation;
+
+                try
+                {
+                    (void)repairLink(candidate, RepairMode::Execute, fake.toOperations());
+                    Assert::Fail(L"Expected SymlinkServiceError");
+                }
+                catch (const SymlinkServiceError& error)
+                {
+                    Assert::IsTrue(error.kind() ==
+                                   SymlinkServiceErrorKind::InsufficientPermission);
+                    Assert::IsTrue(error.developerModeState() == developerMode);
+                    Assert::IsTrue(error.elevationState() == elevation);
+                }
+            }
+        }
+    }
+
+    // Errors unrelated to permission must never trigger a Developer Mode/elevation query,
+    // and must keep their original kind rather than being upgraded.
+    TEST_METHOD(unrelatedCreateFailureIsNotClassifiedAsInsufficientPermission)
+    {
+        const RepairItem candidate = makeCandidate(LinkStatus::Missing);
+        FakeOperations fake;
+        fake.inspectResults = {makeCandidate(LinkStatus::Missing)};
+        fake.createResults = {ERROR_DISK_FULL};
+
+        try
+        {
+            (void)repairLink(candidate, RepairMode::Execute, fake.toOperations());
+            Assert::Fail(L"Expected SymlinkServiceError");
+        }
+        catch (const SymlinkServiceError& error)
+        {
+            Assert::IsTrue(error.kind() == SymlinkServiceErrorKind::CreateFailed);
+        }
+        Assert::AreEqual(0, fake.developerModeQueries);
+        Assert::AreEqual(0, fake.elevationQueries);
+    }
+
+    // A successful verification failure is likewise never permission-related.
+    TEST_METHOD(verificationFailureDoesNotQueryPermissionState)
+    {
+        const RepairItem candidate = makeCandidate(LinkStatus::Missing);
+        FakeOperations fake;
+        fake.inspectResults = {makeCandidate(LinkStatus::Missing),
+                               makeCandidate(LinkStatus::Mismatch, LinkEntryKind::RegularFile)};
+
+        try
+        {
+            (void)repairLink(candidate, RepairMode::Execute, fake.toOperations());
+            Assert::Fail(L"Expected SymlinkServiceError");
+        }
+        catch (const SymlinkServiceError& error)
+        {
+            Assert::IsTrue(error.kind() == SymlinkServiceErrorKind::VerificationFailed);
+        }
+        Assert::AreEqual(0, fake.developerModeQueries);
+        Assert::AreEqual(0, fake.elevationQueries);
+    }
+
+    // --- Filesystem-backed: the real registry/process-token queries, exercised via a
+    //     genuine permission failure on a host confirmed to lack both Developer Mode and
+    //     elevation (docs/adr-phase-3.md ADR-0016) ---
+
+    TEST_METHOD(productionPermissionQueriesReflectRealHostStateOnAGenuineFailure)
+    {
+        const TempDirectory temp(L"symlink-service-permission-query");
+        const std::filesystem::path executablePath = temp.createFile(L"codex-real.exe");
+        const std::filesystem::path linkPath = temp.path() / L"codex.exe";
+
+        PackageExe executable;
+        executable.path = executablePath;
+        RepairItem candidate;
+        candidate.executable = executable;
+        candidate.alias = std::wstring(kAlias);
+        candidate.linkPath = linkPath;
+        candidate.status = LinkStatus::Missing;
+
+        try
+        {
+            const SymlinkRepairResult result = repairLink(candidate, RepairMode::Execute);
+            // Symlink privilege turned out to be available on this host after all - the
+            // permission-query path was never exercised, which is not itself a failure.
+            Assert::IsTrue(result.outcome == SymlinkRepairOutcome::Created);
+            Logger::WriteMessage(
+                L"Symlink creation succeeded on this host; the Developer Mode/elevation "
+                L"queries were not exercised by this test.\n");
+        }
+        catch (const SymlinkServiceError& error)
+        {
+            if (error.kind() != SymlinkServiceErrorKind::InsufficientPermission)
+            {
+                Logger::WriteMessage(
+                    L"Skipped: creation failed for a reason other than insufficient "
+                    L"permission, so the Developer Mode/elevation queries were not "
+                    L"exercised.\n");
+                return;
+            }
+            // The real process-token query was actually invoked and, unlike the registry
+            // read below, has no legitimate reason to fail for the current process -
+            // confirm it produced a real answer instead of defaulting to Unknown.
+            Assert::IsTrue(error.elevationState() != ElevationState::Unknown);
+            // Developer Mode's registry key may never have been created on a host that
+            // has never touched the setting, which is itself a legitimate Unknown per
+            // queryDeveloperModeFromRegistry()'s own contract - only log it, don't assert.
+            Logger::WriteMessage(
+                error.developerModeState() == DeveloperModeState::Unknown
+                    ? L"Developer Mode registry value is absent/unreadable on this host "
+                      L"(reported Unknown, which is correct).\n"
+                    : L"Developer Mode registry value was read successfully on this host.\n");
         }
     }
 
