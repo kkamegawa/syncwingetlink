@@ -1104,3 +1104,48 @@ closes the milestone's work log.
 - `Debug|ARM64`/`Release|ARM64`: cross-built, not run (this machine is x64).
 - No dependency added.
 
+## 2026-07-29 — SymlinkService: replace broken links, stale-candidate hardening (issue #50)
+
+**Trigger**: issue #7 (M5 milestone), sub-issue #50, stacked on #49 (PR #101). Branch
+`feature/50-replace-broken-links`.
+
+### Completed
+
+- `tests/SymlinkServiceTests.cpp`: the dedicated `Broken`/replace regression depth the
+  Wiki plan's test plan calls for, on top of the delete-then-create mutation code #49
+  already implemented and covered at a baseline level:
+  - `staleBrokenCandidateNowOkIsSkippedWithoutMutation`,
+    `staleBrokenCandidateNowMissingCreatesRatherThanDeletes`, and
+    `staleBrokenCandidateNowMismatchIsRefusedWithoutMutation` - a candidate discovered as
+    `Broken` by an earlier scan whose fresh re-inspection now reports `Ok`, `Missing`, or
+    `Mismatch`. The `Missing` case specifically confirms `deleteEntry` is never called for
+    a link path that no longer has anything to delete.
+  - `productionRepairLinkReplacesARealBrokenLink`: a filesystem-backed test that builds a
+    real broken symbolic link (via `TempDirectory`'s existing `createFileSymlink()`),
+    calls the production `repairLink()` overload, and confirms both the returned
+    `ReplacedBroken` result and a fresh `inspectLink()` on disk report `Ok` with the
+    expected target - logging and skipping gracefully without symlink privilege, same as
+    #49's `productionRepairLinkCreatesARealMissingLink` (ADR-0016 precedent).
+
+### Deliberately not done
+
+- No production code changed - the delete-then-create mutation path, its operation
+  ordering, and its delete-failure propagation were already implemented and covered by
+  #49's `brokenExecuteDeletesThenCreatesThenVerifies`,
+  `brokenDryRunReportsWouldReplaceBrokenWithoutMutation`, and
+  `deleteFailurePreventsCreationAndReportsDeleteFailed` (see `docs/adr-phase-4.md`
+  ADR-0018 for why the full state machine ships in #49 rather than split by fresh-state).
+  This issue adds the stale-candidate and real-filesystem depth the Wiki plan assigns to
+  it specifically.
+- Permission diagnosis (#51) and dry-run completeness proof / doc finalization (#52).
+
+### Verified
+
+- `Debug|x64`, `Release|x64`, `Debug|ARM64`, `Release|ARM64`: core + tests build clean at
+  `/W4 /WX`, no new warnings.
+- `vstest.console.exe /Platform:x64`: 206/206 passed in both `Debug|x64` and `Release|x64`
+  (up from 202 before this issue). The two filesystem-backed symlink tests logged and
+  skipped - this machine has neither Developer Mode nor elevation.
+- `Debug|ARM64`/`Release|ARM64`: cross-built, not run (this machine is x64).
+- No dependency added.
+

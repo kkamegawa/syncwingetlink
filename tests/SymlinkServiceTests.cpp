@@ -416,6 +416,63 @@ public:
         Assert::AreEqual(0, fake.createCalls);
     }
 
+    // A candidate discovered as Broken by an earlier scan is exactly the case
+    // docs/adr-phase-4.md ADR-0018's re-inspection rule exists for: another process (or a
+    // prior repairLink() call in the same batch) may have already changed linkPath by the
+    // time fix actually runs. These three complete the coverage
+    // candidateStatusIsIgnoredInFavorOfFreshInspection started, one for each fresh state a
+    // stale Broken candidate could now resolve to.
+
+    TEST_METHOD(staleBrokenCandidateNowOkIsSkippedWithoutMutation)
+    {
+        const RepairItem candidate = makeCandidate(LinkStatus::Broken, LinkEntryKind::SymbolicLink);
+        FakeOperations fake;
+        fake.inspectResults = {makeCandidate(LinkStatus::Ok, LinkEntryKind::SymbolicLink)};
+
+        const SymlinkRepairResult result =
+            repairLink(candidate, RepairMode::Execute, fake.toOperations());
+
+        Assert::IsTrue(result.outcome == SymlinkRepairOutcome::SkippedOk);
+        Assert::AreEqual(0, fake.deleteCalls);
+        Assert::AreEqual(0, fake.createCalls);
+    }
+
+    TEST_METHOD(staleBrokenCandidateNowMissingCreatesRatherThanDeletes)
+    {
+        // The entry that used to be a broken symbolic link is gone entirely (e.g. another
+        // process cleaned it up) - this is Missing's create path, not Broken's
+        // delete-then-create, and must never call deleteEntry for a linkPath that no
+        // longer has anything to delete.
+        const RepairItem candidate = makeCandidate(LinkStatus::Broken, LinkEntryKind::SymbolicLink);
+        FakeOperations fake;
+        fake.inspectResults = {makeCandidate(LinkStatus::Missing),
+                               makeCandidate(LinkStatus::Ok, LinkEntryKind::SymbolicLink)};
+
+        const SymlinkRepairResult result =
+            repairLink(candidate, RepairMode::Execute, fake.toOperations());
+
+        Assert::IsTrue(result.outcome == SymlinkRepairOutcome::Created);
+        Assert::AreEqual(0, fake.deleteCalls);
+        Assert::AreEqual(1, fake.createCalls);
+    }
+
+    TEST_METHOD(staleBrokenCandidateNowMismatchIsRefusedWithoutMutation)
+    {
+        // The entry now resolves to a different existing file - Mismatch is never
+        // deleted, even though the candidate the caller supplied still says Broken.
+        const RepairItem candidate = makeCandidate(LinkStatus::Broken, LinkEntryKind::SymbolicLink);
+        FakeOperations fake;
+        fake.inspectResults = {
+            makeCandidate(LinkStatus::Mismatch, LinkEntryKind::SymbolicLink)};
+
+        const SymlinkRepairResult result =
+            repairLink(candidate, RepairMode::Execute, fake.toOperations());
+
+        Assert::IsTrue(result.outcome == SymlinkRepairOutcome::RefusedMismatch);
+        Assert::AreEqual(0, fake.deleteCalls);
+        Assert::AreEqual(0, fake.createCalls);
+    }
+
     // --- Permission-shaped failures: classified, but Unknown until #51 wires real queries ---
 
     TEST_METHOD(accessDeniedOnCreateIsClassifiedAsInsufficientPermission)
@@ -499,6 +556,47 @@ public:
                 L"Skipped: symbolic link creation needs Developer Mode or elevation, "
                 L"neither of which is available here.\n");
         }
+    }
+
+    TEST_METHOD(productionRepairLinkReplacesARealBrokenLink)
+    {
+        const TempDirectory temp(L"symlink-service-replace-broken");
+        const std::filesystem::path executablePath = temp.createFile(L"codex-real.exe");
+        const std::filesystem::path staleTarget = temp.path() / L"codex-old.exe";
+        const std::filesystem::path linkPath = temp.path() / L"codex.exe";
+
+        if (!createFileSymlink(staleTarget, linkPath))
+        {
+            // Same fallback as productionRepairLinkCreatesARealMissingLink above: this
+            // host has neither Developer Mode nor elevation, so even building the broken
+            // fixture itself is unavailable here.
+            Logger::WriteMessage(
+                L"Skipped: symbolic link creation needs Developer Mode or elevation, "
+                L"neither of which is available here.\n");
+            return;
+        }
+
+        PackageExe executable;
+        executable.path = executablePath;
+        RepairItem candidate;
+        candidate.executable = executable;
+        candidate.alias = std::wstring(kAlias);
+        candidate.linkPath = linkPath;
+        // Deliberately stale, per the re-inspection rule: repairLink() must arrive at
+        // Broken from its own fresh inspectLink() call, not from this field.
+        candidate.status = LinkStatus::Ok;
+
+        const SymlinkRepairResult result = repairLink(candidate, RepairMode::Execute);
+
+        Assert::IsTrue(result.outcome == SymlinkRepairOutcome::ReplacedBroken);
+        Assert::IsTrue(result.preActionItem.status == LinkStatus::Broken);
+        Assert::IsTrue(result.postActionItem.has_value());
+        Assert::IsTrue(result.postActionItem->status == LinkStatus::Ok);
+
+        const RepairItem reInspected = inspectLink(executable, std::wstring(kAlias), linkPath);
+        Assert::IsTrue(reInspected.status == LinkStatus::Ok);
+        Assert::IsTrue(reInspected.existingTarget.has_value());
+        Assert::AreEqual(executablePath.native(), reInspected.existingTarget->native());
     }
 };
 } // namespace syncwingetlink::tests
