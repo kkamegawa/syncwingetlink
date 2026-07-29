@@ -144,8 +144,12 @@ constexpr wchar_t kDeveloperModeValueName[] = L"AllowDevelopmentWithoutDevLicens
     TOKEN_ELEVATION elevation{};
     DWORD returnedSize = 0;
     if (!::GetTokenInformation(token.get(), TokenElevation, &elevation, sizeof(elevation),
-                               &returnedSize))
+                               &returnedSize) ||
+        returnedSize != sizeof(elevation))
     {
+        // A successful call that returns an unexpected size would mean elevation was
+        // only partially filled in - treat that exactly like a failed call rather than
+        // trusting a possibly-incomplete TokenIsElevated value.
         return ElevationState::Unknown;
     }
     return classifyElevation(true, elevation.TokenIsElevated != 0);
