@@ -197,13 +197,16 @@ syncwingetlink/
 5. **Plan generation**: list `Missing/Broken/Mismatch` as repair candidates.
 6. **Confirmation**: unless `--yes`, confirm one-by-one or in bulk (a checklist in TUI).
 7. **Execution**: implemented as `SymlinkService::repairLink()`; see `docs/adr-phase-4.md`
-   ADR-0018 for the authoritative state machine. Re-inspects each candidate immediately
-   before deciding anything - a candidate's status from step 5 is never trusted as
-   permission to mutate. Creates a missing link with `CreateSymbolicLinkW`; for a broken
-   link, deletes first, then recreates via the same creation step; a healthy or
-   mismatched entry is never touched. Every successful creation is re-verified by a
-   second inspection. With `--dry-run`, only the plan is reported (`WouldCreate` /
-   `WouldReplaceBroken`); delete, create, and verification are never invoked.
+   ADR-0018 for the authoritative state machine. Always re-inspects each candidate first -
+   a candidate's status from step 5 is never trusted as permission to mutate, so a stale
+   candidate can still resolve to `SkippedOk` or `RefusedMismatch` here even though step 5
+   only forwarded `Missing`/`Broken`/`Mismatch` candidates. From that fresh result: creates
+   a missing link with `CreateSymbolicLinkW`; for a broken link, deletes first, then
+   recreates via the same creation step; a healthy or mismatched entry is never touched.
+   Every successful creation is re-verified by a second, post-mutation inspection. With
+   `--dry-run`, the fresh re-inspection still runs and can report any of the four outcomes
+   (`WouldCreate`/`WouldReplaceBroken`/`SkippedOk`/`RefusedMismatch`), but delete, create,
+   and that post-mutation verification step are never invoked.
 8. **Result report**: summarize created/skipped/failed and reflect in the exit code.
 
 ## 7. Alias regex rules (key requirement)
