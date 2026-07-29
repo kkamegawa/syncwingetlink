@@ -53,6 +53,7 @@
     <ClCompile Include="core\PackageSourceError.cpp" />
     <ClCompile Include="core\PackageSourceFactory.cpp" />
     <ClCompile Include="core\Paths.cpp" />
+    <ClCompile Include="core\SymlinkService.cpp" />
     <ClCompile Include="core\WingetComSource.cpp" />
     <ClCompile Include="rules\DefaultRules.cpp" />
     <ClCompile Include="rules\RuleSet.cpp" />
@@ -70,6 +71,7 @@
     <ClInclude Include="core\PackageSourceError.h" />
     <ClInclude Include="core\PackageSourceFactory.h" />
     <ClInclude Include="core\Paths.h" />
+    <ClInclude Include="core\SymlinkService.h" />
     <ClInclude Include="core\WingetComSource.h" />
     <ClInclude Include="rules\DefaultRules.h" />
     <ClInclude Include="rules\RuleSet.h" />

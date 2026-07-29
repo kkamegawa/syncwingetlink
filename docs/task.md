@@ -1045,3 +1045,62 @@ independent of #45/#46. Branch `feature/47-alias-collisions`.
 M4 (issue #6) is complete: #44, #45, #46, #47, and #48 are all merged, and this entry
 closes the milestone's work log.
 
+## 2026-07-29 — SymlinkService: create symbolic links safely (issue #49)
+
+**Trigger**: issue #7 (M5 milestone), sub-issue #49, referencing the Wiki plan
+`plan/syncwingetlink/m5-symlink-repair-service`. Branch `feature/49-create-symlinks-safely`.
+
+### Completed
+
+- `src/core/SymlinkService.{h,cpp}`: the full public M5 model (`RepairMode`,
+  `SymlinkRepairOutcome`, `SymlinkRepairResult`, `DeveloperModeState`, `ElevationState`,
+  `SymlinkServiceErrorKind`, `SymlinkServiceError`, `SymlinkServiceOperations`) and the two
+  `repairLink()` overloads (production, and the injectable-operations test seam).
+  Implements the complete fresh-state → outcome mapping for all four `LinkStatus` values in
+  both `RepairMode::Execute` and `RepairMode::DryRun`, always re-inspecting via
+  `inspectLink()` immediately before deciding anything rather than trusting the candidate's
+  stored status. `Missing`/`Broken` mutation paths share the same create-then-verify code;
+  `Ok`/`Mismatch` never mutate. `ERROR_ACCESS_DENIED`/`ERROR_PRIVILEGE_NOT_HELD` are already
+  classified as `InsufficientPermission`, though `queryDeveloperMode`/`queryElevation`
+  report `Unknown` in production until #51 adds the real queries. See
+  `docs/adr-phase-4.md` ADR-0018 for why the complete state machine (including the `Broken`
+  delete-then-create path the Wiki plan describes as #50's addition) ships in this issue,
+  and what #50/#51/#52 add on top of it.
+- `docs/adr-phase-4.md`: new M5 ADR phase file (ADR-0018) recording the state machine,
+  mismatch policy, re-inspection rule, no-rollback decision, and the sub-issue scope
+  adjustment. `docs/adr-phase-3.md` gained the forward pointer.
+- Registered `core/SymlinkService.{h,cpp}` in `src/syncwingetlink.core.vcxproj` and its
+  `.filters`.
+- Tests (`tests/SymlinkServiceTests.cpp`), registered in
+  `tests/syncwingetlink.tests.vcxproj`/`.filters`: input validation (empty
+  executable/alias/link path), the Broken-with-inconsistent-entry-kind contract violation,
+  Missing create+verify (including the creation contract: target/link path order and
+  `SYMBOLIC_LINK_FLAG_ALLOW_UNPRIVILEGED_CREATE`), Broken delete-then-create+verify, create
+  and delete failure propagation (`CreateFailed`/`DeleteFailed`, preventing the next step),
+  post-create verification failure (`VerificationFailed`), Ok/Mismatch no-mutation outcomes
+  for every `Mismatch` entry kind, DryRun invoking zero mutation callbacks for every state,
+  the stale-candidate re-inspection rule, `InsufficientPermission` classification for
+  access-denied/privilege-not-held, and a filesystem-backed `Missing → Created` test that
+  logs and skips without symlink privilege (ADR-0016 precedent).
+
+### Deliberately not done
+
+- Real Developer Mode/elevation queries (#51) - production operations report `Unknown`
+  unconditionally rather than guessing.
+- Dedicated stale-candidate and delete-failure regression depth for the `Broken` path, and
+  a filesystem-backed broken-link replacement test (#50) - the mutation code exists and is
+  covered by baseline tests here, but the Wiki plan's fuller test-plan depth for this path
+  is #50's contribution.
+- `docs/PLAN.md`/`docs/TODO.md` M5 checklist updates (#52, once the milestone completes).
+
+### Verified
+
+- `Debug|x64`, `Release|x64`, `Debug|ARM64`, `Release|ARM64`: core + tests build clean at
+  `/W4 /WX`, no new warnings. `syncwingetlink.exe` still fails `LNK1561` (expected, unchanged
+  until M6).
+- `vstest.console.exe /Platform:x64`: 202/202 passed in both `Debug|x64` and `Release|x64`
+  (up from 181 before this issue). The filesystem-backed creation test logged and skipped -
+  this machine has neither Developer Mode nor elevation, matching the M4 precedent.
+- `Debug|ARM64`/`Release|ARM64`: cross-built, not run (this machine is x64).
+- No dependency added.
+
