@@ -196,8 +196,17 @@ syncwingetlink/
    - `Ok`: a symbolic link that resolves to the expected package executable
 5. **Plan generation**: list `Missing/Broken/Mismatch` as repair candidates.
 6. **Confirmation**: unless `--yes`, confirm one-by-one or in bulk (a checklist in TUI).
-7. **Execution**: create with `CreateSymbolicLinkW`. Delete broken links first, then
-   recreate. With `--dry-run`, show the plan only, no execution.
+7. **Execution**: implemented as `SymlinkService::repairLink()`; see `docs/adr-phase-4.md`
+   ADR-0018 for the authoritative state machine. Always re-inspects each candidate first -
+   a candidate's status from step 5 is never trusted as permission to mutate, so a stale
+   candidate can still resolve to `SkippedOk` or `RefusedMismatch` here even though step 5
+   only forwarded `Missing`/`Broken`/`Mismatch` candidates. From that fresh result: creates
+   a missing link with `CreateSymbolicLinkW`; for a broken link, deletes first, then
+   recreates via the same creation step; a healthy or mismatched entry is never touched.
+   Every successful creation is re-verified by a second, post-mutation inspection. With
+   `--dry-run`, the fresh re-inspection still runs and can report any of the four outcomes
+   (`WouldCreate`/`WouldReplaceBroken`/`SkippedOk`/`RefusedMismatch`), but delete, create,
+   and that post-mutation verification step are never invoked.
 8. **Result report**: summarize created/skipped/failed and reflect in the exit code.
 
 ## 7. Alias regex rules (key requirement)
@@ -327,7 +336,8 @@ an include match. See `docs/adr-phase-2.md` ADR-0010.
 - [ ] Regex rules derive `codex-x86_64-pc-windows-msvc.exe → codex.exe`.
 - [ ] `--tui` allows interactive checking and batch creation.
 - [ ] On Developer Mode off, states the permission error and returns exit code 2.
-- [ ] `AliasResolver` / `RuleSet` / `LinkInspector` have MSTest unit tests.
+- [ ] `AliasResolver` / `RuleSet` / `LinkInspector` / `SymlinkService` have MSTest unit
+      tests.
 - [ ] **All unit tests pass** — `vstest.console.exe` reports green. A successful build is
       not sufficient evidence.
 - [ ] **No dependency has a known vulnerability**; every dependency is MIT-compatible and

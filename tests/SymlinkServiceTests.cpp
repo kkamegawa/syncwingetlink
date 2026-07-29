@@ -399,6 +399,62 @@ public:
         Assert::AreEqual(0, fake.createCalls);
     }
 
+    TEST_METHOD(mismatchDryRunRefusesWithoutMutation)
+    {
+        const RepairItem candidate = makeCandidate(LinkStatus::Mismatch);
+        FakeOperations fake;
+        fake.inspectResults = {
+            makeCandidate(LinkStatus::Mismatch, LinkEntryKind::RegularFile)};
+
+        const SymlinkRepairResult result =
+            repairLink(candidate, RepairMode::DryRun, fake.toOperations());
+
+        Assert::IsTrue(result.outcome == SymlinkRepairOutcome::RefusedMismatch);
+        Assert::AreEqual(0, fake.deleteCalls);
+        Assert::AreEqual(0, fake.createCalls);
+    }
+
+    // Completes the DryRun proof the individual per-state tests above already started:
+    // one pass over all four fresh states confirming DryRun invokes none of
+    // deleteEntry/create/queryDeveloperMode/queryElevation - not just delete/create,
+    // which the per-state tests already checked, but the permission queries too, since
+    // DryRun never throws SymlinkServiceError and so never reaches buildError() at all.
+    TEST_METHOD(dryRunNeverInvokesAnyMutationOrPermissionQueryCallbackForAnyState)
+    {
+        struct Case
+        {
+            LinkStatus status;
+            LinkEntryKind entryKind;
+            SymlinkRepairOutcome expectedOutcome;
+        };
+        const Case cases[] = {
+            {LinkStatus::Missing, LinkEntryKind::None, SymlinkRepairOutcome::WouldCreate},
+            {LinkStatus::Broken, LinkEntryKind::SymbolicLink,
+             SymlinkRepairOutcome::WouldReplaceBroken},
+            {LinkStatus::Ok, LinkEntryKind::SymbolicLink, SymlinkRepairOutcome::SkippedOk},
+            {LinkStatus::Mismatch, LinkEntryKind::RegularFile,
+             SymlinkRepairOutcome::RefusedMismatch},
+        };
+
+        for (const Case& testCase : cases)
+        {
+            const RepairItem candidate = makeCandidate(testCase.status, testCase.entryKind);
+            FakeOperations fake;
+            fake.inspectResults = {makeCandidate(testCase.status, testCase.entryKind)};
+
+            const SymlinkRepairResult result =
+                repairLink(candidate, RepairMode::DryRun, fake.toOperations());
+
+            Assert::IsTrue(result.outcome == testCase.expectedOutcome);
+            Assert::IsFalse(result.postActionItem.has_value());
+            Assert::AreEqual(1, fake.inspectCalls);
+            Assert::AreEqual(0, fake.deleteCalls);
+            Assert::AreEqual(0, fake.createCalls);
+            Assert::AreEqual(0, fake.developerModeQueries);
+            Assert::AreEqual(0, fake.elevationQueries);
+        }
+    }
+
     // --- Stale candidate: repairLink always trusts the fresh inspection, not candidate ---
 
     TEST_METHOD(candidateStatusIsIgnoredInFavorOfFreshInspection)
@@ -741,6 +797,63 @@ public:
         Assert::IsTrue(reInspected.status == LinkStatus::Ok);
         Assert::IsTrue(reInspected.existingTarget.has_value());
         Assert::AreEqual(executablePath.native(), reInspected.existingTarget->native());
+    }
+
+    TEST_METHOD(productionDryRunLeavesARealMissingLinkUntouched)
+    {
+        const TempDirectory temp(L"symlink-service-dryrun-missing");
+        const std::filesystem::path executablePath = temp.createFile(L"codex-real.exe");
+        const std::filesystem::path linkPath = temp.path() / L"codex.exe";
+
+        PackageExe executable;
+        executable.path = executablePath;
+        RepairItem candidate;
+        candidate.executable = executable;
+        candidate.alias = std::wstring(kAlias);
+        candidate.linkPath = linkPath;
+        candidate.status = LinkStatus::Missing;
+
+        const SymlinkRepairResult result = repairLink(candidate, RepairMode::DryRun);
+
+        Assert::IsTrue(result.outcome == SymlinkRepairOutcome::WouldCreate);
+        Assert::IsFalse(result.postActionItem.has_value());
+        // No symlink privilege is needed to prove this - DryRun never calls
+        // CreateSymbolicLinkW at all, on any host.
+        Assert::IsFalse(std::filesystem::exists(linkPath));
+    }
+
+    TEST_METHOD(productionDryRunLeavesARealBrokenLinkUntouched)
+    {
+        const TempDirectory temp(L"symlink-service-dryrun-broken");
+        const std::filesystem::path executablePath = temp.createFile(L"codex-real.exe");
+        const std::filesystem::path staleTarget = temp.path() / L"codex-old.exe";
+        const std::filesystem::path linkPath = temp.path() / L"codex.exe";
+
+        if (!createFileSymlink(staleTarget, linkPath))
+        {
+            Logger::WriteMessage(
+                L"Skipped: symbolic link creation needs Developer Mode or elevation, "
+                L"neither of which is available here.\n");
+            return;
+        }
+
+        PackageExe executable;
+        executable.path = executablePath;
+        RepairItem candidate;
+        candidate.executable = executable;
+        candidate.alias = std::wstring(kAlias);
+        candidate.linkPath = linkPath;
+        candidate.status = LinkStatus::Broken;
+
+        const SymlinkRepairResult result = repairLink(candidate, RepairMode::DryRun);
+
+        Assert::IsTrue(result.outcome == SymlinkRepairOutcome::WouldReplaceBroken);
+        // The link must still exist, still be broken, and still point at the original
+        // stale target - DryRun never called deleteEntry or create.
+        const RepairItem reInspected = inspectLink(executable, std::wstring(kAlias), linkPath);
+        Assert::IsTrue(reInspected.status == LinkStatus::Broken);
+        Assert::IsTrue(reInspected.existingTarget.has_value());
+        Assert::AreEqual(staleTarget.native(), reInspected.existingTarget->native());
     }
 };
 } // namespace syncwingetlink::tests

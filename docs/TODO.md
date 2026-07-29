@@ -117,11 +117,18 @@ Build system decisions are recorded in [`adr.md`](./adr.md) (ADR-0001 … ADR-00
       unavailable (ADR-0016) rather than being omitted
 
 ## M5. Symlink creation service
-- [ ] `core/SymlinkService`: `CreateSymbolicLinkW`
-      + `SYMBOLIC_LINK_FLAG_ALLOW_UNPRIVILEGED_CREATE`
-- [ ] Delete broken links then recreate
-- [ ] Permission/Developer Mode detection and distinction (exit code 2 + guidance on failure)
-- [ ] `--dry-run` outputs the plan with no side effects
+> The service boundary, error model, and re-inspection/no-rollback rules are recorded in
+> `docs/adr-phase-4.md` ADR-0018; the permission-query source and the exit-code boundary
+> M5 does not own are in ADR-0019.
+- [x] `core/SymlinkService`: `CreateSymbolicLinkW`
+      + `SYMBOLIC_LINK_FLAG_ALLOW_UNPRIVILEGED_CREATE` (#49)
+- [x] Delete broken links then recreate (#49, hardened with stale-candidate and
+      real-filesystem regression coverage in #50)
+- [x] Permission/Developer Mode detection and distinction - `SymlinkServiceError` carries
+      the state; mapping to exit code 2 and rendering guidance text is M6's job (#51)
+- [x] `--dry-run` outputs the plan with no side effects - proven with zero
+      delete/create/permission-query callbacks invoked across every state, including two
+      filesystem-backed checks (#52)
 
 ## M6. CLI
 - [ ] `cli/ArgParser`: `scan`/`fix`/`test-rule` and each option
