@@ -1192,3 +1192,65 @@ closes the milestone's work log.
 - `Debug|ARM64`/`Release|ARM64`: cross-built, not run (this machine is x64).
 - No dependency added.
 
+## 2026-07-29 — SymlinkService: side-effect-free dry runs, and closing M5 (issue #52)
+
+**Trigger**: issue #7 (M5 milestone), sub-issue #52, stacked on #51 (PR #103), referencing
+the Wiki plan `plan/syncwingetlink/m5-symlink-repair-service`. Branch
+`feature/52-side-effect-free-dry-run`.
+
+### Completed
+
+- Tests (`tests/SymlinkServiceTests.cpp`): completed the `DryRun` completeness proof the
+  per-state tests from #49/#50 already partially covered:
+  - `mismatchDryRunRefusesWithoutMutation` fills the one remaining state/mode combination
+    that had no explicit `DryRun` test.
+  - `dryRunNeverInvokesAnyMutationOrPermissionQueryCallbackForAnyState` loops all four
+    fresh states and confirms zero calls to `deleteEntry`, `create`,
+    `queryDeveloperMode`, and `queryElevation` - the permission-query check matters
+    because `DryRun` never throws `SymlinkServiceError` and so never reaches
+    `buildError()`, which the per-state tests alone did not make explicit.
+  - `productionDryRunLeavesARealMissingLinkUntouched` and
+    `productionDryRunLeavesARealBrokenLinkUntouched`: filesystem-backed proof against the
+    production `repairLink()` overload - a real temp-directory `Missing` path stays
+    absent, and a real broken symbolic link (via `createFileSymlink()`) keeps its
+    original stale target, confirmed by a fresh `inspectLink()` after the `DryRun` call.
+    The `Missing` case needs no symlink privilege at all (`DryRun` never calls
+    `CreateSymbolicLinkW`); the `Broken` case logs and skips gracefully without it, same
+    as the other filesystem-backed tests in this file.
+- `docs/PLAN.md` §6 step 7: replaced the generic "create with `CreateSymbolicLinkW`...
+  recreate" sentence with the actual `SymlinkService::repairLink()` contract (re-inspect
+  first, shared create-then-verify path, no mutation in `DryRun`), pointing at
+  `docs/adr-phase-4.md` ADR-0018 - matching how step 4 already points at `LinkInspector`'s
+  ADR. §11's Definition of Done gained `SymlinkService` alongside
+  `AliasResolver`/`RuleSet`/`LinkInspector` in the MSTest-coverage item, since it is now a
+  core module with the same testing obligation.
+- `docs/TODO.md` M5: checked off all four items, each pointing at the sub-issue(s) that
+  completed it, with a pointer to `docs/adr-phase-4.md` ADR-0018/ADR-0019 at the section
+  header, matching the M4 closing entry's style.
+
+### Deliberately not done
+
+- `docs/PLAN_ja.md` and `docs/TODO_ja.md` were not touched - Japanese translations,
+  per `AGENTS.md`'s language policy.
+- No CLI/TUI wiring (`--dry-run` as an actual flag, exit code 2 mapping, confirmation
+  prompts, batch continuation) - all M6/M7 scope, unchanged by this issue.
+- `docs/PLAN.md` §11's `--dry-run outputs the plan with no side effects` checkbox stays
+  unchecked: it describes end-user CLI behavior, which does not exist until M6 wires a
+  `--dry-run` flag to `RepairMode::DryRun`.
+
+### Verified
+
+- `Debug|x64`, `Release|x64`, `Debug|ARM64`, `Release|ARM64`: core + tests build clean at
+  `/W4 /WX`, no new warnings.
+- `vstest.console.exe /Platform:x64`: 214/214 passed in both `Debug|x64` and `Release|x64`
+  (up from 210 before this issue).
+- `Debug|ARM64`/`Release|ARM64`: cross-built, not run (this machine is x64).
+- No dependency added.
+- No `*_ja.md` file was read or changed.
+
+M5 (issue #7) is complete: #49, #50, #51, and #52 are all opened as pull requests
+(#101-#103, this issue's PR pending) against a stacked branch chain rooted at `main`,
+matching the M4 delivery pattern. `docs/PLAN.md`, `docs/TODO.md`, `docs/adr-phase-4.md`,
+and the Wiki plan agree. Merging is left to the repository maintainer per session
+agreement, rather than self-merged as M2-M4 were.
+

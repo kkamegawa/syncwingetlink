@@ -196,8 +196,14 @@ syncwingetlink/
    - `Ok`: a symbolic link that resolves to the expected package executable
 5. **Plan generation**: list `Missing/Broken/Mismatch` as repair candidates.
 6. **Confirmation**: unless `--yes`, confirm one-by-one or in bulk (a checklist in TUI).
-7. **Execution**: create with `CreateSymbolicLinkW`. Delete broken links first, then
-   recreate. With `--dry-run`, show the plan only, no execution.
+7. **Execution**: implemented as `SymlinkService::repairLink()`; see `docs/adr-phase-4.md`
+   ADR-0018 for the authoritative state machine. Re-inspects each candidate immediately
+   before deciding anything - a candidate's status from step 5 is never trusted as
+   permission to mutate. Creates a missing link with `CreateSymbolicLinkW`; for a broken
+   link, deletes first, then recreates via the same creation step; a healthy or
+   mismatched entry is never touched. Every successful creation is re-verified by a
+   second inspection. With `--dry-run`, only the plan is reported (`WouldCreate` /
+   `WouldReplaceBroken`); delete, create, and verification are never invoked.
 8. **Result report**: summarize created/skipped/failed and reflect in the exit code.
 
 ## 7. Alias regex rules (key requirement)
@@ -327,7 +333,8 @@ an include match. See `docs/adr-phase-2.md` ADR-0010.
 - [ ] Regex rules derive `codex-x86_64-pc-windows-msvc.exe → codex.exe`.
 - [ ] `--tui` allows interactive checking and batch creation.
 - [ ] On Developer Mode off, states the permission error and returns exit code 2.
-- [ ] `AliasResolver` / `RuleSet` / `LinkInspector` have MSTest unit tests.
+- [ ] `AliasResolver` / `RuleSet` / `LinkInspector` / `SymlinkService` have MSTest unit
+      tests.
 - [ ] **All unit tests pass** — `vstest.console.exe` reports green. A successful build is
       not sufficient evidence.
 - [ ] **No dependency has a known vulnerability**; every dependency is MIT-compatible and
