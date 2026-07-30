@@ -3,6 +3,9 @@
 #include <CppUnitTest.h>
 
 #include <cli/Dispatch.h>
+#include <cli/Version.h>
+
+#include <string>
 
 using namespace Microsoft::VisualStudio::CppUnitTestFramework;
 using namespace syncwingetlink;
@@ -92,6 +95,30 @@ public:
         {
             Assert::IsTrue(ExitCode::PartialFailure == exitCodeFor(kind));
         }
+    }
+};
+
+// printVersion() itself is not exported (it is file-local to Dispatch.cpp) and was
+// verified by hand to print "syncwingetlink " followed by this constant - see
+// docs/task.md's issue #57 entry. What is tested here is that cli::kVersion, the one
+// place that output reads from, is a real, non-empty version string - regression
+// coverage for the "single source of truth" property #57 introduced (no second
+// hardcoded literal anywhere in cli/).
+TEST_CLASS(VersionTests)
+{
+public:
+    TEST_METHOD(kVersionIsNonEmpty)
+    {
+        Assert::IsTrue(std::wstring(kVersion).size() > 0);
+    }
+
+    TEST_METHOD(kVersionMatchesTheDocumentedFirstRelease)
+    {
+        // docs/PLAN.md and src/app.manifest's assemblyIdentity both name this the
+        // first release's version. The two are not build-time unified (cli/Version.h's
+        // own doc comment explains why), so this pins the value this codebase commits
+        // to keeping in sync by hand.
+        Assert::AreEqual(std::wstring(L"0.1.0"), std::wstring(kVersion));
     }
 };
 } // namespace syncwingetlink::tests

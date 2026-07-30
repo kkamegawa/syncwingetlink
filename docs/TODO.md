@@ -149,7 +149,8 @@ Build system decisions are recorded in [`adr.md`](./adr.md) (ADR-0001 … ADR-00
       `scan`/`fix`/`test-rule`, the total exit-code map, alias-collision exclusion from
       `fix`, and Ctrl+C handling (#56, ADR-0024). `syncwingetlink.exe` links
       successfully for the first time in this project's history
-- [ ] `--help`/`--version`
+- [x] `--help`/`--version`: full usage/exit-code text and a single `cli::kVersion`
+      source of truth (#57, ADR-0025)
 
 ## M7. TUI (`--tui`)
 - [ ] Enable Console Virtual Terminal Sequences (`ENABLE_VIRTUAL_TERMINAL_PROCESSING`)

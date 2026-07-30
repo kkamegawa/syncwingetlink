@@ -24,6 +24,9 @@
     <ClInclude Include="cli\Json.h">
       <Filter>cli</Filter>
     </ClInclude>
+    <ClInclude Include="cli\Version.h">
+      <Filter>cli</Filter>
+    </ClInclude>
     <ClInclude Include="core\AliasResolver.h">
       <Filter>core</Filter>
     </ClInclude>

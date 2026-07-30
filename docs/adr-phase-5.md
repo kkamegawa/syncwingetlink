@@ -553,3 +553,63 @@ tested by #54's `ConsoleTests.cpp`.
   `--help`/`--version`'s final polish/single version source, respectively - both
   build on top of the minimal, functional versions this issue ships rather than
   leaving those commands unhandled.
+
+---
+
+## ADR-0025 — A single version constant, and help-text polish
+
+- **Date**: 2026-07-30
+- **Affected**: `cli/Dispatch`, `docs/TODO.md` M6, the Wiki page
+  `plan/syncwingetlink/m6-command-line-interface`
+- **Status**: Accepted
+
+### Decision
+
+1. **`cli::Version.h` defines exactly one constant, `kVersion`**, and `printVersion()`
+   is the only place that reads it. #56 had shipped `--version`'s output as a bare
+   string literal directly inside `printVersion()` - functionally correct, but exactly
+   the kind of "second hardcoded literal" this issue's acceptance criteria called out.
+   Extracting it to a named, header-exposed constant means any future caller that
+   needs the version string (a `--json` output field, `test-rule`'s eventual output,
+   a log line) has one place to read it from rather than a temptation to copy the
+   literal again.
+2. **`kVersion` is *not* build-time-unified with `src/app.manifest`'s
+   `assemblyIdentity` version attribute.** Achieving that would require either a
+   custom pre-build step that rewrites the manifest from an MSBuild property, or a
+   compiled `VERSIONINFO` resource queried at runtime via `GetFileVersionInfoW` -
+   both real, valid designs, but new build-system infrastructure this project does not
+   have yet and that a version-string display feature does not, by itself, justify
+   adding. The two values are kept in sync by convention (a version bump updates both
+   by hand), stated plainly in `cli/Version.h`'s own comment rather than left as an
+   implicit assumption. A future M8 release-tooling issue is the natural place to
+   revisit this if the project ever wants the stronger guarantee.
+3. **`--help`'s text was expanded, not restructured**: a one-line description of what
+   the tool does, `--help`/`-h` and `--version` documented explicitly as their own
+   option-table rows (previously merged onto one line, ambiguous about which flags
+   were aliases of which), `NO_COLOR` mentioned alongside `--no-color`, and the
+   exit-code section reformatted as one code per line for readability. The
+   line-per-`writeLine()` structure #56 already established (to avoid
+   `sanitizeForDisplay()` stripping embedded newlines - see that issue's ADR-0024
+   entry) is unchanged.
+
+### Reason
+
+- A named constant costs nothing and removes the one duplication risk explicitly
+  named in this issue's scope; a full build-time version-unification system would cost
+  real effort for a benefit (guaranteeing `app.manifest` and `--version` never drift)
+  this project has not yet needed enough to justify.
+
+### Consequences
+
+- `src/cli/Version.h` (new) defines `kVersion`; `src/cli/Dispatch.cpp`'s
+  `printVersion()` reads it instead of a bare literal.
+- `src/cli/Dispatch.cpp`'s `printHelp()` text is expanded per point 3 above.
+- `tests/DispatchTests.cpp` gains `VersionTests`, pinning `kVersion` to the documented
+  first-release value `"0.1.0"` and asserting it is non-empty - regression coverage
+  for the single-source-of-truth property, since `printVersion()` itself is not
+  exported and was instead re-verified by hand (`docs/task.md`'s entry for this
+  issue).
+- `docs/TODO.md` M6's `--help`/`--version` line is checked off, pointing at #57 and
+  this ADR. **M6 is now complete**: every item in `docs/TODO.md`'s M6 section is
+  checked off, and `syncwingetlink.exe` builds, links, and runs end-to-end across
+  `scan`/`fix`/`test-rule`/`--help`/`--version` (ADR-0020 through ADR-0025).

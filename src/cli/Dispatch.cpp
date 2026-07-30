@@ -5,6 +5,7 @@
 #include "ArgParser.h"
 #include "Console.h"
 #include "Json.h"
+#include "Version.h"
 
 #include "core/AliasResolver.h"
 #include "core/IPackageSource.h"
@@ -432,29 +433,44 @@ void printHelp(Console& console)
     static constexpr std::wstring_view kHelpLines[] = {
         L"syncwingetlink [command] [options]",
         L"",
+        L"Detects and repairs missing/broken command-alias symlinks under",
+        L"%LOCALAPPDATA%\\Microsoft\\WinGet\\Links for winget-installed portable",
+        L"packages.",
+        L"",
         L"Commands:",
-        L"  scan            detect only (read-only, default command)",
+        L"  scan            detect only, read-only (default command)",
         L"  fix             create/repair missing/broken links",
         L"  test-rule NAME  show the replacement result for a real file name",
         L"",
         L"Options:",
-        L"  --source com|fs|auto   package enumeration source (default auto)",
+        L"  --source com|fs|auto   package enumeration source (default auto:",
+        L"                         COM first, filesystem scan fallback)",
         L"  --tui                  run in interactive TUI mode",
         L"  --dry-run              show the plan without executing (for fix)",
         L"  --yes, -y              skip all confirmations and execute",
         L"  --rules <path>         path to a replacement-rules JSON",
         L"  --packages-dir <path>  override the Packages directory",
         L"  --links-dir <path>     override the Links directory",
-        L"  --include <glob>       narrow target packages/exes",
-        L"  --exclude <glob>       exclude",
-        L"  --json                 emit results as JSON (scripting)",
+        L"  --include <glob>       narrow target packages/exes (*, ? wildcards)",
+        L"  --exclude <glob>       exclude (always wins over --include)",
+        L"  --json                 emit results as JSON (scripting); stdout carries",
+        L"                         only the JSON document",
         L"  --verbose / --quiet    log level",
-        L"  --fail-on-missing      scan exits 1 if a problem is found",
-        L"  --no-color             disable colored/VT output",
-        L"  --version / --help",
+        L"  --fail-on-missing      scan exits 1 if a Missing/Broken/Mismatch link",
+        L"                         is found",
+        L"  --no-color             disable colored/VT output regardless of TTY",
+        L"                         state (also honors the NO_COLOR environment",
+        L"                         variable)",
+        L"  --version              print the version number and exit",
+        L"  --help, -h             print this help text and exit",
         L"",
-        L"Exit codes: 0 success, 1 fix needed, 2 insufficient permission, "
-        L"3 argument/config error, 4 package enumeration failed, 10 some repairs failed.",
+        L"Exit codes:",
+        L"  0   success (nothing to fix, or fix succeeded)",
+        L"  1   fix needed but not performed (scan --fail-on-missing)",
+        L"  2   insufficient permission (Developer Mode off and not elevated)",
+        L"  3   argument/config error (invalid option, invalid rules.json, ...)",
+        L"  4   package enumeration failed (--source com/fs could not enumerate)",
+        L"  10  some repairs failed",
     };
     for (const std::wstring_view line : kHelpLines)
     {
@@ -464,13 +480,7 @@ void printHelp(Console& console)
 
 void printVersion(Console& console)
 {
-    // A single source of truth: docs/PLAN.md and src/app.manifest both currently name
-    // this the first release, tracked as version 0.1.0 (app.manifest's
-    // assemblyIdentity version). #57 (help/version) is expected to derive this from
-    // one place rather than a second hardcoded literal, once that issue's scope is
-    // implemented; this is a functional placeholder covering #56's requirement to
-    // handle AppCommand::Version at all.
-    console.writeLine(L"syncwingetlink 0.1.0");
+    console.writeLine(std::wstring(L"syncwingetlink ") + kVersion);
 }
 } // namespace
 
@@ -580,8 +590,14 @@ int run(const std::vector<std::wstring>& args)
     }
     catch (const LinkInspectionError& error)
     {
+        // Not ExitCode::PackageEnumerationFailed: a link-inspection failure (denied
+        // access under Links, malformed reparse data, ...) is not a package
+        // enumeration failure - it has no PackageSourceErrorKind of its own, so it
+        // falls into the same generic-failure bucket (exit code 3) the std::exception
+        // catch-all below uses for every other condition this dispatch layer did not
+        // anticipate closely enough to give its own exit code.
         console.writeLine(utf8ToWide(error.what()), ConsoleStream::Error);
-        return static_cast<int>(ExitCode::PackageEnumerationFailed);
+        return static_cast<int>(ExitCode::ArgumentError);
     }
     catch (const std::exception& error)
     {
