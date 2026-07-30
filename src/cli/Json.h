@@ -30,6 +30,11 @@ namespace syncwingetlink::cli
 // escapeJsonString(text), wrapped in double quotes.
 [[nodiscard]] std::string toJsonString(std::wstring_view text);
 
+// escapeJsonString(cli::sanitizeForDisplay(path.native())), wrapped in double quotes -
+// every path this module serializes goes through the same sanitize-then-escape
+// boundary as every other untrusted string field (see toJson(const RepairItem&)),
+// so a caller using this function directly can never forget the sanitize step.
+//
 // Named distinctly from toJsonString(std::wstring_view) rather than overloaded on it:
 // std::filesystem::path's converting constructor makes a std::wstring an equally viable
 // implicit argument for either overload, which is an unresolvable ambiguity, not merely

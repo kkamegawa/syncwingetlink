@@ -106,7 +106,7 @@ void appendUtf8(std::string& out, char32_t codepoint)
     {
         return "null";
     }
-    return toJsonString(sanitizeForDisplay(path->native()));
+    return toJsonPathString(*path);
 }
 
 [[nodiscard]] std::string joinJsonArray(const std::vector<std::string>& elements)
@@ -205,7 +205,7 @@ std::string toJsonString(std::wstring_view text)
 
 std::string toJsonPathString(const std::filesystem::path& path)
 {
-    return toJsonString(std::wstring_view(path.native()));
+    return toJsonString(sanitizeForDisplay(path.native()));
 }
 
 std::string toJsonBool(bool value)
@@ -216,9 +216,9 @@ std::string toJsonBool(bool value)
 std::string toJson(const RepairItem& item)
 {
     std::string json = "{";
-    json += "\"executable\":" + toJsonString(sanitizeForDisplay(item.executable.path.native()));
+    json += "\"executable\":" + toJsonPathString(item.executable.path);
     json += ",\"alias\":" + toJsonString(sanitizeForDisplay(item.alias));
-    json += ",\"linkPath\":" + toJsonString(sanitizeForDisplay(item.linkPath.native()));
+    json += ",\"linkPath\":" + toJsonPathString(item.linkPath);
     json += ",\"status\":" + toJsonString(linkStatusName(item.status));
     json += ",\"entryKind\":" + toJsonString(linkEntryKindName(item.entryKind));
     json += ",\"existingTarget\":" + toJsonOptionalPath(item.existingTarget);
@@ -232,8 +232,7 @@ std::string toJson(const AliasCollision& collision)
     executables.reserve(collision.executables.size());
     for (const PackageExe& executable : collision.executables)
     {
-        executables.push_back(
-            toJsonString(sanitizeForDisplay(executable.path.native())));
+        executables.push_back(toJsonPathString(executable.path));
     }
 
     std::string json = "{\"alias\":" + toJsonString(sanitizeForDisplay(collision.alias));

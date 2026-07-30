@@ -1523,3 +1523,28 @@ merged - branch `feature/55-json-output` branches from
 - `Debug|ARM64`/`Release|ARM64`: cross-built, not run (this machine is x64).
 - No dependency added.
 - No `*_ja.md` file was read or changed.
+
+### Copilot review feedback addressed (PR #109, before merge)
+
+- `toJsonPathString()` now sanitizes via `cli::sanitizeForDisplay()` before escaping,
+  same as every other untrusted-string field this module serializes. It previously
+  escaped a path directly, which was inconsistent with the documented "single
+  sanitization boundary" design (ADR-0022 point 5) and meant a future caller of this
+  public function directly (rather than through `toJson(const RepairItem&)`, which
+  happened to sanitize its own path fields separately) could accidentally emit raw
+  control/bidi characters into JSON output.
+- `toJson(const RepairItem&)`, `toJson(const AliasCollision&)`, and the internal
+  `toJsonOptionalPath()` helper were all updated to call `toJsonPathString()` directly
+  instead of duplicating `toJsonString(sanitizeForDisplay(path.native()))` inline - the
+  fix closes the gap at its one source rather than leaving two ways to serialize a path
+  that could drift apart again.
+- Added `toJsonPathStringSanitizesControlCharactersBeforeEscaping` (a raw ESC in a path
+  must never reach the JSON output) and
+  `toJsonPathStringWrapsInQuotesAndEscapesBackslashes` (an ordinary Windows path's
+  backslashes are correctly JSON-escaped) to `tests/JsonTests.cpp`.
+  - The first version of the latter test asserted an unescaped-backslash expected
+    value, which failed against the (correct) implementation - Windows path separators
+    are backslashes, and JSON requires backslashes escaped. Fixed the test's expected
+    value rather than the code.
+- Rebuilt and reran the full suite after these changes: `Debug|x64`/`Release|x64` now
+  300/300 (up from 298; the two tests above are new), no new warnings.

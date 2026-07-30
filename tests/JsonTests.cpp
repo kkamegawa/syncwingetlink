@@ -118,6 +118,27 @@ public:
         Assert::AreEqual(std::string("true"), toJsonBool(true));
         Assert::AreEqual(std::string("false"), toJsonBool(false));
     }
+
+    TEST_METHOD(toJsonPathStringWrapsInQuotesAndEscapesBackslashes)
+    {
+        // Windows path separators are backslashes, which JSON requires escaped.
+        Assert::AreEqual(std::string(R"("C:\\Links\\codex.exe")"),
+                         toJsonPathString(LR"(C:\Links\codex.exe)"));
+    }
+
+    TEST_METHOD(toJsonPathStringSanitizesControlCharactersBeforeEscaping)
+    {
+        // A path containing a raw ESC (0x1B) must never reach the JSON output - this is
+        // the one sanitization boundary every serialized path goes through, matching
+        // toJsonString(sanitizeForDisplay(...)) elsewhere in this module (found missing
+        // here during Copilot review of PR #109).
+        const std::filesystem::path withEscape =
+            std::wstring(LR"(C:\Links\)") + wchar_t(0x1B) + L"evil.exe";
+
+        const std::string json = toJsonPathString(withEscape);
+
+        Assert::IsTrue(json.find('\x1B') == std::string::npos);
+    }
 };
 
 TEST_CLASS(JsonDomainSerializationTests)
