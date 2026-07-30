@@ -1853,3 +1853,26 @@ pull requests (#107, #108, #109, #110, #111, and this issue's PR) against a stac
 branch chain rooted at `main`, matching the M4/M5 delivery pattern. `docs/PLAN.md`,
 `docs/TODO.md`, `docs/adr-phase-5.md` (ADR-0020 through ADR-0025), and the Wiki plan
 agree. Merging is left to the repository maintainer, per session agreement.
+
+### Copilot review feedback addressed (PR #112, before merge)
+
+- `src/cli/Dispatch.cpp`'s top-level `catch (const LinkInspectionError&)` now maps to
+  `ExitCode::ArgumentError` (3) instead of `ExitCode::PackageEnumerationFailed` (4). A
+  link-inspection failure (denied access under `Links`, malformed reparse data, ...)
+  has no `PackageSourceErrorKind` of its own and is not a package-enumeration
+  condition; it belongs in the same generic-failure bucket the `std::exception`
+  catch-all already uses, not silently mislabeled as an enumeration failure.
+- `docs/PLAN.md` §8's exit-code-3 description no longer claims "a non-interactive
+  refusal" as a trigger - checking the actual `runFix()` logic confirmed that an
+  EOF'd or declined confirmation during a real `fix` run is normal refusal, not an
+  error: that candidate simply runs in `RepairMode::DryRun` instead, contributing to
+  exit `0`/`10` like any other outcome. The only genuine exit-3 case involving
+  consent is the *parse-time* `--json` + `fix` + no `--yes` conflict
+  (`ArgParseErrorKind::ConflictingOptions`), which is rejected before any prompting
+  could happen at all - the text now says so explicitly, and also names an unexpected
+  `LinkInspectionError` as an exit-3 example, matching the code fix above.
+- The Wiki page `plan/syncwingetlink/m6-command-line-interface` had the same two
+  inaccuracies (its security-contract table and its exit-code map) and was corrected
+  the same way.
+- Rebuilt and reran the full suite after these changes: `Debug|x64`/`Release|x64` still
+  314/314, no new warnings.

@@ -296,7 +296,12 @@ exact condition `fix` exists to correct. See `docs/adr-phase-5.md` ADR-0020.
 - `1`: fix needed but not performed (e.g. missing detected in scan with `--fail-on-missing`)
 - `2`: insufficient permission (Developer Mode off & non-admin, cannot create symlink)
 - `3`: argument/config error (e.g. invalid rules JSON, unknown option, an invalid
-  `--links-dir`/`--packages-dir`/`--rules` value, or a non-interactive refusal)
+  `--links-dir`/`--packages-dir`/`--rules` value, `--json` combined with `fix` and no
+  `--yes` - a parse-time conflict, not a statement about confirmation-prompt behavior
+  at runtime - or an unexpected link-inspection failure). An EOF or declined
+  confirmation during an actual `fix` run is normal refusal, not an error: that
+  candidate is simply run in dry-run mode instead, contributing to exit `0`/`10` like
+  any other outcome, never to `3`.
 - `4`: package enumeration failed (an explicit `--source com`/`--source fs` could not
   enumerate at all; `auto` only reaches this if both COM and the FS fallback fail)
 - `10`: some repairs failed

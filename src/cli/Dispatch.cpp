@@ -590,8 +590,14 @@ int run(const std::vector<std::wstring>& args)
     }
     catch (const LinkInspectionError& error)
     {
+        // Not ExitCode::PackageEnumerationFailed: a link-inspection failure (denied
+        // access under Links, malformed reparse data, ...) is not a package
+        // enumeration failure - it has no PackageSourceErrorKind of its own, so it
+        // falls into the same generic-failure bucket (exit code 3) the std::exception
+        // catch-all below uses for every other condition this dispatch layer did not
+        // anticipate closely enough to give its own exit code.
         console.writeLine(utf8ToWide(error.what()), ConsoleStream::Error);
-        return static_cast<int>(ExitCode::PackageEnumerationFailed);
+        return static_cast<int>(ExitCode::ArgumentError);
     }
     catch (const std::exception& error)
     {
