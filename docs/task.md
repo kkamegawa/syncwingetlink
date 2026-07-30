@@ -1548,3 +1548,97 @@ merged - branch `feature/55-json-output` branches from
     value rather than the code.
 - Rebuilt and reran the full suite after these changes: `Debug|x64`/`Release|x64` now
   300/300 (up from 298; the two tests above are new), no new warnings.
+
+## 2026-07-30 — Rules: harden untrusted rules-file input (issue #105)
+
+**Trigger**: issue #8 (M6 milestone), sub-issue #105 (filed during the plan-only M6
+review, before any M6 code existed), stacked on #55 (PR #109, not yet merged - branch
+`feature/105-harden-rules-input` branches from `feature/55-json-output`), referencing
+the Wiki plan `plan/syncwingetlink/m6-command-line-interface`.
+
+### Completed
+
+- `src/rules/RuleSet.h`: added `kMaxRulesFileBytes` (1 MiB), `kMaxRuleCount` (1000), and
+  `kMaxRuleFieldLength` (4096 characters) as `inline constexpr` values - one source of
+  truth shared by implementation and tests. Added `RuleSetErrorKind::LimitExceeded` and
+  `RuleSetErrorKind::RegexEvaluationFailed` (distinct from the existing `InvalidRegex`,
+  which covers only a compile-time failure).
+- `src/rules/RuleSet.cpp`:
+  - `RuleSet(std::vector<AliasRule>)` now rejects more than `kMaxRuleCount` rules
+    before validating any of them, and rejects any rule whose `name`/`pattern`/
+    `replacement` exceeds `kMaxRuleFieldLength`, before the existing
+    emptiness/uniqueness checks and before compiling the pattern.
+  - `RuleSet::resolve()`'s `std::regex_match` call is now wrapped in `try`/`catch` for
+    `std::regex_error`, surfaced as `RuleSetError(RegexEvaluationFailed)` - confirmed
+    empirically (not assumed) to be a real, fast-triggering condition: a classic
+    catastrophic-backtracking pattern (`^(a+)+$`) against a 30-character non-matching
+    input throws in well under 100ms under MSVC's std::regex.
+- `src/rules/RuleSetSelector.cpp`: `loadRuleSetFromFile()` now checks the file's size
+  via `std::filesystem::file_size()` before opening or reading it at all, rejecting
+  anything over `kMaxRulesFileBytes` as `RuleSetError(LimitExceeded)`.
+- `docs/adr-phase-5.md`: **ADR-0023** records all of the above, including the empirical
+  confirmation that MSVC's `std::regex` really does throw at match time (rather than
+  hang or misbehave silently) - the exact uncertainty the original M6 review flagged
+  before any M6 code existed.
+- Tests: `tests/RuleSetTests.cpp` gains 6 cases (exactly-at/one-over the rule-count
+  limit, each of the three fields' length limit, and the match-time `regex_error`
+  guard); `tests/RuleSetSelectorTests.cpp` gains 2 (exactly-at/one-over the file-size
+  limit).
+
+### Deliberately not done
+
+- `docs/PLAN_ja.md`/`docs/TODO_ja.md` were not touched - Japanese translations, per
+  `AGENTS.md`'s language policy.
+- No `docs/TODO.md` M6 checkbox added for this issue: it was filed as a standalone
+  hardening sub-issue during the M6 review rather than one of the five items already
+  listed under M6 in `docs/TODO.md`, so there is no existing line to check off.
+- No exit-code mapping: `RuleSetErrorKind::LimitExceeded`/`RegexEvaluationFailed` join
+  every other `RuleSetErrorKind` in being unmapped until #56's dispatch exists.
+- `main.cpp` still does not exist, so `syncwingetlink.vcxproj` still fails to link
+  (`LNK1561`) - unchanged, still #56's job.
+
+### Verified
+
+- `Debug|x64`, `Release|x64`, `Debug|ARM64`, `Release|ARM64`:
+  `syncwingetlink.core.vcxproj` and `syncwingetlink.tests.vcxproj` build clean at
+  `/W4 /WX`, no new warnings.
+- `vstest.console.exe /Platform:x64`: 308/308 passed in both `Debug|x64` and
+  `Release|x64` (up from 300; 8 of the 308 are new, confirmed individually green,
+  including the match-time `regex_error` test running in under 100ms - not hanging).
+- `Debug|ARM64`/`Release|ARM64`: cross-built, not run (this machine is x64).
+- No dependency added.
+- No `*_ja.md` file was read or changed.
+
+### Copilot review feedback addressed (PR #110, before merge)
+
+- `src/rules/RuleSetSelector.cpp`'s `loadRuleSetFromFile()` no longer relies on the
+  `file_size()` pre-check as the only enforcement of `kMaxRulesFileBytes`: the actual
+  read is now bounded to `kMaxRulesFileBytes + 1` bytes
+  (`stream.read(text.data(), text.size())` into a fixed-size buffer, then rejecting if
+  `gcount()` exceeds the cap) regardless of what the pre-check reported or failed to
+  report. A `file_size()` failure or a race that grows the file between the pre-check
+  and the read can no longer bypass the cap - the buffer itself is never larger than
+  the bound, and the read stops there. The pre-check stays as a cheap fast-reject path
+  that avoids even allocating the bounded buffer for an absurdly large file; the bounded
+  read is what actually closes the gap. `<sstream>` (the now-unused `std::ostringstream`
+  approach) was removed.
+  - Not covered by a dedicated new test beyond the existing oversized-file test: that
+    test already exercises the same bounded-read code path this fix changed (it now
+    goes through `stream.read()` instead of `buffer << stream.rdbuf()`), but
+    specifically proving the pre-check-bypass scenario (a `file_size()` failure or a
+    grow-after-check race) would require filesystem mocking this component does not
+    have; noted here rather than claiming coverage that does not exist.
+- `src/cli/Console.cpp`'s `readLineFromConsole()` now detects when a typed line is
+  longer than its internal 1024-`wchar_t` buffer (the buffer filled completely without
+  its last character being `\n`) and drains the remainder of that line - including the
+  newline that would otherwise end it - from the console's input queue before
+  returning, so a later confirmation prompt cannot silently consume an overlong
+  previous line's leftover tail instead of fresh input. An overlong line is reported as
+  refusal (an empty string), consistent with the equivalent fix already made to the
+  redirected-stdin path (#108's PR feedback).
+  - Not covered by an automated test: like the redirected-stream path, this function
+    reads the real console input handle, which cannot be safely fed a synthetic
+    overlong line from a unit test without an actual interactive terminal. Documented
+    the same way the redirected-stream fix's untested status was documented.
+- Rebuilt and reran the full suite after these changes: `Debug|x64`/`Release|x64` still
+  308/308, no new warnings.

@@ -195,14 +195,59 @@ void writeFileChunked(HANDLE handle, const std::string& bytes) noexcept
         ::ReadConsoleW(handle, buffer.data(), static_cast<DWORD>(buffer.size()), &charsRead,
                       nullptr);
 
+    if (!ok || charsRead == 0)
+    {
+        if (modeChanged)
+        {
+            ::SetConsoleMode(handle, originalMode);
+        }
+        return std::nullopt;
+    }
+
+    // ReadConsoleW with ENABLE_LINE_INPUT normally returns once a full line (ending in
+    // "\r\n") has been entered. If the buffer filled completely without its last
+    // character being the newline, the typed line is longer than the buffer, and the
+    // remainder - including the newline that would otherwise end it - is still
+    // sitting in the console's own input queue. Left alone, that leftover would be
+    // consumed by the *next* confirmation prompt instead of fresh user input,
+    // potentially changing its answer without the user having typed anything for it.
+    const bool truncated =
+        charsRead == static_cast<DWORD>(buffer.size()) && buffer[charsRead - 1] != L'\n';
+
+    if (truncated)
+    {
+        std::wstring drainBuffer(1024, L'\0');
+        for (;;)
+        {
+            DWORD drainCharsRead = 0;
+            const BOOL drainOk =
+                ::ReadConsoleW(handle, drainBuffer.data(),
+                               static_cast<DWORD>(drainBuffer.size()), &drainCharsRead,
+                               nullptr);
+            if (!drainOk || drainCharsRead == 0)
+            {
+                break; // Nothing more to drain - EOF/error on the input handle.
+            }
+            if (drainBuffer[drainCharsRead - 1] == L'\n')
+            {
+                break; // Reached the newline that ends the overlong line.
+            }
+        }
+    }
+
     if (modeChanged)
     {
         ::SetConsoleMode(handle, originalMode);
     }
 
-    if (!ok || charsRead == 0)
+    if (truncated)
     {
-        return std::nullopt;
+        // A line this long can never be a real "y"/"yes" answer - isAffirmative()
+        // would refuse it anyway - so refusal is reported directly rather than a
+        // truncated, misleading fragment. The queue has already been drained above,
+        // so a later prompt starts cleanly at the next line rather than consuming
+        // this one's leftover tail.
+        return std::wstring();
     }
 
     buffer.resize(charsRead);

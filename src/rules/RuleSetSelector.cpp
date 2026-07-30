@@ -12,7 +12,6 @@
 
 #include <cstddef>
 #include <fstream>
-#include <sstream>
 #include <string>
 #include <string_view>
 #include <system_error>
@@ -78,6 +77,20 @@ namespace
 
 RuleSet loadRuleSetFromFile(const std::filesystem::path& path)
 {
+    // Fast-reject pre-check, not the enforcement itself: cheaply rejects an absurdly
+    // large file without even opening it. A failure to query the size here (e.g. a
+    // race with the file being deleted) is not itself reported - the ifstream open
+    // immediately below will surface the real failure in that case.
+    std::error_code sizeError;
+    const std::uintmax_t preCheckSize = std::filesystem::file_size(path, sizeError);
+    if (!sizeError && preCheckSize > kMaxRulesFileBytes)
+    {
+        throw RuleSetError(RuleSetErrorKind::LimitExceeded,
+                           "rules file exceeds the maximum size of " +
+                               std::to_string(kMaxRulesFileBytes) +
+                               " bytes: " + toUtf8(path));
+    }
+
     std::ifstream stream(path, std::ios::binary);
     if (!stream.is_open())
     {
@@ -85,15 +98,29 @@ RuleSet loadRuleSetFromFile(const std::filesystem::path& path)
                            "could not open rules file for reading: " + toUtf8(path));
     }
 
-    std::ostringstream buffer;
-    buffer << stream.rdbuf();
+    // This read is what actually enforces the cap: at most kMaxRulesFileBytes + 1
+    // bytes are ever pulled into memory, regardless of what the pre-check above
+    // reported (or failed to report). Neither a file_size() failure nor a race that
+    // grows the file between the pre-check and this read can bypass the cap - the
+    // buffer itself is never larger than this, and reading stops there.
+    std::string text(static_cast<std::size_t>(kMaxRulesFileBytes) + 1, '\0');
+    stream.read(text.data(), static_cast<std::streamsize>(text.size()));
     if (stream.bad())
     {
         throw RuleSetError(RuleSetErrorKind::FileReadError,
                            "could not read rules file: " + toUtf8(path));
     }
 
-    const std::string text = buffer.str();
+    const std::streamsize bytesRead = stream.gcount();
+    if (static_cast<std::uintmax_t>(bytesRead) > kMaxRulesFileBytes)
+    {
+        throw RuleSetError(RuleSetErrorKind::LimitExceeded,
+                           "rules file exceeds the maximum size of " +
+                               std::to_string(kMaxRulesFileBytes) +
+                               " bytes: " + toUtf8(path));
+    }
+    text.resize(static_cast<std::size_t>(bytesRead));
+
     std::string_view content = text;
     constexpr std::string_view kUtf8Bom = "\xEF\xBB\xBF";
     if (content.starts_with(kUtf8Bom))

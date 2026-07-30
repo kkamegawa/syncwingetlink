@@ -146,11 +146,39 @@ bool isValidAliasFileName(std::wstring_view candidate) noexcept
 
 RuleSet::RuleSet(std::vector<AliasRule> rules)
 {
+    if (rules.size() > kMaxRuleCount)
+    {
+        throw RuleSetError(RuleSetErrorKind::LimitExceeded,
+                           "too many rules (" + std::to_string(rules.size()) +
+                               ") - the limit is " + std::to_string(kMaxRuleCount));
+    }
+
     std::unordered_set<std::wstring> seenNames;
     m_rules.reserve(rules.size());
 
     for (AliasRule& rule : rules)
     {
+        if (rule.name.size() > kMaxRuleFieldLength)
+        {
+            throw RuleSetError(RuleSetErrorKind::LimitExceeded,
+                               "a rule's \"name\" exceeds the maximum length of " +
+                                   std::to_string(kMaxRuleFieldLength) + " characters");
+        }
+        if (rule.pattern.size() > kMaxRuleFieldLength)
+        {
+            throw RuleSetError(RuleSetErrorKind::LimitExceeded,
+                               "rule \"" + toUtf8(rule.name) +
+                                   "\"'s pattern exceeds the maximum length of " +
+                                   std::to_string(kMaxRuleFieldLength) + " characters");
+        }
+        if (rule.replacement.size() > kMaxRuleFieldLength)
+        {
+            throw RuleSetError(RuleSetErrorKind::LimitExceeded,
+                               "rule \"" + toUtf8(rule.name) +
+                                   "\"'s replacement exceeds the maximum length of " +
+                                   std::to_string(kMaxRuleFieldLength) + " characters");
+        }
+
         if (rule.name.empty())
         {
             throw RuleSetError(RuleSetErrorKind::InvalidRuleName,
@@ -294,7 +322,26 @@ std::optional<AliasRuleMatch> RuleSet::resolve(std::wstring_view fileName) const
     for (const CompiledRule& rule : m_rules)
     {
         std::wsmatch match;
-        if (!std::regex_match(subject, match, rule.regex))
+        bool matched = false;
+        try
+        {
+            matched = std::regex_match(subject, match, rule.regex);
+        }
+        catch (const std::regex_error&)
+        {
+            // A pattern that compiled successfully (RuleSet's constructor already
+            // guarantees that) can still throw at MATCH time under MSVC's std::regex -
+            // typically error_complexity or error_stack against a pathological
+            // pattern/input pair. This is a runtime failure of untrusted input, not a
+            // programming error, so it becomes a typed RuleSetError rather than an
+            // exception escaping resolve()'s documented never-throws-on-a-normal-miss
+            // contract uncaught.
+            throw RuleSetError(RuleSetErrorKind::RegexEvaluationFailed,
+                               "rule \"" + toUtf8(rule.name) +
+                                   "\" failed to evaluate against the input file name");
+        }
+
+        if (!matched)
         {
             continue;
         }

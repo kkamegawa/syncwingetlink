@@ -159,6 +159,55 @@ public:
         Assert::AreEqual(std::wstring(L"codex-alias.exe"), match->alias);
     }
 
+    TEST_METHOD(loadRuleSetFromFileRejectsAFileLargerThanTheSizeLimit)
+    {
+        // The cap is checked before any of the file is read into memory, so the
+        // content does not need to be valid JSON - an oversized file is rejected
+        // regardless of what it contains.
+        const TempDirectory temp(L"selector-oversized");
+        const std::filesystem::path oversized = temp.path() / L"oversized.json";
+        {
+            std::ofstream stream(oversized, std::ios::binary);
+            const std::string filler(static_cast<std::size_t>(kMaxRulesFileBytes) + 1, 'x');
+            stream << filler;
+        }
+
+        try
+        {
+            static_cast<void>(loadRuleSetFromFile(oversized));
+            Assert::Fail(L"expected RuleSetError");
+        }
+        catch (const RuleSetError& error)
+        {
+            Assert::IsTrue(RuleSetErrorKind::LimitExceeded == error.kind());
+        }
+    }
+
+    TEST_METHOD(loadRuleSetFromFileAcceptsAFileAtExactlyTheSizeLimit)
+    {
+        const TempDirectory temp(L"selector-at-limit");
+        const std::filesystem::path atLimit = temp.path() / L"at-limit.json";
+
+        const std::string document =
+            R"({"version": 1, "rules": [{"name": "n", "pattern": "^codex\\.exe$", )"
+            R"("replacement": "codex-alias.exe"}]})";
+        // Pad with whitespace (ignored by the JSON parser) up to exactly the byte
+        // limit, so this test proves the boundary is inclusive without needing a
+        // second, different document shape.
+        std::string padded = document;
+        padded.append(static_cast<std::size_t>(kMaxRulesFileBytes) - document.size(), ' ');
+
+        {
+            std::ofstream stream(atLimit, std::ios::binary);
+            stream << padded;
+        }
+
+        const RuleSet rules = loadRuleSetFromFile(atLimit);
+        const auto match = rules.resolve(L"codex.exe");
+        Assert::IsTrue(match.has_value());
+        Assert::AreEqual(std::wstring(L"codex-alias.exe"), match->alias);
+    }
+
     TEST_METHOD(loadRuleSetFromFileRejectsInvalidUtf8WithAClearError)
     {
         // A lone continuation byte (0x80) is never valid on its own in UTF-8. Before the

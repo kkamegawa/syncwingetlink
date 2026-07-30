@@ -74,9 +74,14 @@ struct ConsoleOperations
     // Reads one line from stdin, self-contained (any console-mode change it makes for
     // line/echo input is saved and restored within this single call, not held across
     // calls). Returns nullopt on EOF, a closed/redirected stream with nothing left to
-    // read, or a read failure - never synthesizes an empty line for any of those.
-    // Production: ReadConsoleW with ENABLE_LINE_INPUT|ENABLE_ECHO_INPUT when
-    // isConsole(Input) is true, else a byte read decoded as UTF-8.
+    // read, or a read failure - never synthesizes an empty line for any of those. A
+    // line longer than the production implementation's internal buffer is treated as
+    // refusal (an empty string) rather than a truncated fragment, with the remainder
+    // of the overlong line drained from the input source first, so a later call is
+    // never left consuming another prompt's leftover input instead of fresh user
+    // input. Production: ReadConsoleW with ENABLE_LINE_INPUT|ENABLE_ECHO_INPUT when
+    // isConsole(Input) is true, else a byte read decoded as UTF-8 - both paths apply
+    // the same overlong-line handling.
     std::function<std::optional<std::wstring>()> readLine;
 };
 

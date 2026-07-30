@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include <cstdint>
 #include <optional>
 #include <regex>
 #include <stdexcept>
@@ -25,7 +26,27 @@ enum class RuleSetErrorKind
     FileReadError,      // a selected rules file (--rules, or the user rules file once it
                         // is known to exist) could not be opened or read - see
                         // rules/RuleSetSelector.h
+    LimitExceeded,      // the rules file exceeded kMaxRulesFileBytes, or a rule set
+                        // exceeded kMaxRuleCount or a field exceeded
+                        // kMaxRuleFieldLength (docs/adr-phase-5.md ADR-0023)
+    RegexEvaluationFailed, // a rule's compiled pattern threw std::regex_error while
+                        // matching input in resolve() - a runtime failure distinct
+                        // from InvalidRegex, which covers only a pattern that fails to
+                        // *compile*. MSVC's std::regex can throw at match time on a
+                        // sufficiently complex pattern/input pair even when the pattern
+                        // compiled successfully.
 };
+
+// Untrusted-input bounds enforced by RuleSet(std::vector<AliasRule>) and
+// rules/RuleSetSelector.cpp's loadRuleSetFromFile() (docs/adr-phase-5.md ADR-0023).
+// Generous relative to any legitimate rules.json - the embedded default rule set
+// (rules/DefaultRules.cpp) has 2 rules, none of whose fields exceed 100 characters -
+// but small enough to bound memory use and match-time cost against a hostile or
+// corrupted file. A rules file is untrusted input from the moment it is read, whether
+// it came from --rules or the user's own %LOCALAPPDATA%\syncwingetlink\rules.json.
+inline constexpr std::uintmax_t kMaxRulesFileBytes = 1024 * 1024;    // 1 MiB
+inline constexpr std::size_t kMaxRuleCount = 1000;
+inline constexpr std::size_t kMaxRuleFieldLength = 4096;
 
 class RuleSetError : public std::runtime_error
 {
@@ -84,8 +105,10 @@ public:
 
     // Validates and compiles rules directly, without going through JSON. Used by #38's
     // embedded default rules and by parse() below. Throws RuleSetError for an empty or
-    // duplicate rule name, or a pattern that fails to compile; never leaves *this
-    // partially constructed on failure (the exception is thrown from the constructor).
+    // duplicate rule name, a pattern that fails to compile, more than kMaxRuleCount
+    // rules, or a name/pattern/replacement longer than kMaxRuleFieldLength; never
+    // leaves *this partially constructed on failure (the exception is thrown from the
+    // constructor).
     explicit RuleSet(std::vector<AliasRule> rules);
 
     // Parses and validates a version-1 rules.json document. Throws RuleSetError on any
@@ -99,6 +122,13 @@ public:
     // is expected to fall back to the raw file name rather than trying a later rule, so
     // which rule "won" a given file name stays predictable and does not depend on what
     // other rules happen to be configured.
+    //
+    // Throws RuleSetError(RegexEvaluationFailed) if a rule's compiled pattern throws
+    // std::regex_error while matching fileName - possible under MSVC's std::regex even
+    // for a pattern that compiled successfully, given a sufficiently adversarial
+    // pattern/input pair (docs/adr-phase-5.md ADR-0023). This is the only condition
+    // under which resolve() throws; every other outcome (no match, or a match that
+    // fails isValidAliasFileName) returns nullopt.
     [[nodiscard]] std::optional<AliasRuleMatch> resolve(std::wstring_view fileName) const;
 
     [[nodiscard]] bool isEmpty() const noexcept
