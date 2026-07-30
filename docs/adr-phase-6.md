@@ -274,3 +274,126 @@ section, which a single shared "ADR-0026 covers all of M7" plan would have cause
   vs. insufficient permission) - none of that is implemented yet; this issue's
   `runFix()` changes are scoped to routing the checklist's selection into the existing
   loop, not restructuring it.
+
+---
+
+## ADR-0028 — Shared repair-batch executor, the `[current/total]` progress contract, and the corrected exit-code precedence
+
+- **Date**: 2026-07-31
+- **Affected**: `core::RepairBatch` (new), `cli::Dispatch`, `docs/PLAN.md` §11,
+  `docs/TODO.md` M7, the Wiki page `plan/syncwingetlink/m7-interactive-tui`
+- **Status**: Accepted
+
+### Decision
+
+1. **`core::runRepairBatch()` (new, `src/core/RepairBatch.{h,cpp}`) is the single
+   implementation both `cli::Dispatch::runFix()`'s non-interactive path and its
+   TUI-selection path drive**, replacing the two separate result-accounting/exit-code
+   code paths #59 had left in place (the loop itself, and the earlier
+   `runTuiChecklistIfRequested()`-only integration). It decides, per candidate: the
+   `RepairDisposition` (`Created`/`ReplacedBroken`/`PlannedCreate`/
+   `PlannedReplaceBroken`/`Declined`/`SkippedOk`/`RefusedMismatch`/`Failed`/
+   `NotAttempted`), the aggregate `RepairBatchSummary` counts, and - via
+   `exitCodeFor()` - the final exit code. Consent is pluggable
+   (`RepairBatchOptions::consent` for the interactive CLI prompt,
+   `preApprovedAliases` for the TUI's already-decided checklist selection,
+   `assumeYes` for `--yes`), and `repairLink()` itself is injectable
+   (`RepairBatchOptions::repairFunction`, defaulting to the real one) purely so this
+   executor's own decision/counting logic is unit-testable without symlink privilege -
+   the same seam-injection pattern `SymlinkServiceOperations`/`ConsoleOperations`/
+   `TerminalOperations` already establish in this codebase.
+
+2. **`Declined` is a first-class `RepairDisposition`**, not a reuse of
+   `PlannedCreate`/`PlannedReplaceBroken`. A declined candidate never reaches
+   `repairLink()` at all - #59 already introduced this for the TUI's own path (see
+   ADR-0027); this ADR is what makes it also true for the pre-existing, non-interactive
+   CLI "Repair X (currently Y)? [y/N]" prompt, which previously answered "no" by
+   calling `repairLink(candidate, RepairMode::DryRun)` and reporting the resulting
+   `WouldCreate`/`WouldReplaceBroken` outcome - indistinguishable, in a `--dry-run` run
+   or in a summary, from an item the tool had genuinely planned to touch. Both
+   `RepairDisposition::PlannedCreate`/`PlannedReplaceBroken` (produced only by an
+   actual `RepairMode::DryRun` call to `repairLink()`) and `Declined` (produced only by
+   a refused consent check, never by inspecting the candidate at all) now exist
+   side-by-side, and the shared executor is the only place either is ever assigned.
+   `Declined` is a console/summary category only, not a `--json` field - the `--json`
+   document (`cli::toJsonFixResult`, ADR-0022) is built only from candidates that
+   actually produced a `SymlinkRepairResult`, exactly as before, so its schema is
+   unchanged; this holds vacuously anyway since `--json` and `--tui` already conflict
+   at parse time (ADR-0027), and `--json`-without-`--tui` always implies `--yes`
+   (`cli::ArgParser`), which bypasses consent (and therefore `Declined`) entirely.
+
+3. **Persistent progress lines follow `[current/total] alias: result`**, replacing the
+   pre-#60 CLI's bare `alias: result` line, for both the non-interactive and TUI `fix`
+   paths - `RepairBatchOptions::onProgress` is called once per candidate immediately
+   after its disposition is decided, carrying the 1-based current position and the
+   total candidate count alongside the `RepairItemResult`. A `Failed` item is reported
+   as its own `[current/total] error: alias - <guidance>` line on stderr (using the
+   same `permissionGuidance()` text the pre-#60 code already produced, now driven by
+   `RepairItemResult::error` - the caught `SymlinkServiceError`, preserved on the
+   result since the executor itself has no `Console` to format guidance text with) -
+   always emitted regardless of `--json`, matching the pre-#60 behavior for errors
+   specifically (only the *non*-error per-item line was ever gated by `!jsonOutput`).
+
+4. **The exit-code precedence is corrected, for both the CLI and TUI paths, not merely
+   documented as unchanged.** `core::exitCodeFor(RepairBatchSummary)` is now the single
+   place this decision is made:
+   - Insufficient permission -> exit code 2, taking priority over an interruption or
+     any other failure in the same batch.
+   - Otherwise, an interruption with `summary.remaining > 0`, or any `summary.failed >
+     0` -> exit code 10. An interruption observed only after every candidate had
+     already been processed (`remaining == 0`) does not, by itself, count as a
+     partial failure - there was nothing left it could have prevented. (This exact
+     state cannot currently arise from `runRepairBatch()`'s own loop, which only ever
+     sets `summary.interrupted` when it breaks out early - i.e., when at least one
+     candidate remains; the branch is kept as an explicit, tested part of
+     `exitCodeFor()`'s own contract regardless, both because the pre-#60 review
+     specified it and as a guard against a future change to the loop's interruption
+     check silently changing that invariant.)
+   - Otherwise -> exit code 0 - full success, every candidate declined/skipped, an
+     empty batch, and a complete (uninterrupted) dry run all included.
+
+   This is a genuine behavior change to `fix`'s pre-#60 CLI path, not a
+   clarification: the code this replaces checked `interrupted` *before*
+   `anyInsufficientPermission`, so a permission failure followed by Ctrl+C returned
+   10, not 2 - the original defect the pre-implementation review that produced this
+   ADR's number reservation found (see #9/#58/#59/#60's revision notes).
+
+### Reason
+
+- Extracting one executor (point 1) is the only way to guarantee the CLI and TUI paths
+  cannot independently drift on what a given repairLink() outcome means for the
+  summary or the exit code - the exact risk two hand-maintained copies of the same
+  decision logic would otherwise carry.
+- Point 2 exists because shipping the CLI's declined-as-dry-run conflation
+  unfixed while fixing it only for the new TUI path (#59) would have been a strange,
+  hard-to-explain asymmetry between two paths a shared executor is supposed to unify.
+- Point 4's correction, rather than a "no change" note, follows directly from actually
+  reading `src/cli/Dispatch.cpp`'s pre-#60 `runFix()` against the documented contract
+  before writing this ADR - the two did not match, and restating the mismatched
+  contract without fixing the code would have left a real bug undocumented.
+
+### Consequences
+
+- `src/core/RepairBatch.{h,cpp}` (new) implement `RepairDisposition`,
+  `RepairItemResult`, `RepairBatchSummary`, `RepairBatchResult`, `RepairBatchOptions`,
+  `runRepairBatch()`, `RepairBatchExitCode`, and `exitCodeFor()`.
+- `src/cli/Dispatch.cpp`: `runFix()`'s manual loop is replaced by one
+  `runRepairBatch()` call; `outcomeDisplayName()` is replaced by
+  `repairDispositionDisplayName()` (one additional case each for `Declined`, `Failed`,
+  and the unreachable-in-practice `NotAttempted`); a new `toExitCode()` maps
+  `RepairBatchExitCode` onto `cli::ExitCode` totally.
+- `tests/RepairBatchTests.cpp` (new) covers: full success (created/replaced, and that
+  `Ok`/`Mismatch` never call `consent()`); dry-run (planned outcomes, `consent()`
+  never called); declined (a refused prompt, `preApprovedAliases` exclusion including
+  ordinal case-insensitivity, and `assumeYes` bypassing consent entirely); failure
+  (permission vs. non-permission, and permission's precedence over a same-batch
+  interruption); interruption (before any item, and midway through, in both cases
+  confirming the skipped candidate's `repairFunction` is never called); and
+  `exitCodeFor()` exercised directly against hand-built summaries, including the
+  `interrupted && remaining == 0` case `runRepairBatch()` itself cannot produce.
+- `docs/TODO.md` M7's third line is checked off, pointing at #60 and this ADR - this
+  completes M7 in `docs/TODO.md`.
+- `docs/PLAN.md` §11's "`--tui` allows interactive checking and batch creation" item is
+  checked off, pointing at #58/#59/#60 and ADR-0026 through ADR-0028 - the only M7-
+  related Definition-of-Done line this session claims, per the Wiki plan's own
+  instruction that #60 alone marks it.

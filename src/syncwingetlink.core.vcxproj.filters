@@ -63,6 +63,9 @@
     <ClInclude Include="core\Paths.h">
       <Filter>core</Filter>
     </ClInclude>
+    <ClInclude Include="core\RepairBatch.h">
+      <Filter>core</Filter>
+    </ClInclude>
     <ClInclude Include="core\SymlinkService.h">
       <Filter>core</Filter>
     </ClInclude>
@@ -126,6 +129,9 @@
       <Filter>core</Filter>
     </ClCompile>
     <ClCompile Include="core\Paths.cpp">
+      <Filter>core</Filter>
+    </ClCompile>
+    <ClCompile Include="core\RepairBatch.cpp">
       <Filter>core</Filter>
     </ClCompile>
     <ClCompile Include="core\SymlinkService.cpp">

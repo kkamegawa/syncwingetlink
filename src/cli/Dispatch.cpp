@@ -13,6 +13,7 @@
 #include "core/PackageFilter.h"
 #include "core/PackageSourceFactory.h"
 #include "core/Paths.h"
+#include "core/RepairBatch.h"
 #include "rules/RuleSetSelector.h"
 #include "tui/ChecklistModel.h"
 #include "tui/TerminalSession.h"
@@ -120,22 +121,35 @@ BOOL WINAPI consoleCtrlHandler(DWORD ctrlType)
     return L"Unknown";
 }
 
-[[nodiscard]] std::wstring_view outcomeDisplayName(SymlinkRepairOutcome outcome) noexcept
+// Display text for the shared repair-batch executor's per-candidate result
+// (core/RepairBatch.h RepairDisposition), used by both the non-interactive and TUI
+// `fix` paths' `[current/total] alias: result` progress lines (docs/adr-phase-6.md
+// ADR-0028). Failed/NotAttempted are never actually reached here: a failed item is
+// reported via its own "error: ..." line instead (see the onProgress callback in
+// runFix()), and NotAttempted items are never added to RepairBatchResult::items at
+// all - both cases are included only so this switch stays total.
+[[nodiscard]] std::wstring_view repairDispositionDisplayName(RepairDisposition disposition) noexcept
 {
-    switch (outcome)
+    switch (disposition)
     {
-    case SymlinkRepairOutcome::WouldCreate:
-        return L"would create";
-    case SymlinkRepairOutcome::WouldReplaceBroken:
-        return L"would replace";
-    case SymlinkRepairOutcome::Created:
+    case RepairDisposition::Created:
         return L"created";
-    case SymlinkRepairOutcome::ReplacedBroken:
+    case RepairDisposition::ReplacedBroken:
         return L"replaced";
-    case SymlinkRepairOutcome::SkippedOk:
+    case RepairDisposition::PlannedCreate:
+        return L"would create";
+    case RepairDisposition::PlannedReplaceBroken:
+        return L"would replace";
+    case RepairDisposition::Declined:
+        return L"declined";
+    case RepairDisposition::SkippedOk:
         return L"already Ok";
-    case SymlinkRepairOutcome::RefusedMismatch:
+    case RepairDisposition::RefusedMismatch:
         return L"refused (mismatch)";
+    case RepairDisposition::Failed:
+        return L"failed";
+    case RepairDisposition::NotAttempted:
+        return L"not attempted";
     }
     return L"unknown";
 }
@@ -315,19 +329,6 @@ struct TuiRunResult
     std::vector<std::wstring> selectedAliases;
 };
 
-[[nodiscard]] bool containsAliasOrdinalIgnoreCase(const std::vector<std::wstring>& aliases,
-                                                   std::wstring_view alias) noexcept
-{
-    for (const std::wstring& candidate : aliases)
-    {
-        if (equalsOrdinalIgnoreCase(candidate, alias))
-        {
-            return true;
-        }
-    }
-    return false;
-}
-
 // Runs the M7 repair checklist when --tui was requested, or reports why it did not
 // run. Every branch that does not end in TuiRunOutcome::Confirmed/Cancelled leaves the
 // terminal untouched - no TUI escape sequence is ever emitted unless a TerminalSession
@@ -402,6 +403,23 @@ struct TuiRunResult
     return result;
 }
 
+// The one place a core::RepairBatchExitCode becomes a cli::ExitCode - total, so a
+// future RepairBatchExitCode value fails to compile here rather than silently mapping
+// to the wrong exit code.
+[[nodiscard]] ExitCode toExitCode(RepairBatchExitCode code) noexcept
+{
+    switch (code)
+    {
+    case RepairBatchExitCode::Success:
+        return ExitCode::Success;
+    case RepairBatchExitCode::InsufficientPermission:
+        return ExitCode::InsufficientPermission;
+    case RepairBatchExitCode::PartialFailure:
+        return ExitCode::PartialFailure;
+    }
+    return ExitCode::PartialFailure;
+}
+
 [[nodiscard]] ExitCode runFix(const AppOptions& options, Console& console)
 {
     const RepairCandidateSet candidates = buildRepairCandidates(options, console);
@@ -435,93 +453,64 @@ struct TuiRunResult
     }
     g_ctrlCRequested.store(false);
 
-    std::vector<SymlinkRepairResult> results;
-    bool anyInsufficientPermission = false;
-    bool anyOtherFailure = false;
-    bool interrupted = false;
-
-    for (const RepairItem& candidate : candidates.nonCollisionItems)
+    // One shared executor for both the non-interactive and TUI `fix` paths
+    // (docs/adr-phase-6.md ADR-0028) - result accounting and the exit-code decision
+    // (toExitCode(exitCodeFor(...)) below) are both made in exactly one place, so
+    // neither path can drift from the other's contract.
+    RepairBatchOptions batchOptions;
+    batchOptions.mode = options.dryRun ? RepairMode::DryRun : RepairMode::Execute;
+    batchOptions.assumeYes = options.assumeYes;
+    if (tuiSelectionActive)
     {
-        if (g_ctrlCRequested.load())
-        {
-            interrupted = true;
-            break;
-        }
-
-        const bool candidateNeedsConsent =
-            candidate.status == LinkStatus::Missing || candidate.status == LinkStatus::Broken;
-
-        if (tuiSelectionActive && candidateNeedsConsent &&
-            !containsAliasOrdinalIgnoreCase(tuiResult.selectedAliases, candidate.alias))
-        {
-            // The checklist offered this candidate and the user left it unchecked -
-            // that is a *declined* repair, distinct from a --dry-run "would create"
-            // plan: unlike --dry-run, no pre-action inspection is performed for it at
-            // all here, since the checklist's own consent step (not an inspection)
-            // is what decided its fate. #60 formalizes "declined" as a shared summary
-            // category across both the CLI and TUI paths; this path already reports
-            // it under that name rather than reusing "would create"/"would replace",
-            // to avoid shipping the conflation ADR-0026/the Wiki plan's
-            // pre-implementation review found in the pre-existing CLI declined-prompt
-            // path (see docs/adr-phase-6.md).
-            if (!options.jsonOutput)
-            {
-                console.writeLine(std::format(L"{}: declined", sanitizeForDisplay(candidate.alias)));
-            }
-            continue;
-        }
-
-        RepairMode mode = RepairMode::Execute;
-        if (options.dryRun)
-        {
-            mode = RepairMode::DryRun;
-        }
-        else if (tuiSelectionActive && candidateNeedsConsent)
-        {
-            // Already consented to via the checklist (the branch above already
-            // excluded every candidate that was offered but left unchecked) - no
-            // further per-item stdin prompt is needed or performed.
-            mode = RepairMode::Execute;
-        }
-        else if (!tuiSelectionActive && !options.assumeYes && candidateNeedsConsent)
-        {
-            const bool confirmed = console.confirm(
+        // The checklist's confirmed selection already decided consent for every
+        // offered candidate; a Missing/Broken candidate not in this list is a
+        // *declined* repair (see RepairDisposition::Declined), never an interactive
+        // prompt.
+        batchOptions.preApprovedAliases = tuiResult.selectedAliases;
+    }
+    else
+    {
+        batchOptions.consent = [&console](const RepairItem& candidate) {
+            return console.confirm(
                 std::format(L"Repair {} (currently {})? [y/N] ",
                            sanitizeForDisplay(candidate.alias),
                            linkStatusDisplayName(candidate.status)),
                 /* assumeYes */ false);
-            mode = confirmed ? RepairMode::Execute : RepairMode::DryRun;
-        }
-
-        try
+        };
+    }
+    batchOptions.pollInterrupted = []() { return g_ctrlCRequested.load(); };
+    batchOptions.onProgress = [&console, &options](std::size_t current, std::size_t total,
+                                                    const RepairItemResult& item) {
+        if (item.disposition == RepairDisposition::Failed)
         {
-            SymlinkRepairResult result = repairLink(candidate, mode);
-            if (!options.jsonOutput)
+            // Errors are always reported, regardless of --json - matching the
+            // pre-#60 behavior this replaces.
+            if (item.error.has_value() &&
+                item.error->kind() == SymlinkServiceErrorKind::InsufficientPermission)
             {
-                console.writeLine(std::format(L"{}: {}", sanitizeForDisplay(candidate.alias),
-                                              outcomeDisplayName(result.outcome)));
-            }
-            results.push_back(std::move(result));
-        }
-        catch (const SymlinkServiceError& error)
-        {
-            if (error.kind() == SymlinkServiceErrorKind::InsufficientPermission)
-            {
-                anyInsufficientPermission = true;
-                console.writeLine(std::format(L"error: {} - {}",
-                                              sanitizeForDisplay(candidate.alias),
-                                              permissionGuidance(error)),
+                console.writeLine(std::format(L"[{}/{}] error: {} - {}", current, total,
+                                              sanitizeForDisplay(item.candidate.alias),
+                                              permissionGuidance(*item.error)),
                                   ConsoleStream::Error);
             }
             else
             {
-                anyOtherFailure = true;
-                console.writeLine(std::format(L"error: {} - repair failed",
-                                              sanitizeForDisplay(candidate.alias)),
+                console.writeLine(std::format(L"[{}/{}] error: {} - repair failed", current,
+                                              total, sanitizeForDisplay(item.candidate.alias)),
                                   ConsoleStream::Error);
             }
+            return;
         }
-    }
+        if (!options.jsonOutput)
+        {
+            console.writeLine(std::format(L"[{}/{}] {}: {}", current, total,
+                                          sanitizeForDisplay(item.candidate.alias),
+                                          repairDispositionDisplayName(item.disposition)));
+        }
+    };
+
+    const RepairBatchResult batchResult =
+        runRepairBatch(candidates.nonCollisionItems, batchOptions);
 
     if (ctrlHandlerRegistered)
     {
@@ -530,22 +519,23 @@ struct TuiRunResult
 
     if (options.jsonOutput)
     {
-        writeJsonDocument(console, toJsonFixResult(results, candidates.collisions));
+        // toJsonFixResult (docs/adr-phase-5.md ADR-0022) still consumes exactly the
+        // SymlinkRepairResult vector it always has - Declined/Failed/NotAttempted
+        // items simply have no repairResult to contribute, since none of them ever
+        // reached repairLink().
+        std::vector<SymlinkRepairResult> jsonResults;
+        jsonResults.reserve(batchResult.items.size());
+        for (const RepairItemResult& item : batchResult.items)
+        {
+            if (item.repairResult.has_value())
+            {
+                jsonResults.push_back(*item.repairResult);
+            }
+        }
+        writeJsonDocument(console, toJsonFixResult(jsonResults, candidates.collisions));
     }
 
-    if (interrupted)
-    {
-        return ExitCode::PartialFailure;
-    }
-    if (anyInsufficientPermission)
-    {
-        return ExitCode::InsufficientPermission;
-    }
-    if (anyOtherFailure)
-    {
-        return ExitCode::PartialFailure;
-    }
-    return ExitCode::Success;
+    return toExitCode(exitCodeFor(batchResult.summary));
 }
 
 [[nodiscard]] ExitCode runTestRule(const AppOptions& options, Console& console)

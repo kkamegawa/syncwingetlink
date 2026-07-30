@@ -2069,3 +2069,95 @@ written.
 - `Debug|ARM64`/`Release|ARM64`: cross-built, not run (this machine is x64).
 - No dependency added.
 - No `*_ja.md` file was read or changed.
+
+## 2026-07-31 — M7: display TUI progress and results, closing M7 (issue #60)
+
+**Trigger**: issue #9 (M7 milestone), sub-issue #60, the last M7 sub-issue, stacked on
+#59 (branch `feature/60-tui-progress-results` branches from
+`feature/59-repair-checklist`), referencing the Wiki plan
+`plan/syncwingetlink/m7-interactive-tui` and `docs/adr-phase-6.md` ADR-0028.
+
+### Completed
+
+- `src/core/RepairBatch.{h,cpp}` (new): `runRepairBatch()`, the shared executor both
+  the non-interactive and TUI `fix` paths now drive. Decides per-candidate
+  `RepairDisposition` (adding `Declined`, `Failed`, and `NotAttempted` to the
+  vocabulary `SymlinkRepairOutcome` alone did not have room for), builds one
+  `RepairBatchSummary`, and `exitCodeFor()` makes the exit-code decision from it in
+  one place. `repairLink()` itself is injectable (`RepairBatchOptions::
+  repairFunction`, defaulting to the real one) so this executor's own logic is
+  unit-testable without symlink privilege - the same seam pattern
+  `SymlinkServiceOperations`/`ConsoleOperations`/`TerminalOperations` already use.
+- `src/cli/Dispatch.cpp`: `runFix()`'s hand-written loop (extended once already by
+  #59 for the TUI-selected/declined branch) is replaced by one `runRepairBatch()`
+  call. `outcomeDisplayName()` is replaced by `repairDispositionDisplayName()`.
+  Progress lines now read `[current/total] alias: result` (previously bare `alias:
+  result`), for both the CLI and TUI paths, via `RepairBatchOptions::onProgress`; a
+  failed item's guidance text (`permissionGuidance()`) is unchanged in wording, now
+  driven by `RepairItemResult::error` (the preserved `SymlinkServiceError`) instead of
+  a local `catch` block.
+- **Fixed the declined-vs-dry-run conflation for the non-interactive CLI path too**:
+  refusing the "Repair X (currently Y)? [y/N]" prompt used to call
+  `repairLink(candidate, RepairMode::DryRun)` and report the resulting `WouldCreate`/
+  `WouldReplaceBroken` outcome - indistinguishable from an item genuinely planned via
+  `--dry-run`. It is now `RepairDisposition::Declined`, reported as `declined`, and
+  never reaches `repairLink()` at all - matching what #59 already did for the TUI's
+  own checklist selection, so both paths now share one correct behavior instead of one
+  correct and one still-conflated.
+- **Corrected the exit-code precedence**, for both paths: insufficient permission (2)
+  now takes priority over an interruption or any other failure in the same batch,
+  fixing the pre-#60 `runFix()`, which checked `interrupted` first (so a permission
+  failure followed by Ctrl+C used to return 10, not 2) - the exact defect the
+  pre-implementation review recorded in this session's first `docs/task.md` entry
+  found before any M7 code was written. An interruption with zero items remaining does
+  not, by itself, count as a partial failure.
+- `docs/adr-phase-6.md`: ADR-0028 records the shared-executor design, the `declined`
+  fix for the CLI path, the `[current/total]` progress contract, and the corrected
+  exit-code precedence (with the reasoning for why it is a correction, not a
+  clarification).
+- `docs/TODO.md` M7: checked off the progress/summary line, pointing at #60 and
+  ADR-0028 - **this completes M7 in `docs/TODO.md`**.
+- `docs/PLAN.md` §11: checked off "`--tui` allows interactive checking and batch
+  creation", pointing at #58/#59/#60 and ADR-0026 through ADR-0028 - per the Wiki
+  plan's own instruction that only #60 marks this line.
+- Tests: `tests/RepairBatchTests.cpp` (new, 17 cases) covering full success, dry-run,
+  declined (refused prompt, `preApprovedAliases` exclusion with ordinal
+  case-insensitivity, `assumeYes` bypass), permission vs. non-permission failure and
+  their precedence over a same-batch interruption, interruption before any item and
+  midway through (confirming the skipped candidate's `repairFunction` is never
+  called), and `exitCodeFor()` exercised directly against hand-built summaries
+  (including the `interrupted && remaining == 0` case `runRepairBatch()`'s own loop
+  cannot itself produce, kept as an explicit, tested contract regardless).
+
+### Deliberately not done
+
+- `docs/PLAN_ja.md`/`docs/TODO_ja.md` were not touched - Japanese translations, per
+  `AGENTS.md`'s language policy.
+- `docs/PLAN.md` §11's remaining unchecked Definition-of-Done lines were left alone -
+  only the `--tui` line is this issue's to claim, per the Wiki plan.
+- Manual end-to-end verification of the real interactive loop and real repair batch
+  together (actual key presses, an actual Ctrl+C during the repair phase, an actual
+  permission failure on a real host) was not performed - there is no attached
+  interactive console, and this host lacks Developer Mode/elevation for real symlink
+  creation, matching the same limitations #58 and #59 already noted for their own
+  production Win32 paths. `RepairBatchTests.cpp` and `TuiAppTests.cpp` together
+  exercise the full decision logic (consent, disposition, summary, exit code, and the
+  checklist state machine) through their respective seams instead.
+
+### Verified
+
+- `Debug|x64`, `Release|x64`, `Debug|ARM64`, `Release|ARM64`:
+  `syncwingetlink.core.vcxproj`, `syncwingetlink.tests.vcxproj`, and
+  `syncwingetlink.vcxproj` all build clean at `/W4 /WX`, no new warnings.
+- `vstest.console.exe /Platform:x64`: 386/386 passed in both `Debug|x64` and
+  `Release|x64` (up from 368; +17 `RepairBatchTests`).
+- `Debug|ARM64`/`Release|ARM64`: cross-built, not run (this machine is x64).
+- No dependency added.
+- No `*_ja.md` file was read or changed.
+
+**M7 (issue #9) is complete**: #58, #59, and #60 are all opened as pull requests
+(#114, #115, and this issue's PR) against a stacked branch chain rooted at `main`,
+matching the M4/M5/M6 delivery pattern. `docs/TODO.md`, `docs/PLAN.md`,
+`docs/adr-phase-6.md` (ADR-0026 through ADR-0028), and the Wiki plan agree. Merging is
+left to the repository maintainer, per session agreement; #9 itself remains open until
+all three sub-issues are merged and closed.
