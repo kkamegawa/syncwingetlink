@@ -1608,3 +1608,37 @@ the Wiki plan `plan/syncwingetlink/m6-command-line-interface`.
 - `Debug|ARM64`/`Release|ARM64`: cross-built, not run (this machine is x64).
 - No dependency added.
 - No `*_ja.md` file was read or changed.
+
+### Copilot review feedback addressed (PR #110, before merge)
+
+- `src/rules/RuleSetSelector.cpp`'s `loadRuleSetFromFile()` no longer relies on the
+  `file_size()` pre-check as the only enforcement of `kMaxRulesFileBytes`: the actual
+  read is now bounded to `kMaxRulesFileBytes + 1` bytes
+  (`stream.read(text.data(), text.size())` into a fixed-size buffer, then rejecting if
+  `gcount()` exceeds the cap) regardless of what the pre-check reported or failed to
+  report. A `file_size()` failure or a race that grows the file between the pre-check
+  and the read can no longer bypass the cap - the buffer itself is never larger than
+  the bound, and the read stops there. The pre-check stays as a cheap fast-reject path
+  that avoids even allocating the bounded buffer for an absurdly large file; the bounded
+  read is what actually closes the gap. `<sstream>` (the now-unused `std::ostringstream`
+  approach) was removed.
+  - Not covered by a dedicated new test beyond the existing oversized-file test: that
+    test already exercises the same bounded-read code path this fix changed (it now
+    goes through `stream.read()` instead of `buffer << stream.rdbuf()`), but
+    specifically proving the pre-check-bypass scenario (a `file_size()` failure or a
+    grow-after-check race) would require filesystem mocking this component does not
+    have; noted here rather than claiming coverage that does not exist.
+- `src/cli/Console.cpp`'s `readLineFromConsole()` now detects when a typed line is
+  longer than its internal 1024-`wchar_t` buffer (the buffer filled completely without
+  its last character being `\n`) and drains the remainder of that line - including the
+  newline that would otherwise end it - from the console's input queue before
+  returning, so a later confirmation prompt cannot silently consume an overlong
+  previous line's leftover tail instead of fresh input. An overlong line is reported as
+  refusal (an empty string), consistent with the equivalent fix already made to the
+  redirected-stdin path (#108's PR feedback).
+  - Not covered by an automated test: like the redirected-stream path, this function
+    reads the real console input handle, which cannot be safely fed a synthetic
+    overlong line from a unit test without an actual interactive terminal. Documented
+    the same way the redirected-stream fix's untested status was documented.
+- Rebuilt and reran the full suite after these changes: `Debug|x64`/`Release|x64` still
+  308/308, no new warnings.

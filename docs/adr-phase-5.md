@@ -329,13 +329,18 @@ This file continues the chronological record in [`adr-phase-4.md`](./adr-phase-4
    or merely corrupted file. A rules file is untrusted input from the moment it is
    read, whether it came from `--rules` or the user's own
    `%LOCALAPPDATA%\syncwingetlink\rules.json`.
-2. **The file-size cap is checked in `loadRuleSetFromFile()` via
-   `std::filesystem::file_size()`, before the file is opened for reading at all** -
-   not after reading it into a buffer and then checking the buffer's length. A query
-   failure (e.g. a race with the file being deleted between the check and the
-   subsequent open) does not itself throw; the immediately following `ifstream` open
-   surfaces the real failure in that case, so this check is a fast-reject pre-check,
-   not the only gate.
+2. **The file-size cap is enforced two ways in `loadRuleSetFromFile()`, with the read
+   itself as the actual bound.** A `std::filesystem::file_size()` pre-check, before the
+   file is even opened, cheaply rejects an absurdly large file without allocating
+   anything for it. But the read that follows does not trust that pre-check as the
+   only gate: it reads at most `kMaxRulesFileBytes + 1` bytes into a fixed-size buffer
+   (`stream.read(...)`, checked via `gcount()`), so a `file_size()` query failure (e.g.
+   a race with the file being deleted) or a race that grows the file between the
+   pre-check and the read can never cause more than that bound to be pulled into
+   memory - **corrected from this issue's own first version**, which checked size only
+   via the pre-check and then read the whole file unboundedly
+   (`buffer << stream.rdbuf()`) regardless of what that pre-check found, a gap a
+   Copilot review of this issue's PR caught before merge.
 3. **The rule-count cap is checked before the per-rule validation loop begins** in
    `RuleSet(std::vector<AliasRule>)`, so an oversized rule list is rejected without
    first compiling any of its patterns. The per-field length caps are checked at the
