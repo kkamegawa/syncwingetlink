@@ -46,6 +46,7 @@
   <ItemGroup>
     <ClCompile Include="cli\ArgParser.cpp" />
     <ClCompile Include="cli\Console.cpp" />
+    <ClCompile Include="cli\Json.cpp" />
     <ClCompile Include="core\AliasResolver.cpp" />
     <ClCompile Include="core\ComApartment.cpp" />
     <ClCompile Include="core\ExecutableScanner.cpp" />
@@ -64,6 +65,7 @@
   <ItemGroup>
     <ClInclude Include="cli\ArgParser.h" />
     <ClInclude Include="cli\Console.h" />
+    <ClInclude Include="cli\Json.h" />
     <ClInclude Include="core\AliasResolver.h" />
     <ClInclude Include="core\ComApartment.h" />
     <ClInclude Include="core\ExecutableScanner.h" />

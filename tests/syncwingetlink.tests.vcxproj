@@ -43,6 +43,7 @@
     <ClCompile Include="DefaultRulesTests.cpp" />
     <ClCompile Include="ExecutableScannerTests.cpp" />
     <ClCompile Include="FsScanSourceTests.cpp" />
+    <ClCompile Include="JsonTests.cpp" />
     <ClCompile Include="LinkInspectorTests.cpp" />
     <ClCompile Include="PackageFilterTests.cpp" />
     <ClCompile Include="PackageSourceErrorTests.cpp" />

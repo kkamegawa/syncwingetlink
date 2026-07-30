@@ -210,3 +210,95 @@ This file continues the chronological record in [`adr-phase-4.md`](./adr-phase-4
   `AppOptions::noColor` into it, calling `confirm()` at the appropriate point in the
   `fix` flow, and enforcing the alias-collision exclusion `Console` itself does not
   know about.
+
+---
+
+## ADR-0022 — JSON schema, string-escaping rules, and the explicit surrogate policy
+
+- **Date**: 2026-07-30
+- **Affected**: `cli/Json`, `docs/PLAN.md` §8, `docs/TODO.md` M6, the Wiki page
+  `plan/syncwingetlink/m6-command-line-interface`
+- **Status**: Accepted
+
+### Decision
+
+1. **A `schemaVersion` field, not implicit versioning.** Both the `scan` and `fix`
+   documents start with `{"schemaVersion":1, ...}`, following `rules.json`'s own
+   precedent (`docs/rules.md`) for a stable, explicitly-versioned document shape rather
+   than an unversioned one a script would have no reliable way to detect a future
+   breaking change against.
+2. **`escapeJsonString()` implements RFC 8259's string-escaping rules directly** (the
+   six named two-character escapes, `\uXXXX` for every other C0 control character,
+   ordinary UTF-8 for everything else), rather than reusing a general-purpose
+   wide-to-UTF-8 conversion function anywhere else in this codebase. Every existing
+   `toUtf8()` helper (`rules/RuleSetSelector.cpp`, `cli/ArgParser.cpp`,
+   `cli/Console.cpp`) calls `WideCharToMultiByte(CP_UTF8, 0, ...)` with no
+   `WC_ERR_INVALID_CHARS` flag, which silently substitutes U+FFFD for an invalid
+   sequence and has no JSON-escaping behavior at all - reusing it here would have left
+   the surrogate policy and the control-character escaping implicit and inconsistent
+   with RFC 8259, rather than the explicit, tested policy this ADR records.
+3. **An unpaired UTF-16 surrogate becomes U+FFFD (REPLACEMENT CHARACTER), encoded as its
+   own valid three-byte UTF-8 sequence.** Windows file names are technically WTF-16, not
+   strict UTF-16, so an unpaired surrogate is a real (if rare) possibility in a package
+   identifier or executable file name. The alternative failure modes - producing
+   ill-formed UTF-8 a downstream JSON parser would reject outright, or throwing and
+   aborting the entire `--json` output over one untrusted string - were both rejected in
+   favor of a documented, lossy-but-valid substitution. A valid surrogate *pair* is
+   combined into the one non-BMP code point it represents and encoded as 4-byte UTF-8,
+   never left as two separate 3-byte "surrogate" encodings (which would themselves be
+   invalid UTF-8, this being exactly the mistake CESU-8 makes).
+4. **`toJsonString(std::wstring_view)` and a path-taking overload were found to be
+   ambiguous and had to be split into two differently-named functions**
+   (`toJsonString`/`toJsonPathString`), discovered as a compile error while implementing
+   this issue: `std::filesystem::path`'s converting constructor accepts any
+   `wchar_t`-sequence `Source`, so a plain `std::wstring` argument is an equally valid
+   implicit conversion target for *both* an overload taking `std::wstring_view` and one
+   taking `const std::filesystem::path&` - neither conversion is preferred by overload
+   resolution, so every call site passing a bare `std::wstring` (which is what
+   `cli::sanitizeForDisplay()` and `LinkStatus`/`LinkEntryKind`/`SymlinkRepairOutcome`
+   name lookups all return) failed to compile. This is a narrow API-naming lesson, not a
+   design change: the two functions are documented as distinct on this basis so a future
+   caller does not attempt to reintroduce the overload.
+5. **JSON serialization reuses `cli::sanitizeForDisplay()` (`Console.h`, ADR-0021) for
+   every untrusted string field** (`executable`, `alias`, `linkPath`, `existingTarget`,
+   each `AliasCollision` executable path) before escaping. JSON and console output share
+   one sanitization boundary rather than defining a second, possibly divergent, one for
+   the same category of untrusted input.
+6. **`toJsonScanResult()`/`toJsonFixResult()` produce only the JSON text.** Neither
+   function writes anything, decides where diagnostics go, or knows about `--json`'s
+   stdout-purity requirement (the security contract's "`--json` stream purity" rule) -
+   that remains dispatch's (#56) responsibility once a real `AppOptions`/`Console` pair
+   exists to enforce it against.
+7. **`fix`'s JSON output serializes `SymlinkRepairResult` per candidate, plus the
+   collisions dispatch excluded before running `repairLink()` at all** - collisions
+   never appear inside `results`, matching how `scan`'s `collisions` array is already
+   reported separately from `repairItems` (`core/Model.h`'s `AliasCollision`, ADR-0017).
+
+### Reason
+
+- An RFC-8259-direct escaper, rather than one built on the codebase's existing lenient
+  `toUtf8()` helpers, is what makes the surrogate policy a deliberate, tested decision
+  instead of an accidental side effect of whichever conversion function happened to be
+  reused.
+- Substituting U+FFFD for an unpaired surrogate keeps `--json` output usable and valid
+  even against the rare untrusted input that could otherwise break it, at the
+  well-precedented cost (the same one Unicode's own replacement-character convention
+  exists for) of losing the exact original byte sequence in that one field.
+
+### Consequences
+
+- `src/cli/Json.{h,cpp}` implement `escapeJsonString()`, `toJsonString()`,
+  `toJsonPathString()`, `toJsonBool()`, `toJson(const RepairItem&)`,
+  `toJson(const AliasCollision&)`, `toJson(const SymlinkRepairResult&)`,
+  `toJsonScanResult()`, and `toJsonFixResult()`.
+- `docs/PLAN.md` §8 gains the full `--json` output schema (both `scan` and `fix` shapes)
+  under a new "`--json` output schema" subsection.
+- `tests/JsonTests.cpp` covers RFC 8259 escaping (named escapes, `\uXXXX` for other C0
+  controls, ordinary and non-BMP UTF-8 encoding, valid surrogate pairs, unpaired high
+  and low surrogates including one at the end of the string), and domain serialization
+  for every type `cli::Json` renders, including the sanitize-before-escape property and
+  both wrapper documents' empty-input shape.
+- `docs/TODO.md` M6's `--json output` line is checked off, pointing at #55 and this ADR.
+- #56 (dispatch) is responsible for actually calling `toJsonScanResult()`/
+  `toJsonFixResult()` from real `scan`/`fix` runs, enforcing that stdout carries only
+  that text when `--json` is set, and routing every other message to stderr instead.
