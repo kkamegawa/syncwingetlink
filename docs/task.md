@@ -1406,3 +1406,73 @@ merged - branch `feature/54-console-interaction` branches from
 - No dependency added.
 - No `*_ja.md` file was read or changed.
 
+## 2026-07-30 — CLI: machine-readable JSON output (issue #55)
+
+**Trigger**: issue #8 (M6 milestone), sub-issue #55, stacked on #54 (PR #108, not yet
+merged - branch `feature/55-json-output` branches from
+`feature/54-console-interaction`), referencing the Wiki plan
+`plan/syncwingetlink/m6-command-line-interface`.
+
+### Completed
+
+- `src/cli/Json.{h,cpp}` (registered in `syncwingetlink.core.vcxproj`/`.filters`):
+  - `escapeJsonString()`: RFC 8259 string escaping - named two-character escapes,
+    `\uXXXX` for other C0 controls, ordinary UTF-8 for everything else, a valid
+    surrogate pair combined into its one non-BMP code point, and an unpaired surrogate
+    (possible in a Windows WTF-16 file name) replaced with U+FFFD.
+  - `toJsonString()`/`toJsonPathString()`/`toJsonBool()`: quoting/wrapping helpers.
+    `toJsonPathString()` needed a distinct name from `toJsonString()` rather than being
+    an overload - `std::filesystem::path`'s converting constructor makes a bare
+    `std::wstring` argument equally viable for either overload, an ambiguity the
+    compiler caught immediately (see ADR-0022 point 4).
+  - `toJson(const RepairItem&)`, `toJson(const AliasCollision&)`,
+    `toJson(const SymlinkRepairResult&)`, `toJsonScanResult()`, `toJsonFixResult()`:
+    domain serialization, reusing `cli::sanitizeForDisplay()` (#54) on every untrusted
+    string field before escaping - one sanitization boundary shared by console and JSON
+    output, not two.
+- `docs/PLAN.md` §8: added a "`--json` output schema" subsection with both the `scan`
+  and `fix` document shapes, `schemaVersion` following `rules.json`'s own precedent for
+  a stable, versioned shape.
+- `docs/adr-phase-5.md`: **ADR-0022** records the schema-versioning choice, why the
+  escaper is written directly against RFC 8259 rather than reusing this codebase's
+  existing lenient `toUtf8()` helpers, the explicit surrogate policy, the
+  `toJsonString`/`toJsonPathString` naming split found necessary during implementation,
+  and the shared-sanitization-boundary decision.
+- `docs/TODO.md` M6: checked off the `--json output` line, pointing at #55 and
+  ADR-0022.
+- Tests: `tests/JsonTests.cpp` (new, registered in
+  `syncwingetlink.tests.vcxproj`/`.filters`) - 22 tests: RFC 8259 escaping (ordinary
+  text, quote/backslash, all six named escapes, other C0 controls via `\uXXXX`, non-BMP
+  BMP-adjacent characters as raw UTF-8, a valid surrogate pair, an unpaired high
+  surrogate, an unpaired low surrogate, a high surrogate at end-of-string, empty input),
+  the quoting/bool wrappers, and domain serialization for `RepairItem` (all fields,
+  `existingTarget` present/absent, sanitize-before-escape), `AliasCollision`,
+  `SymlinkRepairResult` (with/without a verified item), and both wrapper documents
+  (including their empty-input shape).
+  - Two more hex-escape greediness mistakes, same root cause as #54's: narrow-string
+    literals `"a\xEF\xBF\xBDb"` had `\xBDb` parsed as one out-of-range hex escape.
+    Fixed by breaking the literal (`"a\xEF\xBF\xBD" "b"`) via adjacent-literal
+    concatenation, same fix pattern as #54's wide-string case.
+
+### Deliberately not done
+
+- `docs/PLAN_ja.md`/`docs/TODO_ja.md` were not touched - Japanese translations, per
+  `AGENTS.md`'s language policy.
+- No dispatch wiring: nothing yet calls `toJsonScanResult()`/`toJsonFixResult()` from a
+  real `scan`/`fix` run, and nothing yet enforces that stdout carries only JSON when
+  `--json` is set - both remain #56's job, unchanged from #53/#54's entries.
+- `main.cpp` still does not exist, so `syncwingetlink.vcxproj` still fails to link
+  (`LNK1561`) - unchanged, still #56's job.
+
+### Verified
+
+- `Debug|x64`, `Release|x64`, `Debug|ARM64`, `Release|ARM64`:
+  `syncwingetlink.core.vcxproj` and `syncwingetlink.tests.vcxproj` build clean at
+  `/W4 /WX`, no new warnings (after fixing the overload-ambiguity compile error above).
+- `vstest.console.exe /Platform:x64`: 298/298 passed in both `Debug|x64` and
+  `Release|x64` (up from 276; 22 of the 298 are new `JsonTests.cpp` cases, confirmed
+  individually green after the hex-escape test fixes above).
+- `Debug|ARM64`/`Release|ARM64`: cross-built, not run (this machine is x64).
+- No dependency added.
+- No `*_ja.md` file was read or changed.
+

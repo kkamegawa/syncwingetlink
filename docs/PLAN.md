@@ -301,6 +301,66 @@ exact condition `fix` exists to correct. See `docs/adr-phase-5.md` ADR-0020.
   enumerate at all; `auto` only reaches this if both COM and the FS fallback fail)
 - `10`: some repairs failed
 
+### `--json` output schema
+
+When `--json` is set, stdout carries exactly one JSON document and nothing else -
+diagnostics, warnings, and prompts move to stderr instead (see `docs/adr-phase-5.md`
+ADR-0022). `schemaVersion` follows `rules.json`'s own precedent (`docs/rules.md`) for a
+stable, versioned document shape.
+
+`scan` output:
+
+```json
+{
+  "schemaVersion": 1,
+  "command": "scan",
+  "repairItems": [
+    {
+      "executable": "<path>",
+      "alias": "<name>.exe",
+      "linkPath": "<path>",
+      "status": "Ok" | "Missing" | "Broken" | "Mismatch",
+      "entryKind": "None" | "RegularFile" | "SymbolicLink" | "OtherReparsePoint",
+      "existingTarget": "<path>" | null
+    }
+  ],
+  "collisions": [
+    { "alias": "<name>.exe", "executables": ["<path>", "<path>"] }
+  ]
+}
+```
+
+`fix` output:
+
+```json
+{
+  "schemaVersion": 1,
+  "command": "fix",
+  "results": [
+    {
+      "item": { "...": "a repairItems entry, as observed immediately before acting" },
+      "outcome": "WouldCreate" | "WouldReplaceBroken" | "Created" | "ReplacedBroken" |
+                 "SkippedOk" | "RefusedMismatch",
+      "verifiedItem": { "...": "the post-creation re-inspection" } | null
+    }
+  ],
+  "collisions": [
+    { "alias": "<name>.exe", "executables": ["<path>", "<path>"] }
+  ]
+}
+```
+
+`collisions` here lists candidates excluded from repair before `fix` ran at all - they
+never appear inside `results`.
+
+Every string value (`executable`, `alias`, `linkPath`, `existingTarget`, the elements of
+`executables`) is sanitized the same way console output is - see
+`docs/adr-phase-5.md` ADR-0021's `sanitizeForDisplay()` - before JSON-escaping, so a
+crafted file name cannot inject raw control characters into the document. String
+escaping follows RFC 8259; a UTF-16 surrogate pair in a Windows file name encodes as its
+one non-BMP code point, and an unpaired surrogate becomes U+FFFD (see ADR-0022) rather
+than invalid UTF-8 or a hard failure.
+
 ## 9. Fallback / future enhancements
 
 - **FS-scan fallback (included in first release)**: when the COM API is unavailable,

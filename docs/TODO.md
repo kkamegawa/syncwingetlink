@@ -141,7 +141,10 @@ Build system decisions are recorded in [`adr.md`](./adr.md) (ADR-0001 … ADR-00
 - [x] `cli/Console`: UTF-8/UTF-16 output, coloring (probed VT + `--no-color`/`NO_COLOR`),
       confirmation prompt (`--yes` support), and untrusted-string sanitization before
       display (#54, ADR-0021)
-- [ ] `--json` output (for scripting)
+- [x] `--json` output (for scripting): `cli/Json` serializes `RepairItem`,
+      `AliasCollision`, and `SymlinkRepairResult` into the schema documented in
+      `docs/PLAN.md` §8 (#55, ADR-0022). Ensuring stdout carries only the JSON document
+      when `--json` is set is `main.cpp`'s (#56) job, not this module's
 - [ ] `main.cpp`: mode dispatch and exit-code mapping
 - [ ] `--help`/`--version`
 
