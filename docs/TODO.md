@@ -155,7 +155,8 @@ Build system decisions are recorded in [`adr.md`](./adr.md) (ADR-0001 … ADR-00
 ## M7. TUI (`--tui`)
 - [x] Enable Console Virtual Terminal Sequences (`ENABLE_VIRTUAL_TERMINAL_PROCESSING`) -
       issue #58, ADR-0026 (`docs/adr-phase-6.md`)
-- [ ] Checklist UI for repair candidates (space to select, Enter to execute) - issue #59
+- [x] Checklist UI for repair candidates (space to select, Enter to execute) - issue #59,
+      ADR-0027 (`docs/adr-phase-6.md`)
 - [ ] Progress / result summary display - issue #60
 
 ## M8. Quality / polish

@@ -14,6 +14,9 @@
 #include "core/PackageSourceFactory.h"
 #include "core/Paths.h"
 #include "rules/RuleSetSelector.h"
+#include "tui/ChecklistModel.h"
+#include "tui/TerminalSession.h"
+#include "tui/TuiApp.h"
 
 #include <Windows.h>
 
@@ -287,10 +290,134 @@ void writeJsonDocument(Console& console, const std::string& json)
     return ExitCode::Success;
 }
 
+// The result of attempting the M7 interactive checklist for `fix --tui`. Distinguishes
+// three outcomes runFix() must all handle differently: the checklist ran and the user
+// cancelled it (Escape/Q/Ctrl+C - success, no repairs, no filesystem mutation); the
+// checklist ran and the user confirmed a (possibly empty) selection; or the checklist
+// did not run at all, either because there was nothing selectable to show or because
+// the terminal capability required for it was unavailable - both fall back to the
+// existing line-oriented CLI confirmation flow with zero TUI escape sequences emitted.
+enum class TuiRunOutcome
+{
+    NotRun,
+    Cancelled,
+    Confirmed,
+};
+
+struct TuiRunResult
+{
+    TuiRunOutcome outcome{TuiRunOutcome::NotRun};
+    // Only meaningful when outcome is Confirmed. The *aliases* the user selected -
+    // not the RepairItems themselves - because runFix()'s own loop below always
+    // re-derives its candidate list from candidates.nonCollisionItems (the same fresh
+    // inventory both the TUI and non-TUI paths share), rather than repairing whatever
+    // (possibly stale) items the checklist happened to capture at render time.
+    std::vector<std::wstring> selectedAliases;
+};
+
+[[nodiscard]] bool containsAliasOrdinalIgnoreCase(const std::vector<std::wstring>& aliases,
+                                                   std::wstring_view alias) noexcept
+{
+    for (const std::wstring& candidate : aliases)
+    {
+        if (equalsOrdinalIgnoreCase(candidate, alias))
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+// Runs the M7 repair checklist when --tui was requested, or reports why it did not
+// run. Every branch that does not end in TuiRunOutcome::Confirmed/Cancelled leaves the
+// terminal untouched - no TUI escape sequence is ever emitted unless a TerminalSession
+// was actually acquired.
+[[nodiscard]] TuiRunResult runTuiChecklistIfRequested(const AppOptions& options,
+                                                       Console& console,
+                                                       const RepairCandidateSet& candidates)
+{
+    if (!options.useTui)
+    {
+        return {};
+    }
+
+    std::vector<tui::ChecklistCandidate> selectable;
+    for (const RepairItem& item : candidates.nonCollisionItems)
+    {
+        if (item.status == LinkStatus::Missing || item.status == LinkStatus::Broken)
+        {
+            selectable.push_back(tui::ChecklistCandidate{item});
+        }
+    }
+
+    if (selectable.empty())
+    {
+        // Nothing to select - every remaining candidate is Ok/Mismatch/excluded, none
+        // of which ever needed confirmation. Showing an empty checklist would be
+        // meaningless, so runFix()'s ordinary path below handles these exactly as it
+        // would without --tui at all.
+        return {};
+    }
+
+    if (!console.stdinInteractive() || !console.stdoutInteractive() || !console.vtEnabled())
+    {
+        console.writeLine(L"warning: --tui requires an interactive terminal with "
+                          L"virtual-terminal support; falling back to the "
+                          L"line-oriented confirmation flow",
+                          ConsoleStream::Error);
+        return {};
+    }
+
+    std::optional<tui::TerminalSession> session = tui::TerminalSession::tryCreate(
+        console.stdinInteractive(), console.stdoutInteractive(), console.vtEnabled());
+    if (!session.has_value())
+    {
+        console.writeLine(L"warning: the interactive TUI could not be started; falling "
+                          L"back to the line-oriented confirmation flow",
+                          ConsoleStream::Error);
+        return {};
+    }
+
+    tui::ChecklistModel model(std::move(selectable));
+    const tui::ChecklistRunResult checklistResult = tui::runChecklist(*session, model);
+    // Fold the terminal back before this function's caller writes anything else -
+    // progress lines and the final summary must land on the restored, normal screen,
+    // not the checklist's alternate one.
+    session->restore();
+
+    if (checklistResult.outcome == tui::ChecklistOutcome::Cancelled)
+    {
+        TuiRunResult result;
+        result.outcome = TuiRunOutcome::Cancelled;
+        return result;
+    }
+
+    TuiRunResult result;
+    result.outcome = TuiRunOutcome::Confirmed;
+    result.selectedAliases.reserve(checklistResult.selectedCandidates.size());
+    for (const tui::ChecklistCandidate& candidate : checklistResult.selectedCandidates)
+    {
+        result.selectedAliases.push_back(candidate.item.alias);
+    }
+    return result;
+}
+
 [[nodiscard]] ExitCode runFix(const AppOptions& options, Console& console)
 {
     const RepairCandidateSet candidates = buildRepairCandidates(options, console);
     printCollisions(console, candidates.collisions);
+
+    const TuiRunResult tuiResult = runTuiChecklistIfRequested(options, console, candidates);
+    if (tuiResult.outcome == TuiRunOutcome::Cancelled)
+    {
+        // Escape, Q, or Ctrl+C: success, with no repairs and no filesystem mutation -
+        // per the documented checklist cancellation contract. Nothing has been
+        // mutated, so there is nothing for a --json document to report either; --json
+        // and --tui already conflict at parse time (cli::ArgParser), so this path
+        // never needs to produce one.
+        return ExitCode::Success;
+    }
+    const bool tuiSelectionActive = tuiResult.outcome == TuiRunOutcome::Confirmed;
 
     // Not fatal if this fails: Ctrl+C would then terminate the process immediately
     // instead of stopping the batch cleanly between items, a degraded (not unsafe)
@@ -321,14 +448,42 @@ void writeJsonDocument(Console& console, const std::string& json)
             break;
         }
 
+        const bool candidateNeedsConsent =
+            candidate.status == LinkStatus::Missing || candidate.status == LinkStatus::Broken;
+
+        if (tuiSelectionActive && candidateNeedsConsent &&
+            !containsAliasOrdinalIgnoreCase(tuiResult.selectedAliases, candidate.alias))
+        {
+            // The checklist offered this candidate and the user left it unchecked -
+            // that is a *declined* repair, distinct from a --dry-run "would create"
+            // plan: unlike --dry-run, no pre-action inspection is performed for it at
+            // all here, since the checklist's own consent step (not an inspection)
+            // is what decided its fate. #60 formalizes "declined" as a shared summary
+            // category across both the CLI and TUI paths; this path already reports
+            // it under that name rather than reusing "would create"/"would replace",
+            // to avoid shipping the conflation ADR-0026/the Wiki plan's
+            // pre-implementation review found in the pre-existing CLI declined-prompt
+            // path (see docs/adr-phase-6.md).
+            if (!options.jsonOutput)
+            {
+                console.writeLine(std::format(L"{}: declined", sanitizeForDisplay(candidate.alias)));
+            }
+            continue;
+        }
+
         RepairMode mode = RepairMode::Execute;
         if (options.dryRun)
         {
             mode = RepairMode::DryRun;
         }
-        else if (!options.assumeYes &&
-                (candidate.status == LinkStatus::Missing ||
-                 candidate.status == LinkStatus::Broken))
+        else if (tuiSelectionActive && candidateNeedsConsent)
+        {
+            // Already consented to via the checklist (the branch above already
+            // excluded every candidate that was offered but left unchecked) - no
+            // further per-item stdin prompt is needed or performed.
+            mode = RepairMode::Execute;
+        }
+        else if (!tuiSelectionActive && !options.assumeYes && candidateNeedsConsent)
         {
             const bool confirmed = console.confirm(
                 std::format(L"Repair {} (currently {})? [y/N] ",

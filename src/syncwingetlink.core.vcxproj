@@ -62,7 +62,9 @@
     <ClCompile Include="rules\DefaultRules.cpp" />
     <ClCompile Include="rules\RuleSet.cpp" />
     <ClCompile Include="rules\RuleSetSelector.cpp" />
+    <ClCompile Include="tui\ChecklistModel.cpp" />
     <ClCompile Include="tui\TerminalSession.cpp" />
+    <ClCompile Include="tui\TuiApp.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="cli\ArgParser.h" />
@@ -86,7 +88,9 @@
     <ClInclude Include="rules\DefaultRules.h" />
     <ClInclude Include="rules\RuleSet.h" />
     <ClInclude Include="rules\RuleSetSelector.h" />
+    <ClInclude Include="tui\ChecklistModel.h" />
     <ClInclude Include="tui\TerminalSession.h" />
+    <ClInclude Include="tui\TuiApp.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

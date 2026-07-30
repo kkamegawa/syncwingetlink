@@ -310,6 +310,28 @@ AppOptions parseArguments(const std::vector<std::wstring>& args)
                   "confirmation prompt");
     }
 
+    // --tui (M7, issue #59) is meaningful only for an interactive fix, so every one of
+    // these combinations is rejected here rather than silently doing something other
+    // than what was asked: --tui with scan/test-rule has no checklist to show (there
+    // is nothing to repair), and --tui with --json/--yes both imply an unattended,
+    // scriptable invocation - the exact opposite of an interactive checklist.
+    if (options.useTui)
+    {
+        if (options.command != AppCommand::Fix)
+        {
+            throwError(ArgParseErrorKind::ConflictingOptions,
+                      "--tui is only valid with fix");
+        }
+        if (options.jsonOutput)
+        {
+            throwError(ArgParseErrorKind::ConflictingOptions, "--tui conflicts with --json");
+        }
+        if (options.assumeYes)
+        {
+            throwError(ArgParseErrorKind::ConflictingOptions, "--tui conflicts with --yes");
+        }
+    }
+
     return options;
 }
 } // namespace syncwingetlink::cli

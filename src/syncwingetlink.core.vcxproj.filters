@@ -81,6 +81,12 @@
     <ClInclude Include="tui\TerminalSession.h">
       <Filter>tui</Filter>
     </ClInclude>
+    <ClInclude Include="tui\ChecklistModel.h">
+      <Filter>tui</Filter>
+    </ClInclude>
+    <ClInclude Include="tui\TuiApp.h">
+      <Filter>tui</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="cli\ArgParser.cpp">
@@ -138,6 +144,12 @@
       <Filter>rules</Filter>
     </ClCompile>
     <ClCompile Include="tui\TerminalSession.cpp">
+      <Filter>tui</Filter>
+    </ClCompile>
+    <ClCompile Include="tui\ChecklistModel.cpp">
+      <Filter>tui</Filter>
+    </ClCompile>
+    <ClCompile Include="tui\TuiApp.cpp">
       <Filter>tui</Filter>
     </ClCompile>
   </ItemGroup>

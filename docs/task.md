@@ -1997,3 +1997,75 @@ written.
 - `Debug|ARM64`/`Release|ARM64`: cross-built, not run (this machine is x64).
 - No dependency added.
 - No `*_ja.md` file was read or changed.
+
+## 2026-07-31 — M7: implement the repair checklist (issue #59)
+
+**Trigger**: issue #9 (M7 milestone), sub-issue #59, stacked on #58
+(branch `feature/59-repair-checklist` branches from
+`feature/58-enable-virtual-terminal`), referencing the Wiki plan
+`plan/syncwingetlink/m7-interactive-tui` and `docs/adr-phase-6.md` ADR-0027.
+
+### Completed
+
+- `src/tui/ChecklistModel.{h,cpp}` (new): pure, Win32-free selection-state model -
+  cursor navigation (never wraps past either end), per-index toggle, a scrolling
+  viewport that follows the cursor in both directions and never scrolls past the last
+  full page, and `confirm()`/`cancel()` returning/marking the outcome.
+- `src/tui/TuiApp.{h,cpp}` (new): `runChecklist()`, the thin renderer/input loop built
+  on `tui::TerminalSession` (#58) and `ChecklistModel`. Full-viewport redraw per state
+  change; Up/Down/Space/Enter/Escape/`q`/`Q`/Ctrl+C handled, the last three (and a
+  session read failure) all treated as cancellation. Candidate text passed through
+  `cli::sanitizeForDisplay()` before being combined with control sequences.
+- `src/tui/TerminalSession.{h,cpp}` (#58): added `queryViewport()` so the renderer can
+  size itself before any resize event has occurred - a small, incremental addition to
+  the already-stacked #58 branch, not a change to its existing behavior.
+- `src/cli/ArgParser.{h,cpp}`: `--tui` now conflicts (exit code 3) with `scan`,
+  `test-rule`, `--json`, and `--yes`, checked immediately after the pre-existing
+  `--json`-with-`fix`-without-`--yes` conflict, leaving the `--help`/`--version`
+  short-circuit untouched.
+- `src/cli/Dispatch.cpp`: `runTuiChecklistIfRequested()` (new) builds the selectable
+  Missing/Broken subset, checks terminal capability, runs the checklist, and reports
+  one of `NotRun`/`Cancelled`/`Confirmed`. `runFix()` returns success immediately on
+  `Cancelled` (no repairs, no mutation); on `Confirmed`, an offered Missing/Broken item
+  left unchecked is reported as `<alias>: declined` and never passed to `repairLink()`
+  at all - deliberately not reusing `RepairMode::DryRun` for it, which would have
+  repeated the exact conflation ADR-0028 (#60) is scoped to fix for the pre-existing
+  non-interactive prompt path instead of introducing a second copy of the same bug
+  here.
+- `docs/adr-phase-6.md`: ADR-0027 records the selection model, the `--tui` conflict
+  set, and the declined-vs-planned decision.
+- `docs/TODO.md` M7: checked off the checklist-UI line, pointing at #59 and ADR-0027.
+- Tests: `tests/ChecklistModelTests.cpp` (new, 20 cases), `tests/TuiAppTests.cpp` (new,
+  10 cases, using a scripted `TerminalOperations` fake to drive `runChecklist()`
+  end-to-end without a real console), and 6 new `--tui` conflict/success cases in
+  `tests/ArgParserTests.cpp` (the pre-existing `tuiFlagSetsUseTui` case was updated to
+  name `fix` explicitly, since a bare `--tui` now defaults to `scan` and would itself
+  conflict).
+
+### Deliberately not done
+
+- No shared repair-batch executor yet - `runFix()`'s existing loop is extended with a
+  branch for the TUI-selected/declined distinction, not restructured. That extraction,
+  plus formalizing `declined` as a summary category shared with the CLI path and
+  correcting `runFix()`'s exit-code precedence, is #60's scope (ADR-0028).
+- Persistent per-item progress lines and a final result summary for the TUI path are
+  also #60's scope - this issue reports only the pre-existing per-item outcome line
+  (or `declined`) as items are processed, same as the non-interactive path already did.
+- Manual verification of the real interactive loop (actual key presses, actual resize,
+  actual Ctrl+C, actual terminal fallback) was not performed on this host - there is no
+  attached interactive console in this environment. `TuiAppTests.cpp` exercises the
+  full `runChecklist()` state machine (including Ctrl+C-as-key and a resize event)
+  through the `TerminalOperations` seam instead; this is the same limitation #58's own
+  task entry already noted for its production Win32 path.
+
+### Verified
+
+- `Debug|x64`, `Release|x64`, `Debug|ARM64`, `Release|ARM64`:
+  `syncwingetlink.core.vcxproj`, `syncwingetlink.tests.vcxproj`, and
+  `syncwingetlink.vcxproj` all build clean at `/W4 /WX`, no new warnings.
+- `vstest.console.exe /Platform:x64`: 368/368 passed in `Debug|x64` (up from 333; +35:
+  20 `ChecklistModelTests` + 10 `TuiAppTests` + 6 new `ArgParser` `--tui` cases, net of
+  1 pre-existing case renamed rather than added).
+- `Debug|ARM64`/`Release|ARM64`: cross-built, not run (this machine is x64).
+- No dependency added.
+- No `*_ja.md` file was read or changed.

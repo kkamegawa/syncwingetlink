@@ -15,6 +15,9 @@
     <ClCompile Include="ArgParserTests.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
+    <ClCompile Include="ChecklistModelTests.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
     <ClCompile Include="ConsoleTests.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
@@ -58,6 +61,9 @@
       <Filter>Tests</Filter>
     </ClCompile>
     <ClCompile Include="TerminalSessionTests.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
+    <ClCompile Include="TuiAppTests.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
   </ItemGroup>

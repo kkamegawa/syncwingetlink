@@ -367,6 +367,15 @@ std::optional<TuiEvent> TerminalSession::readEvent()
     return m_state->operations.readEvent();
 }
 
+std::optional<TuiResizeEvent> TerminalSession::queryViewport() const
+{
+    if (!m_state || !m_state->operations.queryViewport)
+    {
+        return std::nullopt;
+    }
+    return m_state->operations.queryViewport();
+}
+
 void TerminalSession::writeControl(std::wstring_view text)
 {
     if (m_state && m_state->operations.writeControl)

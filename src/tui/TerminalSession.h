@@ -135,6 +135,11 @@ public:
     // Blocking read of the next key or resize event through the session's operations.
     [[nodiscard]] std::optional<TuiEvent> readEvent();
 
+    // Directly queries the current viewport size (rows/columns) without waiting for a
+    // resize event - used by a checklist renderer (TuiApp) to size itself before any
+    // resize has occurred. Returns nullopt if the query fails.
+    [[nodiscard]] std::optional<TuiResizeEvent> queryViewport() const;
+
     // Writes an intentional TUI control/rendering sequence verbatim to stdout. See
     // TerminalOperations::writeControl's documentation for the sanitization
     // requirement this places on the caller.

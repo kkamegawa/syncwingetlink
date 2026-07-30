@@ -173,3 +173,104 @@ section, which a single shared "ADR-0026 covers all of M7" plan would have cause
   on `TerminalSession`, the `--tui` command-line conflict checks, and routing a
   `tryCreate()` failure to the existing line-oriented CLI confirmation flow with zero
   TUI escape sequences emitted - none of that is implemented yet.
+
+---
+
+## ADR-0027 — Checklist selection model, `--tui`'s command-line conflicts, and the declined-vs-planned distinction
+
+- **Date**: 2026-07-31
+- **Affected**: `tui::ChecklistModel`, `tui::TuiApp` (new), `cli::ArgParser`,
+  `cli::Dispatch`, `docs/TODO.md` M7, the Wiki page
+  `plan/syncwingetlink/m7-interactive-tui`
+- **Status**: Accepted
+
+### Decision
+
+1. **`tui::ChecklistModel` is a pure, Win32-free selection-state model** (cursor,
+   per-index selection, scrolling viewport), wrapping `RepairItem` directly rather than
+   introducing a parallel display-only type. `tui::TuiApp::runChecklist()` is the thin
+   renderer/input loop built on top of it and a `tui::TerminalSession` (#58,
+   ADR-0026): it translates key/resize events into model calls and redraws the full
+   viewport after each one - a full redraw rather than an incremental diff, since this
+   is a modal checklist with at most a few dozen visible rows, not a high-frequency
+   renderer.
+
+2. **Ctrl+C, Escape, and `q`/`Q` are all read as ordinary key events inside
+   `runChecklist()`**, per ADR-0026's stdin input-mode contract (which clears
+   `ENABLE_PROCESSED_INPUT` for exactly this reason) - none of the three goes through
+   `SetConsoleCtrlHandler`. A read failure from the session (e.g. the input handle
+   became invalid) is also treated as a cancellation rather than an infinite loop or a
+   crash: no repair is authorized either way.
+
+3. **`--tui` is rejected at parse time (exit code 3) when combined with `scan`,
+   `test-rule`, `--json`, or `--yes`.** The checks live in `cli::ArgParser::
+   parseArguments()`, immediately after the pre-existing `--json`-with-`fix`-without-
+   `--yes` conflict check, so the `--help`/`--version` short-circuit that runs before
+   any conflict validation remains untouched. `scan`/`test-rule` have no repair
+   candidates to show a checklist for; `--json`/`--yes` both imply an unattended,
+   scriptable invocation, the opposite of an interactive checklist. `--dry-run` and
+   `--no-color` remain compatible with `--tui`.
+
+4. **`cli::Dispatch::runFix()` treats the checklist's confirmed selection as consent
+   for exactly the items selected, and as an explicit *decline* for every offered
+   Missing/Broken item left unchecked** - never silently reusing `RepairMode::DryRun`
+   for a declined item, which is the same-named bug ADR-0028 (#60) fixes for the
+   pre-existing non-interactive confirmation prompt. A declined item is skipped
+   entirely (no `repairLink()` call, no pre-action inspection) and reported to the
+   console as `<alias>: declined` - distinct from a `--dry-run` "would create"/"would
+   replace" line, and never written to a `--json` document (`--json` and `--tui`
+   already conflict at parse time per point 3, so this never actually arises for the
+   TUI path, but the console-only wording is chosen now so #60's shared executor does
+   not have to retrofit a different label later). Every other candidate (`Ok`,
+   `Mismatch`, and anything excluded by a collision) is processed exactly as it would
+   be without `--tui` at all - none of those ever needed confirmation in the first
+   place.
+
+5. **A `--tui` request with nothing selectable, or with the terminal capability
+   unavailable, falls back to the pre-existing line-oriented CLI confirmation flow
+   with zero TUI escape sequences emitted**, per a warning on stderr - `cli::Dispatch`
+   checks `Console::stdinInteractive()`/`stdoutInteractive()`/`vtEnabled()` (ADR-0026)
+   before ever calling `tui::TerminalSession::tryCreate()`, and `tryCreate()` itself
+   still returns `nullopt` defensively if any of the three turns out false regardless.
+
+### Reason
+
+- Point 2 is a direct consequence of ADR-0026's Ctrl+C decision - handling it any other
+  way inside `runChecklist()` would silently stop working the moment the input mode
+  contract from #58 was applied.
+- Point 4 avoids introducing a second instance of the same declined/dry-run conflation
+  ADR-0028 already has to fix for the pre-existing CLI prompt, rather than shipping it
+  here and asking #60 to fix it twice.
+- Point 5's fallback ordering (capability checked by `cli::Dispatch` *and* re-checked
+  inside `tryCreate()`) is deliberate belt-and-suspenders: `Console`'s capability
+  accessors are the single source of truth, but `tryCreate()` never assumes its caller
+  checked correctly, matching how `SymlinkService::repairLink()` (M5) never trusts a
+  candidate's already-recorded status either.
+
+### Consequences
+
+- `src/tui/ChecklistModel.{h,cpp}` (new) implement `ChecklistModel`/`ChecklistCandidate`.
+- `src/tui/TuiApp.{h,cpp}` (new) implement `runChecklist()`, `ChecklistOutcome`, and
+  `ChecklistRunResult`.
+- `src/tui/TerminalSession.{h,cpp}` (#58) gain a `queryViewport()` accessor so the
+  renderer can size itself before any resize event has occurred.
+- `src/cli/ArgParser.{h,cpp}` gain the four `--tui` conflict checks described above.
+- `src/cli/Dispatch.cpp` gains `runTuiChecklistIfRequested()` and the
+  declined-vs-selected branch inside `runFix()`'s repair loop, described above.
+- `tests/ChecklistModelTests.cpp` (new) covers initial state, navigation (including
+  never wrapping past either end), selection/toggle/confirm/cancel, and viewport
+  scrolling in both directions plus resize.
+- `tests/TuiAppTests.cpp` (new) covers confirm with/without a selection, cancellation
+  via Escape/`q`/Ctrl+C-as-key, navigation before toggling, a resize mid-session, a
+  read failure treated as cancellation, and that rendered frames carry sanitized
+  candidate text.
+- `tests/ArgParserTests.cpp` gains the four `--tui` conflict cases and updates the
+  pre-existing `tuiFlagSetsUseTui` case (a bare `--tui` now defaults to `scan` and
+  would itself conflict, so the case now names `fix` explicitly).
+- `docs/TODO.md` M7's second line is checked off, pointing at #59 and this ADR.
+- #60 (progress and results) is responsible for extracting a shared repair-batch
+  executor used by both the CLI and TUI paths, formalizing `declined` as one of its
+  reported categories, and correcting `runFix()`'s exit-code precedence (interruption
+  vs. insufficient permission) - none of that is implemented yet; this issue's
+  `runFix()` changes are scoped to routing the checklist's selection into the existing
+  loop, not restructuring it.
