@@ -138,7 +138,9 @@ Build system decisions are recorded in [`adr.md`](./adr.md) (ADR-0001 … ADR-00
       `--fail-on-missing` and `--no-color` (#53). Path overrides
       (`--links-dir`/`--packages-dir`/`--rules`) are validated but not required to
       already exist (ADR-0020)
-- [ ] `cli/Console`: UTF-8/UTF-16 output, coloring, confirmation prompt (`--yes` support)
+- [x] `cli/Console`: UTF-8/UTF-16 output, coloring (probed VT + `--no-color`/`NO_COLOR`),
+      confirmation prompt (`--yes` support), and untrusted-string sanitization before
+      display (#54, ADR-0021)
 - [ ] `--json` output (for scripting)
 - [ ] `main.cpp`: mode dispatch and exit-code mapping
 - [ ] `--help`/`--version`
