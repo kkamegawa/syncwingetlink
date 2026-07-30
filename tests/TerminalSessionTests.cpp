@@ -15,11 +15,12 @@ namespace syncwingetlink::tests
 {
 namespace
 {
-// A fake stdin console mode with only ENABLE_PROCESSED_INPUT set (a plausible starting
-// mode - real console defaults also include ENABLE_LINE_INPUT/ENABLE_ECHO_INPUT/
-// ENABLE_INSERT_MODE/ENABLE_QUICK_EDIT_MODE/ENABLE_EXTENDED_FLAGS, but the exact
-// starting bits do not matter for these tests beyond confirming the documented
-// set/clear mask is applied and restored around it).
+// A fake stdin console mode with ENABLE_PROCESSED_INPUT | ENABLE_LINE_INPUT |
+// ENABLE_ECHO_INPUT | ENABLE_QUICK_EDIT_MODE | ENABLE_EXTENDED_FLAGS set (0x0001 |
+// 0x0002 | 0x0004 | 0x0040 | 0x0080) - a plausible real console default (which also
+// includes ENABLE_INSERT_MODE, omitted here). The exact starting bits do not matter
+// for these tests beyond confirming the documented set/clear mask is applied while a
+// session is active and restored to exactly this value afterward.
 constexpr std::uint32_t kFakeOriginalStdinMode = 0x0001 | 0x0002 | 0x0004 | 0x0040 | 0x0080;
 
 struct FakeTerminal
