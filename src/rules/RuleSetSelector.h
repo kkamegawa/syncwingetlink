@@ -12,11 +12,12 @@ namespace syncwingetlink
 {
 // Reads path as UTF-8 text (a leading BOM is tolerated and stripped) and parses it via
 // RuleSet::parse(). Throws RuleSetError(FileReadError) if the file cannot be opened or
-// read; propagates whatever RuleSet::parse() throws if the content is malformed. Never
-// substitutes a default on failure - that decision belongs to the caller (selectRuleSet()
-// below), since the same function is used for both an explicit --rules path (any failure
-// is fatal) and the auto-discovered user rules file (only absence, not failure, falls
-// through).
+// read, or RuleSetError(LimitExceeded) if it exceeds kMaxRulesFileBytes (checked before
+// any of it is read into memory - docs/adr-phase-5.md ADR-0023); propagates whatever
+// RuleSet::parse() throws if the content is malformed. Never substitutes a default on
+// failure - that decision belongs to the caller (selectRuleSet() below), since the same
+// function is used for both an explicit --rules path (any failure is fatal) and the
+// auto-discovered user rules file (only absence, not failure, falls through).
 [[nodiscard]] RuleSet loadRuleSetFromFile(const std::filesystem::path& path);
 
 // Returns the location to check for the user rules file. Injectable so tests can point

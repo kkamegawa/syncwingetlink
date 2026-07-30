@@ -78,6 +78,21 @@ namespace
 
 RuleSet loadRuleSetFromFile(const std::filesystem::path& path)
 {
+    // Checked before opening/reading the file at all: a rules file is untrusted input
+    // (whether from --rules or the user's own rules.json), and this avoids allocating
+    // a buffer for its full contents when it is absurdly large. A failure to query the
+    // size here (e.g. a race with the file being deleted) is not itself reported - the
+    // ifstream open immediately below will surface the real failure in that case.
+    std::error_code sizeError;
+    const std::uintmax_t fileSize = std::filesystem::file_size(path, sizeError);
+    if (!sizeError && fileSize > kMaxRulesFileBytes)
+    {
+        throw RuleSetError(RuleSetErrorKind::LimitExceeded,
+                           "rules file exceeds the maximum size of " +
+                               std::to_string(kMaxRulesFileBytes) +
+                               " bytes: " + toUtf8(path));
+    }
+
     std::ifstream stream(path, std::ios::binary);
     if (!stream.is_open())
     {

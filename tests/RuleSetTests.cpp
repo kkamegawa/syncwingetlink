@@ -148,6 +148,87 @@ public:
             Assert::IsTrue(RuleSetErrorKind::InvalidRegex == error.kind());
         }
     }
+
+    TEST_METHOD(exactlyTheRuleCountLimitIsAccepted)
+    {
+        std::vector<AliasRule> rules;
+        rules.reserve(kMaxRuleCount);
+        for (std::size_t i = 0; i < kMaxRuleCount; ++i)
+        {
+            rules.push_back(
+                AliasRule{L"r" + std::to_wstring(i), L"^a\\.exe$", L"a.exe", false});
+        }
+
+        const RuleSet ruleSet(std::move(rules));
+        Assert::AreEqual(kMaxRuleCount, ruleSet.size());
+    }
+
+    TEST_METHOD(moreThanTheRuleCountLimitIsRejected)
+    {
+        std::vector<AliasRule> rules;
+        rules.reserve(kMaxRuleCount + 1);
+        for (std::size_t i = 0; i <= kMaxRuleCount; ++i)
+        {
+            rules.push_back(
+                AliasRule{L"r" + std::to_wstring(i), L"^a\\.exe$", L"a.exe", false});
+        }
+
+        try
+        {
+            RuleSet(std::move(rules));
+            Assert::Fail(L"expected RuleSetError");
+        }
+        catch (const RuleSetError& error)
+        {
+            Assert::IsTrue(RuleSetErrorKind::LimitExceeded == error.kind());
+        }
+    }
+
+    TEST_METHOD(aRuleNameLongerThanTheFieldLengthLimitIsRejected)
+    {
+        const std::wstring longName(kMaxRuleFieldLength + 1, L'x');
+
+        try
+        {
+            RuleSet(std::vector<AliasRule>{AliasRule{longName, L"^a\\.exe$", L"a.exe", false}});
+            Assert::Fail(L"expected RuleSetError");
+        }
+        catch (const RuleSetError& error)
+        {
+            Assert::IsTrue(RuleSetErrorKind::LimitExceeded == error.kind());
+        }
+    }
+
+    TEST_METHOD(aRulePatternLongerThanTheFieldLengthLimitIsRejected)
+    {
+        const std::wstring longPattern = L"^" + std::wstring(kMaxRuleFieldLength, L'a') + L"$";
+
+        try
+        {
+            RuleSet(std::vector<AliasRule>{AliasRule{L"name", longPattern, L"a.exe", false}});
+            Assert::Fail(L"expected RuleSetError");
+        }
+        catch (const RuleSetError& error)
+        {
+            Assert::IsTrue(RuleSetErrorKind::LimitExceeded == error.kind());
+        }
+    }
+
+    TEST_METHOD(aRuleReplacementLongerThanTheFieldLengthLimitIsRejected)
+    {
+        const std::wstring longReplacement(kMaxRuleFieldLength + 1, L'a');
+
+        try
+        {
+            RuleSet(std::vector<AliasRule>{
+                AliasRule{L"name", L"^a\\.exe$", longReplacement, false}});
+            Assert::Fail(L"expected RuleSetError");
+        }
+        catch (const RuleSetError& error)
+        {
+            Assert::IsTrue(RuleSetErrorKind::LimitExceeded == error.kind());
+        }
+    }
 };
 
 TEST_CLASS(RuleSetResolveTests)
@@ -218,6 +299,27 @@ public:
     {
         const RuleSet rules({AliasRule{L"bad-replacement", L"^codex\\.exe$", L"codex.dll", false}});
         Assert::IsFalse(rules.resolve(L"codex.exe").has_value());
+    }
+
+    // A pathological pattern/input pair that compiles successfully (RuleSet's
+    // constructor accepts it) but throws std::regex_error at MATCH time under MSVC's
+    // std::regex, once its internal complexity counter is exceeded during catastrophic
+    // backtracking - the exact condition docs/adr-phase-5.md ADR-0023 catches and maps
+    // to RuleSetErrorKind::RegexEvaluationFailed instead of letting it escape resolve().
+    TEST_METHOD(aPatternThatFailsAtMatchTimeReportsRegexEvaluationFailed)
+    {
+        const RuleSet rules(
+            {AliasRule{L"pathological", LR"(^(a+)+$)", L"$1.exe", false}});
+
+        try
+        {
+            static_cast<void>(rules.resolve(std::wstring(30, L'a') + L"!"));
+            Assert::Fail(L"expected RuleSetError");
+        }
+        catch (const RuleSetError& error)
+        {
+            Assert::IsTrue(RuleSetErrorKind::RegexEvaluationFailed == error.kind());
+        }
     }
 };
 

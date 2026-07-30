@@ -302,3 +302,96 @@ This file continues the chronological record in [`adr-phase-4.md`](./adr-phase-4
 - #56 (dispatch) is responsible for actually calling `toJsonScanResult()`/
   `toJsonFixResult()` from real `scan`/`fix` runs, enforcing that stdout carries only
   that text when `--json` is set, and routing every other message to stderr instead.
+
+---
+
+## ADR-0023 — Rules-file input bounds: size/count/field-length caps, and the match-time `regex_error` guard
+
+- **Date**: 2026-07-30
+- **Affected**: `rules/RuleSet`, `rules/RuleSetSelector`, `docs/TODO.md` M6, the Wiki
+  page `plan/syncwingetlink/m6-command-line-interface`
+- **Status**: Accepted
+
+### Decision
+
+1. **Three new bounds, all defined once in `rules/RuleSet.h` as `inline constexpr`
+   values** so every caller and test shares one source of truth:
+   - `kMaxRulesFileBytes` (1 MiB) - the largest rules file `loadRuleSetFromFile()` will
+     read into memory at all.
+   - `kMaxRuleCount` (1000) - the largest number of rules `RuleSet`'s constructor will
+     accept.
+   - `kMaxRuleFieldLength` (4096 characters) - the longest a single rule's `name`,
+     `pattern`, or `replacement` may be.
+
+   All three are generous relative to any legitimate rules file - the embedded default
+   rule set (`rules/DefaultRules.cpp`) has 2 rules, none of whose fields exceed 100
+   characters - while still bounding memory use and match-time cost against a hostile
+   or merely corrupted file. A rules file is untrusted input from the moment it is
+   read, whether it came from `--rules` or the user's own
+   `%LOCALAPPDATA%\syncwingetlink\rules.json`.
+2. **The file-size cap is checked in `loadRuleSetFromFile()` via
+   `std::filesystem::file_size()`, before the file is opened for reading at all** -
+   not after reading it into a buffer and then checking the buffer's length. A query
+   failure (e.g. a race with the file being deleted between the check and the
+   subsequent open) does not itself throw; the immediately following `ifstream` open
+   surfaces the real failure in that case, so this check is a fast-reject pre-check,
+   not the only gate.
+3. **The rule-count cap is checked before the per-rule validation loop begins** in
+   `RuleSet(std::vector<AliasRule>)`, so an oversized rule list is rejected without
+   first compiling any of its patterns. The per-field length caps are checked at the
+   start of each rule's iteration, before the existing name-emptiness/uniqueness checks
+   and before pattern compilation - a rule that fails a length cap never reaches
+   `std::wregex`'s constructor.
+4. **A new error kind, `RegexEvaluationFailed`, is distinct from the existing
+   `InvalidRegex`.** `InvalidRegex` covers a pattern that fails to *compile*
+   (`RuleSet`'s constructor, `std::wregex`'s own constructor throwing).
+   `RegexEvaluationFailed` covers a pattern that compiled successfully but whose
+   compiled `std::wregex` throws `std::regex_error` later, while *matching* input
+   inside `resolve()` - confirmed to be a real, fast-triggering condition under MSVC's
+   STL: a classic catastrophic-backtracking pattern (`^(a+)+$`) matched against a
+   30-character non-matching input throws in well under 100ms in this codebase's own
+   test (`tests/RuleSetTests.cpp`'s
+   `aPatternThatFailsAtMatchTimeReportsRegexEvaluationFailed`), rather than hanging or
+   silently returning an incorrect answer. `resolve()`'s only other outcomes remain
+   `nullopt` (no match, or a match producing an invalid alias) or a successful
+   `AliasRuleMatch` - it never throws for any reason other than this one.
+5. **Both caps and the match-time guard are enforced regardless of which rules tier is
+   in play** (`--rules`, the user rules file, or - vacuously, since it is small and
+   fixed - the embedded defaults): `RuleSet`'s constructor and `resolve()` are the
+   single implementation both `RuleSet::parse()` and every caller share, so there is
+   only one place these rules could ever be bypassed.
+
+### Reason
+
+- A single named constant per bound (rather than a magic number repeated at each check
+  site) is what let this issue's own tests assert exact boundary behavior (`exactly
+  the limit is accepted`, `one over the limit is rejected`) without hardcoding a
+  second copy of each number that could drift from the implementation.
+- Checking file size before reading avoids allocating a buffer for the full contents
+  of an arbitrarily large file - the cheapest possible rejection for the most
+  attacker-cheap attack (supplying a huge file).
+- Splitting `RegexEvaluationFailed` from `InvalidRegex` matters because the two failures
+  happen at completely different times relative to `RuleSet` construction - a caller
+  that only ever expected `RuleSet`'s constructor to throw would otherwise be surprised
+  by `resolve()`, a `const` query method, also being able to throw. Naming the two
+  kinds differently makes that surprising possibility visible in the type itself rather
+  than only in a comment.
+- The catastrophic-backtracking pattern was verified empirically (not assumed) before
+  writing this ADR, specifically because the M6 review that first flagged this risk
+  (before any of #53-#55's code existed) could not yet confirm MSVC's std::regex
+  actually throws here rather than merely running slowly; the passing test in this
+  issue is that confirmation.
+
+### Consequences
+
+- `rules/RuleSet.h` gains `kMaxRulesFileBytes`, `kMaxRuleCount`, `kMaxRuleFieldLength`,
+  `RuleSetErrorKind::LimitExceeded`, and `RuleSetErrorKind::RegexEvaluationFailed`.
+- `rules/RuleSet.cpp`'s constructor and `resolve()`, and `rules/RuleSetSelector.cpp`'s
+  `loadRuleSetFromFile()`, enforce the bounds described above.
+- `tests/RuleSetTests.cpp` gains coverage for the rule-count boundary (exactly at the
+  limit accepted, one over rejected), each field's length boundary, and the
+  match-time `regex_error` guard. `tests/RuleSetSelectorTests.cpp` gains coverage for
+  the file-size boundary (exactly at the limit accepted, one byte over rejected).
+- #56 (dispatch) maps `RuleSetErrorKind::LimitExceeded` and
+  `RuleSetErrorKind::RegexEvaluationFailed` onto exit code 3, alongside every other
+  `RuleSetErrorKind`, once its exit-code mapping exists.
