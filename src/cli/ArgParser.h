@@ -20,7 +20,7 @@ enum class ArgParseErrorKind
     MissingOptionValue,   // an option that requires a value (e.g. --rules) has none
     InvalidOptionValue,   // an option's value does not belong to its documented set
                           // (e.g. --source neither com, fs, nor auto)
-    MissingArgument,      // test-rule was given no NAME, or a required value is empty
+    MissingArgument,      // test-rule was given no NAME token at all
     UnexpectedArgument,   // an extra positional token followed a command that takes none
     InvalidPathOverride,  // --links-dir/--packages-dir/--rules resolved to an empty or
                           // \\.\ device path
@@ -46,10 +46,14 @@ private:
 };
 
 // True when either --help/-h or --version was requested. parseArguments() recognizes
-// these anywhere on the command line and short-circuits every other validation the rest
-// of the command line would otherwise trigger - a user asking for --help should get help
-// even if the rest of the invocation is malformed. #57 owns rendering the corresponding
-// AppCommand::Help/AppCommand::Version output; this function only sets the command.
+// these anywhere *before a "--" terminator* (see below) and short-circuits every other
+// validation the rest of the command line would otherwise trigger - a user asking for
+// --help should get help even if the rest of the invocation is malformed. Once "--" has
+// been seen, every later token (including a literal "--help") is positional instead, so
+// `syncwingetlink -- --help` does NOT show help - it fails with UnknownCommand, exactly
+// like any other unrecognized first positional token. #57 owns rendering the
+// corresponding AppCommand::Help/AppCommand::Version output; this function only sets
+// the command.
 //
 // Parses argv (excluding the program name at argv[0]) into AppOptions, per the surface
 // documented in docs/PLAN.md §8:

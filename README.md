@@ -87,6 +87,7 @@ syncwingetlink test-rule "codex-x86_64-pc-windows-msvc.exe"
 | 1 | Fix needed but not performed |
 | 2 | Insufficient permission (Developer Mode off & non-admin) |
 | 3 | Argument / config error |
+| 4 | Package enumeration failed (explicit `--source com`/`--source fs` could not enumerate at all) |
 | 10 | Some repairs failed |
 
 ## Alias replacement rules
