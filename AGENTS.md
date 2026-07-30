@@ -200,6 +200,7 @@ The essentials:
 | 1 | Fix needed but not performed (e.g. `--fail-on-missing`) |
 | 2 | Insufficient permission (Developer Mode off & non-admin) |
 | 3 | Argument / config error (e.g. invalid rules JSON) |
+| 4 | Package enumeration failed (explicit `--source com`/`--source fs` could not enumerate at all) |
 | 10 | Some repairs failed |
 
 ---
