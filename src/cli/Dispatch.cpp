@@ -403,6 +403,23 @@ struct TuiRunResult
     return result;
 }
 
+// The final result summary the M7 Wiki plan documents: selected/processed/remaining,
+// every RepairDisposition category's count, and whether the batch was interrupted.
+// Never emitted when --json is set - the JSON document is the sole content of stdout
+// in that mode (docs/adr-phase-5.md ADR-0022's stdout-purity rule), the same gate the
+// per-item progress lines already use.
+void printBatchSummary(Console& console, const RepairBatchSummary& summary)
+{
+    console.writeLine(std::format(L"Summary: {} selected, {} processed, {} remaining",
+                                  summary.selected, summary.processed, summary.remaining));
+    console.writeLine(std::format(
+        L"  created: {}  replaced: {}  planned: {}  declined: {}  skipped: {}  "
+        L"refused (mismatch): {}  failed: {}",
+        summary.created, summary.replaced, summary.planned, summary.declined,
+        summary.skippedOk, summary.refusedMismatch, summary.failed));
+    console.writeLine(std::format(L"  interrupted: {}", summary.interrupted ? L"yes" : L"no"));
+}
+
 // The one place a core::RepairBatchExitCode becomes a cli::ExitCode - total, so a
 // future RepairBatchExitCode value fails to compile here rather than silently mapping
 // to the wrong exit code.
@@ -515,6 +532,11 @@ struct TuiRunResult
     if (ctrlHandlerRegistered)
     {
         ::SetConsoleCtrlHandler(&consoleCtrlHandler, FALSE);
+    }
+
+    if (!options.jsonOutput)
+    {
+        printBatchSummary(console, batchResult.summary);
     }
 
     if (options.jsonOutput)
