@@ -13,10 +13,14 @@ namespace syncwingetlink::cli
 // displayed text: C0 controls (0x00-0x1F, including ESC) and DEL (0x7F), C1 controls
 // (0x80-0x9F), and the Unicode bidi override/isolate characters (U+202A-U+202E,
 // U+2066-U+2069). Pure and total - safe to call on any untrusted string (a package id,
-// executable file name, or alias) before it reaches console or JSON output. Stripping
-// rather than escaping is deliberate: the sanitized copy is for display only, never fed
-// back into filesystem or comparison logic, so there is no need to preserve a reversible
-// representation of what was removed.
+// executable file name, or alias) before it reaches console output, and before JSON
+// output too, though only as the *first* of two steps there: this function strips
+// control/bidi characters for display safety, but performs no JSON string escaping
+// (quotes, backslashes, `\uXXXX` sequences, ...) at all - a JSON writer must still run
+// the result through its own escaper (see cli::escapeJsonString() in Json.h) to produce
+// a valid JSON string. Stripping rather than escaping is deliberate here: the sanitized
+// copy is for display only, never fed back into filesystem or comparison logic, so
+// there is no need to preserve a reversible representation of what was removed.
 [[nodiscard]] std::wstring sanitizeForDisplay(std::wstring_view text) noexcept;
 
 // Interprets one line of prompt input as consent. nullopt (no line could be read - EOF,

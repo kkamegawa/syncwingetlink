@@ -213,10 +213,17 @@ void writeFileChunked(HANDLE handle, const std::string& bytes) noexcept
     return buffer;
 }
 
+// A confirmation-prompt answer is expected to be a handful of characters ("y", "yes",
+// "no"); nothing legitimate is anywhere near this long. Capping what is retained keeps
+// a hostile or merely misbehaving redirected stdin (an arbitrarily long or
+// never-terminated line) from growing this buffer without bound.
+constexpr std::size_t kMaxRedirectedLineBytes = 4096;
+
 [[nodiscard]] std::optional<std::wstring> readLineFromRedirectedStream(HANDLE handle)
 {
     std::string bytes;
     bool anyByteRead = false;
+    bool truncated = false;
 
     char byte = 0;
     DWORD bytesRead = 0;
@@ -227,12 +234,30 @@ void writeFileChunked(HANDLE handle, const std::string& bytes) noexcept
         {
             break;
         }
-        bytes.push_back(byte);
+        if (bytes.size() < kMaxRedirectedLineBytes)
+        {
+            bytes.push_back(byte);
+        }
+        else
+        {
+            // Keep draining to the newline (or EOF) so a subsequent read starts at the
+            // next line, but stop retaining bytes - the cap is on memory growth, not on
+            // how much of the offending line gets consumed.
+            truncated = true;
+        }
     }
 
     if (!anyByteRead)
     {
         return std::nullopt; // Immediate EOF/closed pipe: nothing to read at all.
+    }
+
+    if (truncated)
+    {
+        // A line this long can never be a real "y"/"yes" answer - isAffirmative()
+        // would refuse it anyway - so refusal is reported directly rather than handing
+        // back a misleadingly truncated fragment.
+        return std::wstring();
     }
 
     if (!bytes.empty() && bytes.back() == '\r')
