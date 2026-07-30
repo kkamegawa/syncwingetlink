@@ -410,7 +410,8 @@ than invalid UTF-8 or a hard failure.
 - [ ] `fix` can create missing symlinks via a confirmation prompt.
 - [ ] `--dry-run` outputs the plan with no side effects.
 - [ ] Regex rules derive `codex-x86_64-pc-windows-msvc.exe → codex.exe`.
-- [ ] `--tui` allows interactive checking and batch creation.
+- [x] `--tui` allows interactive checking and batch creation (issues #58, #59, #60;
+      `docs/adr-phase-6.md` ADR-0026 through ADR-0028).
 - [ ] On Developer Mode off, states the permission error and returns exit code 2.
 - [ ] `AliasResolver` / `RuleSet` / `LinkInspector` / `SymlinkService` have MSTest unit
       tests.

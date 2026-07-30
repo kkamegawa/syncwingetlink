@@ -39,6 +39,7 @@
     <ClCompile Include="AliasPipelineTests.cpp" />
     <ClCompile Include="AliasResolverTests.cpp" />
     <ClCompile Include="ArgParserTests.cpp" />
+    <ClCompile Include="ChecklistModelTests.cpp" />
     <ClCompile Include="ConsoleTests.cpp" />
     <ClCompile Include="DefaultRulesTests.cpp" />
     <ClCompile Include="DispatchTests.cpp" />
@@ -49,10 +50,13 @@
     <ClCompile Include="PackageFilterTests.cpp" />
     <ClCompile Include="PackageSourceErrorTests.cpp" />
     <ClCompile Include="PackageSourceFactoryTests.cpp" />
+    <ClCompile Include="RepairBatchTests.cpp" />
     <ClCompile Include="RuleSetSelectorTests.cpp" />
     <ClCompile Include="RuleSetTests.cpp" />
     <ClCompile Include="SmokeTests.cpp" />
     <ClCompile Include="SymlinkServiceTests.cpp" />
+    <ClCompile Include="TerminalSessionTests.cpp" />
+    <ClCompile Include="TuiAppTests.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="TempDirectory.h" />

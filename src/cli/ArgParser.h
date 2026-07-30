@@ -87,6 +87,14 @@ private:
 // prompt that a script cannot answer, or (worse) misinterpret a non-interactive refusal
 // as something other than the config error it is.
 //
+// --tui (M7, issue #59) is rejected when combined with scan/test-rule (there is no
+// checklist to show - `fix` is the only command with candidates to repair), or with
+// --json/--yes (both imply an unattended, scriptable invocation, the opposite of an
+// interactive checklist). Note that #59's TUI is a presentation choice layered on top
+// of `fix`, not a fourth command of its own - AppOptions::useTui stays a bool alongside
+// AppCommand::Fix, exactly as it already does.
+//
+
 // Throws ArgParseError for any of the conditions above. Never touches AppOptions fields
 // this function does not own, and never performs a filesystem-mutating operation itself.
 [[nodiscard]] AppOptions parseArguments(const std::vector<std::wstring>& args);

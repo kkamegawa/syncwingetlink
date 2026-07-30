@@ -121,6 +121,35 @@ public:
         return m_colorEnabled;
     }
 
+    // Whether stdout's ENABLE_VIRTUAL_TERMINAL_PROCESSING ended up enabled
+    // (already-on, or freshly turned on by this Console instance) - independent of
+    // --no-color/NO_COLOR, which gate colorEnabled() only (SGR color), never this.
+    // The M7 TUI (docs/adr-phase-6.md ADR-0026) requires this to be true regardless of
+    // --no-color: the cursor/screen-control sequences it depends on are not color and
+    // must keep working when only SGR color has been suppressed. stdout's VT mode
+    // remains owned exclusively by this class - a terminal session built on top of it
+    // (tui::TerminalSession) must never call GetConsoleMode/SetConsoleMode on stdout
+    // itself, only query this accessor.
+    [[nodiscard]] bool vtEnabled() const noexcept
+    {
+        return m_vtEnabled;
+    }
+
+    // Whether stdin is a real interactive console: GetStdHandle succeeded and
+    // GetConsoleMode succeeded on it, as opposed to redirected/piped input. The M7 TUI
+    // requires this (together with stdoutInteractive() and vtEnabled()) before it may
+    // start a terminal session; when false, no TUI escape sequence may be emitted.
+    [[nodiscard]] bool stdinInteractive() const noexcept
+    {
+        return m_stdinInteractive;
+    }
+
+    // Whether stdout is a real interactive console, by the same test.
+    [[nodiscard]] bool stdoutInteractive() const noexcept
+    {
+        return m_stdoutInteractive;
+    }
+
     // Sanitizes text (sanitizeForDisplay()) and writes it followed by a newline to the
     // given stream.
     void writeLine(std::wstring_view text, ConsoleStream stream = ConsoleStream::Output);
@@ -137,5 +166,8 @@ public:
 private:
     ConsoleOperations m_operations;
     bool m_colorEnabled;
+    bool m_vtEnabled{false};
+    bool m_stdinInteractive{false};
+    bool m_stdoutInteractive{false};
 };
 } // namespace syncwingetlink::cli

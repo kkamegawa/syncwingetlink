@@ -276,4 +276,85 @@ public:
         Assert::IsFalse(console.confirm(L"Proceed?", /*assumeYes=*/false));
     }
 };
+
+namespace
+{
+// Unlike makeFakeOperations() above (which only ever reports Output as a console, since
+// no M6 test needed stdin's console-ness observed independently), these TUI capability
+// tests (#58) need isConsole to answer differently for Output and Input.
+[[nodiscard]] ConsoleOperations makeFakeOperationsWithStreams(bool outputIsConsole,
+                                                              bool inputIsConsole,
+                                                              bool virtualTerminalSucceeds)
+{
+    ConsoleOperations operations;
+    operations.isConsole = [outputIsConsole, inputIsConsole](ConsoleStream stream) {
+        switch (stream)
+        {
+        case ConsoleStream::Output:
+            return outputIsConsole;
+        case ConsoleStream::Input:
+            return inputIsConsole;
+        case ConsoleStream::Error:
+            return false;
+        }
+        return false;
+    };
+    operations.write = [](ConsoleStream, std::wstring_view) {};
+    operations.tryEnableVirtualTerminal = [virtualTerminalSucceeds]() {
+        return virtualTerminalSucceeds;
+    };
+    operations.restoreOutputMode = []() {};
+    operations.readLine = []() -> std::optional<std::wstring> { return std::nullopt; };
+    return operations;
+}
+} // namespace
+
+// #58: Console exposes stdin/stdout/VT capability independently of colorEnabled(), so
+// the M7 TUI can gate on interactivity and VT without color being part of the decision.
+TEST_CLASS(TerminalCapabilityTests)
+{
+public:
+    TEST_METHOD(vtEnabledReflectsCapabilityRegardlessOfNoColor)
+    {
+        Console withColor(/*noColorRequested=*/false,
+                          makeFakeOperationsWithStreams(true, true, true));
+        Console withoutColor(/*noColorRequested=*/true,
+                             makeFakeOperationsWithStreams(true, true, true));
+
+        Assert::IsTrue(withColor.vtEnabled());
+        Assert::IsTrue(withoutColor.vtEnabled());
+        // colorEnabled() differs even though vtEnabled() does not - --no-color gates
+        // color only, never VT capability.
+        Assert::IsTrue(withColor.colorEnabled());
+        Assert::IsFalse(withoutColor.colorEnabled());
+    }
+
+    TEST_METHOD(vtEnabledFalseWhenActivationFails)
+    {
+        Console console(false, makeFakeOperationsWithStreams(true, true, false));
+        Assert::IsFalse(console.vtEnabled());
+    }
+
+    TEST_METHOD(stdinAndStdoutInteractiveTrueWhenBothAreConsoles)
+    {
+        Console console(false, makeFakeOperationsWithStreams(true, true, true));
+        Assert::IsTrue(console.stdinInteractive());
+        Assert::IsTrue(console.stdoutInteractive());
+    }
+
+    TEST_METHOD(stdinInteractiveFalseWhenInputIsRedirected)
+    {
+        Console console(false, makeFakeOperationsWithStreams(true, false, true));
+        Assert::IsTrue(console.stdoutInteractive());
+        Assert::IsFalse(console.stdinInteractive());
+    }
+
+    TEST_METHOD(stdoutInteractiveFalseWhenOutputIsRedirected)
+    {
+        Console console(false, makeFakeOperationsWithStreams(false, true, true));
+        Assert::IsFalse(console.stdoutInteractive());
+        // VT can never be enabled when stdout itself is not a console.
+        Assert::IsFalse(console.vtEnabled());
+    }
+};
 } // namespace syncwingetlink::tests

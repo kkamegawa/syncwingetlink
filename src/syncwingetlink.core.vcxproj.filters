@@ -10,6 +10,9 @@
     <Filter Include="rules">
       <UniqueIdentifier>{6A2E9C3D-6E0C-4E1C-9C1E-6C8E6E6C7A11}</UniqueIdentifier>
     </Filter>
+    <Filter Include="tui">
+      <UniqueIdentifier>{2D8F4A6B-3C9E-4A2D-9F7A-5B6C7D8E9F01}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="cli\ArgParser.h">
@@ -60,6 +63,9 @@
     <ClInclude Include="core\Paths.h">
       <Filter>core</Filter>
     </ClInclude>
+    <ClInclude Include="core\RepairBatch.h">
+      <Filter>core</Filter>
+    </ClInclude>
     <ClInclude Include="core\SymlinkService.h">
       <Filter>core</Filter>
     </ClInclude>
@@ -74,6 +80,15 @@
     </ClInclude>
     <ClInclude Include="rules\RuleSetSelector.h">
       <Filter>rules</Filter>
+    </ClInclude>
+    <ClInclude Include="tui\TerminalSession.h">
+      <Filter>tui</Filter>
+    </ClInclude>
+    <ClInclude Include="tui\ChecklistModel.h">
+      <Filter>tui</Filter>
+    </ClInclude>
+    <ClInclude Include="tui\TuiApp.h">
+      <Filter>tui</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
@@ -116,6 +131,9 @@
     <ClCompile Include="core\Paths.cpp">
       <Filter>core</Filter>
     </ClCompile>
+    <ClCompile Include="core\RepairBatch.cpp">
+      <Filter>core</Filter>
+    </ClCompile>
     <ClCompile Include="core\SymlinkService.cpp">
       <Filter>core</Filter>
     </ClCompile>
@@ -130,6 +148,15 @@
     </ClCompile>
     <ClCompile Include="rules\RuleSetSelector.cpp">
       <Filter>rules</Filter>
+    </ClCompile>
+    <ClCompile Include="tui\TerminalSession.cpp">
+      <Filter>tui</Filter>
+    </ClCompile>
+    <ClCompile Include="tui\ChecklistModel.cpp">
+      <Filter>tui</Filter>
+    </ClCompile>
+    <ClCompile Include="tui\TuiApp.cpp">
+      <Filter>tui</Filter>
     </ClCompile>
   </ItemGroup>
 </Project>

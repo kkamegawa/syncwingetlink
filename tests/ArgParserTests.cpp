@@ -117,7 +117,10 @@ public:
 
     TEST_METHOD(tuiFlagSetsUseTui)
     {
-        Assert::IsTrue(parseArguments({L"--tui"}).useTui);
+        // --tui is only valid with fix (see ArgParserTerminatorAndConflictTests's
+        // tui* cases below) - a bare "--tui" would default to AppCommand::Scan and
+        // now be rejected, so this test names fix explicitly.
+        Assert::IsTrue(parseArguments({L"fix", L"--tui"}).useTui);
     }
 
     TEST_METHOD(dryRunFlagSetsDryRun)
@@ -257,6 +260,51 @@ public:
     {
         const AppOptions options = parseArguments({L"scan", L"--json"});
         Assert::IsTrue(options.jsonOutput);
+    }
+
+    // --tui (M7, issue #59) is only meaningful for an interactive `fix`: scan/test-rule
+    // have no repair checklist to show, and --json/--yes both imply an unattended,
+    // scriptable invocation - the opposite of an interactive checklist.
+    TEST_METHOD(tuiWithScanIsRejected)
+    {
+        Assert::IsTrue(expectError({L"scan", L"--tui"}) ==
+                       ArgParseErrorKind::ConflictingOptions);
+    }
+
+    TEST_METHOD(tuiWithTestRuleIsRejected)
+    {
+        Assert::IsTrue(expectError({L"test-rule", L"foo.exe", L"--tui"}) ==
+                       ArgParseErrorKind::ConflictingOptions);
+    }
+
+    TEST_METHOD(tuiWithJsonIsRejected)
+    {
+        Assert::IsTrue(expectError({L"fix", L"--tui", L"--json", L"--yes"}) ==
+                       ArgParseErrorKind::ConflictingOptions);
+    }
+
+    TEST_METHOD(tuiWithYesIsRejected)
+    {
+        Assert::IsTrue(expectError({L"fix", L"--tui", L"--yes"}) ==
+                       ArgParseErrorKind::ConflictingOptions);
+    }
+
+    TEST_METHOD(tuiWithFixAloneSucceeds)
+    {
+        const AppOptions options = parseArguments({L"fix", L"--tui"});
+        Assert::IsTrue(options.useTui);
+        Assert::IsTrue(options.command == AppCommand::Fix);
+    }
+
+    TEST_METHOD(tuiWithFixAndDryRunAndNoColorSucceeds)
+    {
+        // Both --dry-run and --no-color remain supported alongside --tui - only
+        // scan/test-rule/--json/--yes conflict with it.
+        const AppOptions options =
+            parseArguments({L"fix", L"--tui", L"--dry-run", L"--no-color"});
+        Assert::IsTrue(options.useTui);
+        Assert::IsTrue(options.dryRun);
+        Assert::IsTrue(options.noColor);
     }
 
     TEST_METHOD(helpFlagShortCircuitsEvenWithMalformedRemainder)
