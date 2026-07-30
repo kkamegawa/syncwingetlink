@@ -1781,3 +1781,75 @@ under the session's own temp scratchpad (never the real, shared
 - Rebuilt and reran the full suite after these changes: `Debug|x64`/`Release|x64` still
   312/312, no new warnings; re-verified `syncwingetlink.exe --version`/`--help` by
   hand.
+
+## 2026-07-30 — CLI: help and version output, and closing M6 (issue #57)
+
+**Trigger**: issue #8 (M6 milestone), sub-issue #57, the last M6 sub-issue, stacked on
+#56 (PR #111, not yet merged - branch `feature/57-help-and-version` branches from
+`feature/56-dispatch-and-exit-codes`), referencing the Wiki plan
+`plan/syncwingetlink/m6-command-line-interface`.
+
+### Completed
+
+- `src/cli/Version.h` (new): `kVersion`, the single constant `printVersion()` reads -
+  #56 had shipped the version string as a bare literal directly inside
+  `printVersion()`, which was functionally correct but the "second hardcoded literal"
+  this issue's acceptance criteria named. Documented as deliberately *not*
+  build-time-unified with `src/app.manifest`'s `assemblyIdentity` version (that would
+  need new build infrastructure - a versioned resource or a manifest pre-build step -
+  this issue's scope does not justify adding); the two are kept in sync by convention,
+  stated plainly rather than assumed.
+- `src/cli/Dispatch.cpp`: `printHelp()`'s text expanded - a one-line description of
+  what the tool does, `--help`/`-h` and `--version` given their own explicit option
+  rows (previously merged onto one ambiguous line), `NO_COLOR` mentioned alongside
+  `--no-color`, and the exit-code section reformatted one code per line. The
+  one-`writeLine()`-per-line structure #56 established (to avoid
+  `sanitizeForDisplay()` stripping embedded newlines) is unchanged.
+- `docs/adr-phase-5.md`: **ADR-0025** records the version-constant decision and why
+  full build-time unification with `app.manifest` was not pursued.
+- `docs/TODO.md` M6: checked off the `--help`/`--version` line, pointing at #57 and
+  ADR-0025. **This completes M6** - every item in `docs/TODO.md`'s M6 section is now
+  checked off.
+- Tests: `tests/DispatchTests.cpp` gains `VersionTests` (2 cases) pinning `kVersion` to
+  the documented first-release value `"0.1.0"` and asserting it is non-empty.
+  `printVersion()`/`printHelp()` themselves are not exported (file-local to
+  `Dispatch.cpp`) and were re-verified by hand instead - see below.
+
+### Manual verification
+
+`syncwingetlink.exe --version` → `syncwingetlink 0.1.0`, exit 0. `syncwingetlink.exe
+--help` and `syncwingetlink.exe -h` → the full expanded usage text (description,
+commands, options including `--no-color`'s `NO_COLOR` mention and `--help`/`-h`/
+`--version` as their own rows, and the one-code-per-line exit-code list), exit 0 in
+both cases.
+
+### Deliberately not done
+
+- `docs/PLAN_ja.md`/`docs/TODO_ja.md` were not touched - Japanese translations, per
+  `AGENTS.md`'s language policy.
+- `docs/PLAN.md` §11's project-wide Definition of Done checkboxes were not updated:
+  several remain genuinely unmet by work outside this issue's scope (`--tui` is M7;
+  this issue's own manual testing used `--source fs`, not real COM enumeration, and
+  hit `InsufficientPermission` before a real symlink creation could be confirmed
+  end-to-end via the CLI on this host) or are not this issue's to claim credit for
+  (unit test coverage predates M6). Updating that section belongs to whichever future
+  work actually closes each remaining item, not to this issue.
+- `app.manifest`'s version was not changed to something build-time-derived from
+  `cli::kVersion` - see ADR-0025 for why that unification was scoped out.
+
+### Verified
+
+- `Debug|x64`, `Release|x64`, `Debug|ARM64`, `Release|ARM64`:
+  `syncwingetlink.core.vcxproj`, `syncwingetlink.tests.vcxproj`, and
+  `syncwingetlink.vcxproj` all build clean at `/W4 /WX`, no new warnings.
+- `vstest.console.exe /Platform:x64`: 314/314 passed in both `Debug|x64` and
+  `Release|x64` (up from 312; 2 of the 314 are new `VersionTests` cases).
+- `Debug|ARM64`/`Release|ARM64`: cross-built, not run (this machine is x64).
+- No dependency added.
+- No `*_ja.md` file was read or changed.
+
+**M6 (issue #8) is complete**: #53, #54, #55, #105, #56, and #57 are all opened as
+pull requests (#107, #108, #109, #110, #111, and this issue's PR) against a stacked
+branch chain rooted at `main`, matching the M4/M5 delivery pattern. `docs/PLAN.md`,
+`docs/TODO.md`, `docs/adr-phase-5.md` (ADR-0020 through ADR-0025), and the Wiki plan
+agree. Merging is left to the repository maintainer, per session agreement.

@@ -68,6 +68,7 @@
     <ClInclude Include="cli\Console.h" />
     <ClInclude Include="cli\Dispatch.h" />
     <ClInclude Include="cli\Json.h" />
+    <ClInclude Include="cli\Version.h" />
     <ClInclude Include="core\AliasResolver.h" />
     <ClInclude Include="core\ComApartment.h" />
     <ClInclude Include="core\ExecutableScanner.h" />
