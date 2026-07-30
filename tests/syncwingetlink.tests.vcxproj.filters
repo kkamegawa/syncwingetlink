@@ -15,6 +15,9 @@
     <ClCompile Include="ArgParserTests.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
+    <ClCompile Include="ConsoleTests.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
     <ClCompile Include="DefaultRulesTests.cpp">
       <Filter>Tests</Filter>
     </ClCompile>

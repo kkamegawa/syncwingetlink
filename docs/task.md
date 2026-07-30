@@ -1338,3 +1338,71 @@ entry is the first M6 code. Branch `feature/53-parse-commands-and-options`.
 - No dependency added.
 - No `*_ja.md` file was read or changed.
 
+## 2026-07-30 — CLI: console interaction (issue #54)
+
+**Trigger**: issue #8 (M6 milestone), sub-issue #54, stacked on #53 (PR #107, not yet
+merged - branch `feature/54-console-interaction` branches from
+`feature/53-parse-commands-and-options`), referencing the Wiki plan
+`plan/syncwingetlink/m6-command-line-interface`.
+
+### Completed
+
+- `src/cli/Console.{h,cpp}` (registered in `syncwingetlink.core.vcxproj`/`.filters`):
+  - `sanitizeForDisplay()`: strips C0 controls (incl. ESC) and DEL, C1 controls, and the
+    Unicode bidi override/isolate characters before any untrusted string (package id,
+    executable file name, alias) reaches console output.
+  - `isAffirmative()`: the single place "EOF is not consent" and "bare Enter is not
+    consent" are enforced - only a trimmed, ordinal case-insensitive `"y"`/`"yes"`
+    counts.
+  - `noColorEnvSet()`: pure NO_COLOR-presence check, taking an already-looked-up value
+    so it stays testable without touching the real environment.
+  - `Console`: production constructor wires real `GetStdHandle`/`GetConsoleMode`/
+    `WriteConsoleW`/`WriteFile`/`ReadConsoleW`, chunking large writes
+    (`kMaxConsoleWriteChars`/`kMaxFileWriteBytes`) to avoid `WriteConsoleW`'s
+    `ERROR_NOT_ENOUGH_MEMORY` failure mode on oversized single calls. Virtual terminal
+    mode is probed and enabled once at construction and restored once in `~Console()`;
+    a confirmation prompt's input-mode change is scoped to that single `readLine()`
+    call instead. A `ConsoleOperations` seam (mirroring `SymlinkServiceOperations`)
+    makes every Win32 call swappable for tests.
+  - `Console::confirm()` explicitly does not know about alias collisions - `--yes`
+    bypasses only the interactive prompt; the collision exclusion remains #56's job,
+    documented at the call site to prevent future drift.
+- `docs/adr-phase-5.md`: **ADR-0021** records the operations-seam reuse, the
+  strip-not-escape sanitization choice, the strict `"y"/"yes"` consent rule, the
+  injectable-NO_COLOR-lookup decision, and the process-lifetime-vs-per-call distinction
+  between output-mode and input-mode restoration.
+- `docs/TODO.md` M6: checked off the `Console` line, pointing at #54 and ADR-0021.
+- Tests: `tests/ConsoleTests.cpp` (new, registered in
+  `syncwingetlink.tests.vcxproj`/`.filters`) - 27 tests: the sanitizer's four stripped
+  character classes plus ordinary-text/CR-LF/empty-input cases, `isAffirmative()`'s full
+  consent matrix, NO_COLOR presence detection, and `Console`'s `colorEnabled()`
+  four-way decision, exactly-once destructor restoration, sanitize-then-newline
+  `writeLine()`, and `confirm()`'s assumeYes/EOF/bare-Enter/negative-answer behavior,
+  all through the `ConsoleOperations` fake seam.
+  - One test-authoring mistake caught by a first failing run:
+    `L"before\x1Bafter"` is not "ESC between two words" - a hex escape is greedy, so
+    `\x1Baf` was parsed as one character (U+1BAF) before "ter" resumed as literal text.
+    Fixed to `L"before" L"\x1B" L"after"` (adjacent string-literal concatenation breaks
+    the escape).
+
+### Deliberately not done
+
+- `docs/PLAN_ja.md`/`docs/TODO_ja.md` were not touched - Japanese translations, per
+  `AGENTS.md`'s language policy.
+- No JSON output, dispatch, or exit-code mapping (#55, #56) - this issue only provides
+  the `Console` class; nothing yet constructs one from real `AppOptions`/`wmain`.
+- `main.cpp` still does not exist, so `syncwingetlink.vcxproj` still fails to link
+  (`LNK1561`) - unchanged from #53's entry, still #56's job.
+
+### Verified
+
+- `Debug|x64`, `Release|x64`, `Debug|ARM64`, `Release|ARM64`:
+  `syncwingetlink.core.vcxproj` and `syncwingetlink.tests.vcxproj` build clean at
+  `/W4 /WX`, no new warnings.
+- `vstest.console.exe /Platform:x64`: 276/276 passed in both `Debug|x64` and
+  `Release|x64` (up from 249; 27 of the 276 are new `ConsoleTests.cpp` cases, confirmed
+  individually green after the hex-escape test fix above).
+- `Debug|ARM64`/`Release|ARM64`: cross-built, not run (this machine is x64).
+- No dependency added.
+- No `*_ja.md` file was read or changed.
+
