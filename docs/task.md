@@ -1338,3 +1338,26 @@ entry is the first M6 code. Branch `feature/53-parse-commands-and-options`.
 - No dependency added.
 - No `*_ja.md` file was read or changed.
 
+### Copilot review feedback addressed (PR #107, before merge)
+
+- `src/cli/ArgParser.cpp`'s local `toUtf8()` now checks both `WideCharToMultiByte()`
+  return values and falls back to a `"<unrepresentable>"` placeholder on failure,
+  instead of silently proceeding with an uninitialized/empty buffer - a conversion
+  failure could previously have produced an empty or garbled `ArgParseError` message.
+- `AGENTS.md` §6 and `README.md` now list exit code `4` alongside `docs/PLAN.md` §8,
+  closing the doc-inconsistency gap this issue's "Deliberately not done" section had
+  explicitly deferred to #56 - addressed now instead, since leaving the tables
+  disagreeing was flagged as confusing to a reader of either file in isolation.
+- `src/cli/ArgParser.h`'s `--help`/`--version` short-circuit comment now states the
+  `--` terminator boundary explicitly: `syncwingetlink -- --help` does not show help,
+  it fails with `UnknownCommand`, since `--help` after `--` is positional like anything
+  else. The implementation was already correct; only the comment overclaimed
+  "anywhere on the command line."
+- `ArgParseErrorKind::MissingArgument`'s comment no longer claims "or a required value
+  is empty" - that never matched this implementation (`--include ""` parses
+  successfully; an empty `--links-dir` maps to `InvalidPathOverride`, not
+  `MissingArgument`). Tightened to the one case that actually produces it: `test-rule`
+  given no `NAME` token.
+- Rebuilt and reran the full suite after these changes: `Debug|x64`/`Release|x64` still
+  249/249, no new warnings.
+

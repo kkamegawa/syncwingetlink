@@ -17,6 +17,9 @@ namespace syncwingetlink::cli
 {
 namespace
 {
+// Used only to build ArgParseError diagnostic text, so a conversion failure here must
+// still produce a readable (if imprecise) message rather than an empty or truncated one
+// - both WideCharToMultiByte calls' return values are checked for exactly that reason.
 [[nodiscard]] std::string toUtf8(std::wstring_view text)
 {
     if (text.empty())
@@ -27,9 +30,20 @@ namespace
     const int required = ::WideCharToMultiByte(CP_UTF8, 0, text.data(),
                                                 static_cast<int>(text.size()), nullptr, 0,
                                                 nullptr, nullptr);
+    if (required <= 0)
+    {
+        return "<unrepresentable>";
+    }
+
     std::string result(static_cast<std::size_t>(required), '\0');
-    ::WideCharToMultiByte(CP_UTF8, 0, text.data(), static_cast<int>(text.size()), result.data(),
-                         required, nullptr, nullptr);
+    const int written =
+        ::WideCharToMultiByte(CP_UTF8, 0, text.data(), static_cast<int>(text.size()),
+                             result.data(), required, nullptr, nullptr);
+    if (written <= 0)
+    {
+        return "<unrepresentable>";
+    }
+
     return result;
 }
 
