@@ -131,7 +131,13 @@ Build system decisions are recorded in [`adr.md`](./adr.md) (ADR-0001 … ADR-00
       filesystem-backed checks (#52)
 
 ## M6. CLI
-- [ ] `cli/ArgParser`: `scan`/`fix`/`test-rule` and each option
+> The security and Win32 contract for this milestone, and the exit-code map (including
+> a new code `4` for package-enumeration failure), are recorded in the Wiki page
+> `plan/syncwingetlink/m6-command-line-interface` and `docs/adr-phase-5.md`.
+- [x] `cli/ArgParser`: `scan`/`fix`/`test-rule` and each option, including
+      `--fail-on-missing` and `--no-color` (#53). Path overrides
+      (`--links-dir`/`--packages-dir`/`--rules`) are validated but not required to
+      already exist (ADR-0020)
 - [ ] `cli/Console`: UTF-8/UTF-16 output, coloring, confirmation prompt (`--yes` support)
 - [ ] `--json` output (for scripting)
 - [ ] `main.cpp`: mode dispatch and exit-code mapping

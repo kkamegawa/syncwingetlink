@@ -1254,3 +1254,110 @@ matching the M4 delivery pattern. `docs/PLAN.md`, `docs/TODO.md`, `docs/adr-phas
 and the Wiki plan agree. Merging is left to the repository maintainer per session
 agreement, rather than self-merged as M2-M4 were.
 
+## 2026-07-30 — CLI: parse commands and options (issue #53)
+
+**Trigger**: issue #8 (M6 milestone), sub-issue #53, first sub-issue of M6. Preceded by a
+plan-only review of issue #8 that rewrote #53-#57, added a Wiki page
+(`plan/syncwingetlink/m6-command-line-interface`), filed #105 (rules-input hardening) and
+#106 (build hardening: `/guard:cf`/`/CETCOMPAT`) - no code changed in that review. This
+entry is the first M6 code. Branch `feature/53-parse-commands-and-options`.
+
+### Completed
+
+- `src/cli/ArgParser.{h,cpp}` (new `cli/` folder, registered in
+  `syncwingetlink.core.vcxproj`/`.filters`): `parseArguments(const
+  std::vector<std::wstring>&)` parses `scan`/`fix`/`test-rule NAME` and every option in
+  `docs/PLAN.md` §8, including the two options this issue adds to that spec:
+  `--fail-on-missing` and a new `--no-color`.
+  - `--help`/`-h`/`--version` are recognized anywhere (before any `--` terminator) and
+    short-circuit every other validation, per ADR-0020.
+  - A `--` terminator stops option recognition so a `test-rule` `NAME` starting with `-`
+    can be passed unambiguously.
+  - `test-rule`'s `NAME` is validated with the existing `isValidAliasFileName()`
+    (`rules/RuleSet.h`) - rejects path separators, drive letters, and every other
+    Win32-invalid character that function already checks.
+  - `--links-dir`/`--packages-dir`/`--rules` are validated and normalized to an absolute
+    path, but deliberately **not** required to already exist - see ADR-0020's correction
+    of this review's own first-draft wording, which would have contradicted ADR-0010.
+  - `--json` combined with `fix` and no `--yes` is a parse-time `ConflictingOptions`
+    error.
+  - `ArgParseError`/`ArgParseErrorKind` follow the same `runtime_error`-derived,
+    kind-enum shape as `RuleSetError`/`PackageSourceError`/`SymlinkServiceError`.
+- `core/Model.h`: added `AppOptions::noColor` (`bool`, default `false`) for #54 to
+  consume.
+- `docs/adr-phase-5.md` (new file, continuing from `adr-phase-4.md`): **ADR-0020**
+  records the argv-model decision, the help/version short-circuit rule, the `--`
+  terminator, the `--json`/`fix`/`--yes` conflict, and - most substantively - the
+  narrowed, corrected path-override validation scope (points 5-6 in the ADR), found
+  while implementing against `Paths.cpp` and `FsScanSource`'s already-documented
+  absent-directory tolerance rather than against the Wiki page's first-draft prose.
+- `docs/PLAN.md` §8: added `--fail-on-missing`/`--no-color` to the option table, added a
+  paragraph on the path-override validation scope, and added exit code `4` (package
+  enumeration failed) to the exit-code table - needed because an explicit `--source
+  com`/`--source fs` failure had no prior documented destination.
+- `docs/TODO.md` M6: checked off the `ArgParser` line, pointing at #53 and ADR-0020.
+- The Wiki page `plan/syncwingetlink/m6-command-line-interface` was corrected in place
+  (its S5 path-validation row and W8 relative-path row) to match the implementation,
+  rather than left with the inaccurate first-draft claims - see ADR-0020's reasoning.
+- Tests: `tests/ArgParserTests.cpp` (new, registered in
+  `syncwingetlink.tests.vcxproj`/`.filters`) - 34 tests across four `TEST_CLASS`
+  groups: commands (scan/fix/test-rule, unknown command, unexpected trailing argument,
+  the four `isValidAliasFileName` rejection shapes for `test-rule NAME`), options (every
+  flag, `--source`'s three values and its rejection, missing option value, unknown
+  option), path overrides (empty and device-path rejection, relative-to-absolute
+  normalization, a **non-existent** override path being *accepted*, matching ADR-0020),
+  and terminator/conflict behavior (`--`, the `--json`/`fix`/`--yes` conflict in both
+  directions, `--help`/`--version` short-circuiting a malformed remainder).
+
+### Deliberately not done
+
+- `docs/PLAN_ja.md`/`docs/TODO_ja.md` were not touched - Japanese translations, per
+  `AGENTS.md`'s language policy.
+- No console output, JSON output, dispatch, or exit-code mapping (#54, #55, #56) - this
+  issue only parses `argv` into `AppOptions` and throws `ArgParseError` on invalid input.
+- No rules-file size/count/pattern-length caps or the `RuleSet::resolve()` match-time
+  `regex_error` guard - that is #105's scope, filed separately from this issue.
+- `AGENTS.md` §6 and `README.md`'s exit-code tables were not updated with code `4` yet -
+  left for #56, which actually implements the exit-code mapping; `docs/PLAN.md` §8 was
+  updated now only because it is the CLI option-surface spec this issue directly extends.
+- `main.cpp` does not exist yet, so `syncwingetlink.vcxproj` still fails to link
+  (`LNK1561: an entry point must be defined`) - confirmed pre-existing on `main` before
+  this branch, not a regression; #56's job.
+
+### Verified
+
+- `Debug|x64`, `Release|x64`, `Debug|ARM64`, `Release|ARM64`:
+  `syncwingetlink.core.vcxproj` and `syncwingetlink.tests.vcxproj` build clean at
+  `/W4 /WX`, no new warnings. `syncwingetlink.vcxproj` fails to link on all four with the
+  pre-existing missing-`main.cpp` error, reproduced identically on `main` before this
+  branch's changes.
+- `vstest.console.exe /Platform:x64`: 249/249 passed in both `Debug|x64` and
+  `Release|x64` (up from 214 before this issue; 34 of the 249 are new
+  `ArgParserTests.cpp` cases, confirmed individually green).
+- `Debug|ARM64`/`Release|ARM64`: cross-built, not run (this machine is x64).
+- No dependency added.
+- No `*_ja.md` file was read or changed.
+
+### Copilot review feedback addressed (PR #107, before merge)
+
+- `src/cli/ArgParser.cpp`'s local `toUtf8()` now checks both `WideCharToMultiByte()`
+  return values and falls back to a `"<unrepresentable>"` placeholder on failure,
+  instead of silently proceeding with an uninitialized/empty buffer - a conversion
+  failure could previously have produced an empty or garbled `ArgParseError` message.
+- `AGENTS.md` §6 and `README.md` now list exit code `4` alongside `docs/PLAN.md` §8,
+  closing the doc-inconsistency gap this issue's "Deliberately not done" section had
+  explicitly deferred to #56 - addressed now instead, since leaving the tables
+  disagreeing was flagged as confusing to a reader of either file in isolation.
+- `src/cli/ArgParser.h`'s `--help`/`--version` short-circuit comment now states the
+  `--` terminator boundary explicitly: `syncwingetlink -- --help` does not show help,
+  it fails with `UnknownCommand`, since `--help` after `--` is positional like anything
+  else. The implementation was already correct; only the comment overclaimed
+  "anywhere on the command line."
+- `ArgParseErrorKind::MissingArgument`'s comment no longer claims "or a required value
+  is empty" - that never matched this implementation (`--include ""` parses
+  successfully; an empty `--links-dir` maps to `InvalidPathOverride`, not
+  `MissingArgument`). Tightened to the one case that actually produces it: `test-rule`
+  given no `NAME` token.
+- Rebuilt and reran the full suite after these changes: `Debug|x64`/`Release|x64` still
+  249/249, no new warnings.
+

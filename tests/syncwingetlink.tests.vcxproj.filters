@@ -12,6 +12,9 @@
     <ClCompile Include="AliasResolverTests.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
+    <ClCompile Include="ArgParserTests.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
     <ClCompile Include="DefaultRulesTests.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
