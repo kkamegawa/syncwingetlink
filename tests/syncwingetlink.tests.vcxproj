@@ -53,6 +53,7 @@
     <ClCompile Include="RuleSetTests.cpp" />
     <ClCompile Include="SmokeTests.cpp" />
     <ClCompile Include="SymlinkServiceTests.cpp" />
+    <ClCompile Include="TerminalSessionTests.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="TempDirectory.h" />

@@ -480,12 +480,17 @@ Console::Console(bool noColorRequested, ConsoleOperations operations,
                  std::optional<std::wstring> noColorEnvValueOverride)
     : m_operations(std::move(operations)), m_colorEnabled(false)
 {
+    m_stdoutInteractive =
+        m_operations.isConsole && m_operations.isConsole(ConsoleStream::Output);
+    m_stdinInteractive =
+        m_operations.isConsole && m_operations.isConsole(ConsoleStream::Input);
+
     bool vtCapable = false;
-    if (m_operations.isConsole && m_operations.tryEnableVirtualTerminal &&
-        m_operations.isConsole(ConsoleStream::Output))
+    if (m_stdoutInteractive && m_operations.tryEnableVirtualTerminal)
     {
         vtCapable = m_operations.tryEnableVirtualTerminal();
     }
+    m_vtEnabled = vtCapable;
 
     m_colorEnabled =
         vtCapable && !noColorRequested && !noColorEnvSet(noColorEnvValueOverride);

@@ -57,6 +57,9 @@
     <ClCompile Include="SymlinkServiceTests.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
+    <ClCompile Include="TerminalSessionTests.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="TempDirectory.h">

@@ -10,6 +10,9 @@
     <Filter Include="rules">
       <UniqueIdentifier>{6A2E9C3D-6E0C-4E1C-9C1E-6C8E6E6C7A11}</UniqueIdentifier>
     </Filter>
+    <Filter Include="tui">
+      <UniqueIdentifier>{2D8F4A6B-3C9E-4A2D-9F7A-5B6C7D8E9F01}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="cli\ArgParser.h">
@@ -75,6 +78,9 @@
     <ClInclude Include="rules\RuleSetSelector.h">
       <Filter>rules</Filter>
     </ClInclude>
+    <ClInclude Include="tui\TerminalSession.h">
+      <Filter>tui</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="cli\ArgParser.cpp">
@@ -130,6 +136,9 @@
     </ClCompile>
     <ClCompile Include="rules\RuleSetSelector.cpp">
       <Filter>rules</Filter>
+    </ClCompile>
+    <ClCompile Include="tui\TerminalSession.cpp">
+      <Filter>tui</Filter>
     </ClCompile>
   </ItemGroup>
 </Project>

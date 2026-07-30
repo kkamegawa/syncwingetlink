@@ -153,9 +153,10 @@ Build system decisions are recorded in [`adr.md`](./adr.md) (ADR-0001 … ADR-00
       source of truth (#57, ADR-0025)
 
 ## M7. TUI (`--tui`)
-- [ ] Enable Console Virtual Terminal Sequences (`ENABLE_VIRTUAL_TERMINAL_PROCESSING`)
-- [ ] Checklist UI for repair candidates (space to select, Enter to execute)
-- [ ] Progress / result summary display
+- [x] Enable Console Virtual Terminal Sequences (`ENABLE_VIRTUAL_TERMINAL_PROCESSING`) -
+      issue #58, ADR-0026 (`docs/adr-phase-6.md`)
+- [ ] Checklist UI for repair candidates (space to select, Enter to execute) - issue #59
+- [ ] Progress / result summary display - issue #60
 
 ## M8. Quality / polish
 - [ ] Integration test: with a dummy Packages/Links tree, scan→fix→re-scan becomes Ok

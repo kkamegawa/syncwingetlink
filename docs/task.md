@@ -1876,3 +1876,124 @@ agree. Merging is left to the repository maintainer, per session agreement.
   the same way.
 - Rebuilt and reran the full suite after these changes: `Debug|x64`/`Release|x64` still
   314/314, no new warnings.
+
+## 2026-07-31 — M7 pre-implementation review: issue/Wiki corrections (issues #9, #58, #59, #60, #113)
+
+**Trigger**: asked to review issue #60 (M7: Display TUI progress and results) and its
+plan for implementation-blocking defects before starting M7, and to fix the issue
+tracker and Wiki accordingly before writing any code.
+
+### Findings
+
+Reading #58/#59/#60, parent #9, the Wiki page `plan/syncwingetlink/m7-interactive-tui`,
+and the merged M6 code (`src/cli/Console.*`, `src/cli/Dispatch.cpp`) together surfaced
+eight defects that would have broken the checklist, resize handling, or the exit-code
+contract if implemented as originally written:
+
+1. ADR-0026 was reserved by both M7 (this plan) and M8 issue #113 - a genuine
+   collision, since the existing ADR sequence tops out at ADR-0025.
+2. The plan's "existing exit-code precedence is preserved" claim was false: the merged
+   `runFix()` (`src/cli/Dispatch.cpp`) already checks `interrupted` before
+   `anyInsufficientPermission`, so a permission failure followed by Ctrl+C already
+   returns 10, not 2, today.
+3. A declined interactive confirmation reuses `RepairMode::DryRun`, so a shared
+   executor built naively would report a user's "no" identically to a `--dry-run`
+   plan.
+4. Clearing `ENABLE_PROCESSED_INPUT` for the checklist (needed for other reasons) means
+   Ctrl+C cannot be observed via `SetConsoleCtrlHandler` while the checklist has
+   input focus - it must be read as an ordinary key event instead.
+5. Resize detection needs `ENABLE_WINDOW_INPUT` set and `ENABLE_VIRTUAL_TERMINAL_INPUT`
+   clear, `ENABLE_EXTENDED_FLAGS` alongside clearing `ENABLE_QUICK_EDIT_MODE`, and the
+   viewport derived from `srWindow`, not `WINDOW_BUFFER_SIZE_EVENT.dwSize` - none of
+   which the original plan stated.
+6. The alternate-screen/cursor RAII does not run on `CTRL_CLOSE_EVENT` (a C++
+   destructor does not fire there), and initialization/teardown ordering was
+   unspecified.
+7. A second, independent stdout-VT enable/restore inside the new terminal session
+   would have fought with `cli::Console`'s existing ownership of that same mode.
+8. An interruption with zero remaining items, and an interrupted dry-run, both had
+   undefined exit-code behavior.
+
+### Completed
+
+- Wiki page `plan/syncwingetlink/m7-interactive-tui` rewritten to fix all eight
+  findings: split ADR-0026/0027/0028 (one per sub-issue), corrected exit-code
+  precedence (now `permission(2) > interrupted/failure(10), gated by remaining > 0 >
+  success(0)`), added the `declined` outcome, specified the stdin input-mode flag set,
+  documented init/teardown ordering and close-event restoration, and clarified the
+  stdout-VT/terminal-session ownership boundary.
+- Issues #9, #58, #59, #60 edited in place with revision notes plus the corrected
+  acceptance criteria per finding above.
+- Issue #113 (M8: `--tui`/`--verbose`/`--quiet`) narrowed to `--verbose`/`--quiet`
+  only - its `--tui`-rejection acceptance criterion was removed (it would have
+  directly conflicted with M7's real `--tui` implementation) and its ADR moved from
+  the now-doubly-reserved ADR-0026 to ADR-0029.
+
+### Verified
+
+- No code was changed in this entry - documentation and issue-tracker corrections
+  only, verified by re-reading each edited issue and the pushed Wiki page.
+
+## 2026-07-31 — M7: enable virtual terminal output (issue #58)
+
+**Trigger**: issue #9 (M7 milestone), sub-issue #58, the first M7 implementation item,
+branched from `main` (not stacked on anything), referencing the Wiki plan
+`plan/syncwingetlink/m7-interactive-tui` and `docs/adr-phase-6.md` ADR-0026 - both
+corrected by the pre-implementation review above before this issue's own code was
+written.
+
+### Completed
+
+- `src/cli/Console.{h,cpp}`: three new read-only accessors - `vtEnabled()`,
+  `stdinInteractive()`, `stdoutInteractive()` - backed by members the constructor was
+  already computing (`vtCapable` was previously a local, discarded after computing
+  `m_colorEnabled`) or trivially deriving from the existing `ConsoleOperations::isConsole`
+  seam. No constructor behavior changed - `--no-color`/`NO_COLOR` still gate
+  `colorEnabled()` only, confirmed by a new test rather than assumed.
+- `src/tui/TerminalSession.{h,cpp}` (new): `TerminalOperations` seam (matching the
+  `ConsoleOperations`/`SymlinkServiceOperations` pattern already in this codebase) and
+  the RAII `TerminalSession` class - stdin-mode/alternate-screen/cursor ownership only,
+  per ADR-0026. Ctrl+C is normalized into an ordinary `TuiKeyEvent`; resize is derived
+  from `GetConsoleScreenBufferInfo().srWindow`, never `WINDOW_BUFFER_SIZE_EVENT.dwSize`;
+  a close/logoff/shutdown handler restores state via a `weak_ptr`-guarded, atomically
+  exactly-once `restore()`.
+- `src/syncwingetlink.core.vcxproj`/`.filters`: new `tui` filter, `TerminalSession.h`/
+  `.cpp` added to both files.
+- `tests/ConsoleTests.cpp`: new `TerminalCapabilityTests` (5 cases) covering the three
+  accessors independently of `colorEnabled()`, including the `--no-color` cross-check.
+- `tests/TerminalSessionTests.cpp` (new, 14 cases): unavailability for each missing
+  capability; successful acquisition's exact write/mode-change order; the installed
+  close handler; partial-initialization failure at both the stdin-mode-read and
+  stdin-mode-write steps, each unwinding cursor-then-alternate-screen in reverse order;
+  destructor-driven restoration exactly once; explicit `restore()` followed by
+  destruction (still exactly once); the close-handler callback performing the same
+  restoration; move transferring ownership so only the moved-to instance restores
+  anything; event delegation including a Ctrl+C key event; and control-sequence writes
+  bypassing sanitization.
+- `docs/adr-phase-6.md` (new): ADR-0026 records the terminal-ownership boundary, the
+  stdin input-mode contract, the Ctrl+C-as-key decision, and close-event restoration.
+- `docs/TODO.md` M7: checked off the "Enable Console Virtual Terminal Sequences" line,
+  pointing at #58 and ADR-0026.
+
+### Deliberately not done
+
+- No `TuiApp`/`ChecklistModel` yet - that is #59's scope, stacked on this branch.
+- `--tui` is not yet wired into `ArgParser`/`Dispatch` - also #59.
+- Production `TerminalOperations` (`makeProductionTerminalOperations()`) is not
+  exercised by an automated test, matching how `cli::Console`'s own production
+  `ConsoleOperations` is not directly unit-tested either - both are seams whose real
+  Win32 behavior is verified manually. Manual verification of the real terminal
+  session (alternate screen, cursor, resize, Ctrl+C-as-key, close-event restoration)
+  is deferred to #59/#60, where there is an actual interactive loop to drive it with.
+
+### Verified
+
+- `Debug|x64`, `Release|x64`, `Debug|ARM64`, `Release|ARM64`:
+  `syncwingetlink.core.vcxproj`, `syncwingetlink.tests.vcxproj`, and
+  `syncwingetlink.vcxproj` all build clean at `/W4 /WX`, no new warnings.
+- `vstest.console.exe /Platform:x64`: 333/333 passed in both `Debug|x64` and
+  `Release|x64` (up from 314; 19 new cases - 5 `TerminalCapabilityTests` +
+  14 `TerminalSessionTests`).
+- `Debug|ARM64`/`Release|ARM64`: cross-built, not run (this machine is x64).
+- No dependency added.
+- No `*_ja.md` file was read or changed.
