@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
+    <Filter Include="cli">
+      <UniqueIdentifier>{9B6E0F1D-2C3A-4E5B-8F60-1B2C3D4E5F6A}</UniqueIdentifier>
+    </Filter>
     <Filter Include="core">
       <UniqueIdentifier>{51758740-1205-4D35-A511-A6472770767A}</UniqueIdentifier>
     </Filter>
@@ -9,6 +12,9 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="cli\ArgParser.h">
+      <Filter>cli</Filter>
+    </ClInclude>
     <ClInclude Include="core\AliasResolver.h">
       <Filter>core</Filter>
     </ClInclude>
@@ -59,6 +65,9 @@
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="cli\ArgParser.cpp">
+      <Filter>cli</Filter>
+    </ClCompile>
     <ClCompile Include="core\AliasResolver.cpp">
       <Filter>core</Filter>
     </ClCompile>

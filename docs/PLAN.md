@@ -275,6 +275,9 @@ Options:
   --exclude <glob>      exclude
   --json                emit results as JSON (scripting)
   --verbose / --quiet   log level
+  --fail-on-missing     scan exits 1 if a Missing/Broken/Mismatch candidate is found
+  --no-color            disable colored/VT output regardless of TTY state (also honors
+                        the NO_COLOR environment variable)
   --version / --help
 ```
 
@@ -283,11 +286,19 @@ classes, no path semantics), matched per executable against either the package i
 or the executable file name, ordinal and case-insensitive. An exclude match always beats
 an include match. See `docs/adr-phase-2.md` ADR-0010.
 
+`--links-dir`/`--packages-dir`/`--rules` are rejected only if empty or if they resolve to
+a `\\.\` device path; they are **not** required to already exist. An absent Packages
+directory is a normal, tolerated state (ADR-0010), and an absent Links directory is the
+exact condition `fix` exists to correct. See `docs/adr-phase-5.md` ADR-0020.
+
 ### Exit codes
 - `0`: success (nothing to fix or fixed)
 - `1`: fix needed but not performed (e.g. missing detected in scan with `--fail-on-missing`)
 - `2`: insufficient permission (Developer Mode off & non-admin, cannot create symlink)
-- `3`: argument/config error (e.g. invalid rules JSON)
+- `3`: argument/config error (e.g. invalid rules JSON, unknown option, an invalid
+  `--links-dir`/`--packages-dir`/`--rules` value, or a non-interactive refusal)
+- `4`: package enumeration failed (an explicit `--source com`/`--source fs` could not
+  enumerate at all; `auto` only reaches this if both COM and the FS fallback fail)
 - `10`: some repairs failed
 
 ## 9. Fallback / future enhancements

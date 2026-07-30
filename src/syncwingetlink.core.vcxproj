@@ -44,6 +44,7 @@
     </ClCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="cli\ArgParser.cpp" />
     <ClCompile Include="core\AliasResolver.cpp" />
     <ClCompile Include="core\ComApartment.cpp" />
     <ClCompile Include="core\ExecutableScanner.cpp" />
@@ -60,6 +61,7 @@
     <ClCompile Include="rules\RuleSetSelector.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="cli\ArgParser.h" />
     <ClInclude Include="core\AliasResolver.h" />
     <ClInclude Include="core\ComApartment.h" />
     <ClInclude Include="core\ExecutableScanner.h" />

@@ -38,6 +38,7 @@
   <ItemGroup>
     <ClCompile Include="AliasPipelineTests.cpp" />
     <ClCompile Include="AliasResolverTests.cpp" />
+    <ClCompile Include="ArgParserTests.cpp" />
     <ClCompile Include="DefaultRulesTests.cpp" />
     <ClCompile Include="ExecutableScannerTests.cpp" />
     <ClCompile Include="FsScanSourceTests.cpp" />
