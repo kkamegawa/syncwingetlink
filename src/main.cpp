@@ -14,7 +14,44 @@
 #include <cstdio>
 #include <exception>
 #include <string>
+#include <string_view>
 #include <vector>
+
+namespace
+{
+// error.what() follows this codebase's UTF-8 diagnostic-text convention
+// (docs/adr-phase-5.md ADR-0021); printing it via "%hs" would instead decode it
+// through the CRT's current narrow locale/codepage, which can garble non-ASCII text.
+// Decoded explicitly here rather than pulling in cli::Console for this one
+// last-resort message.
+void printUnexpectedError(std::string_view utf8Message)
+{
+    int required = 0;
+    if (!utf8Message.empty())
+    {
+        required = ::MultiByteToWideChar(CP_UTF8, 0, utf8Message.data(),
+                                         static_cast<int>(utf8Message.size()), nullptr, 0);
+    }
+
+    if (required <= 0)
+    {
+        std::fwprintf(stderr, L"unexpected error (could not decode message)\n");
+        return;
+    }
+
+    std::wstring wide(static_cast<std::size_t>(required), L'\0');
+    const int written =
+        ::MultiByteToWideChar(CP_UTF8, 0, utf8Message.data(),
+                              static_cast<int>(utf8Message.size()), wide.data(), required);
+    if (written <= 0)
+    {
+        std::fwprintf(stderr, L"unexpected error (could not decode message)\n");
+        return;
+    }
+
+    std::fwprintf(stderr, L"unexpected error: %ls\n", wide.c_str());
+}
+} // namespace
 
 int wmain(int argc, wchar_t* argv[])
 {
@@ -23,8 +60,16 @@ int wmain(int argc, wchar_t* argv[])
     // shell32, ...) are already KnownDLLs, so the practical exposure this closes is
     // small - inexpensive defense-in-depth ahead of the M8 unsigned single-exe
     // release, not a fix for a demonstrated vulnerability (docs/adr-phase-5.md
-    // ADR-0024).
-    ::SetDefaultDllDirectories(LOAD_LIBRARY_SEARCH_SYSTEM32);
+    // ADR-0024). Its failure is not fatal to the process (the restriction is simply
+    // not applied), but is worth reporting since it silently changes this hardening
+    // posture.
+    if (!::SetDefaultDllDirectories(LOAD_LIBRARY_SEARCH_SYSTEM32))
+    {
+        std::fwprintf(stderr,
+                      L"warning: could not restrict DLL search directories "
+                      L"(GetLastError=%lu)\n",
+                      ::GetLastError());
+    }
 
     try
     {
@@ -50,7 +95,7 @@ int wmain(int argc, wchar_t* argv[])
         // escaped that contract - a defensive backstop, not a normal path
         // (docs/adr-phase-5.md ADR-0024). Exit code 3 is the closest documented fit
         // for a condition dispatch did not anticipate closely enough to name.
-        std::fwprintf(stderr, L"unexpected error: %hs\n", error.what());
+        printUnexpectedError(error.what());
         return 3;
     }
     catch (...)

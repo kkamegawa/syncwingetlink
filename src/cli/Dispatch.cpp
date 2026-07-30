@@ -61,12 +61,18 @@ BOOL WINAPI consoleCtrlHandler(DWORD ctrlType)
         ::MultiByteToWideChar(CP_UTF8, 0, text.data(), static_cast<int>(text.size()), nullptr, 0);
     if (required <= 0)
     {
-        return {};
+        return L"<unrepresentable>";
     }
 
     std::wstring result(static_cast<std::size_t>(required), L'\0');
-    ::MultiByteToWideChar(CP_UTF8, 0, text.data(), static_cast<int>(text.size()), result.data(),
-                         required);
+    const int written =
+        ::MultiByteToWideChar(CP_UTF8, 0, text.data(), static_cast<int>(text.size()), result.data(),
+                             required);
+    if (written <= 0)
+    {
+        return L"<unrepresentable>";
+    }
+
     return result;
 }
 
@@ -285,7 +291,20 @@ void writeJsonDocument(Console& console, const std::string& json)
     const RepairCandidateSet candidates = buildRepairCandidates(options, console);
     printCollisions(console, candidates.collisions);
 
-    ::SetConsoleCtrlHandler(&consoleCtrlHandler, TRUE);
+    // Not fatal if this fails: Ctrl+C would then terminate the process immediately
+    // instead of stopping the batch cleanly between items, a degraded (not unsafe)
+    // outcome - repairLink() itself never leaves a candidate half-mutated regardless of
+    // how the process ends. Still worth telling the user about, since it silently
+    // changes what Ctrl+C does.
+    const bool ctrlHandlerRegistered =
+        ::SetConsoleCtrlHandler(&consoleCtrlHandler, TRUE) != FALSE;
+    if (!ctrlHandlerRegistered)
+    {
+        console.writeLine(L"warning: could not register a Ctrl+C handler - Ctrl+C will "
+                          L"terminate immediately instead of stopping after the current "
+                          L"item",
+                          ConsoleStream::Error);
+    }
     g_ctrlCRequested.store(false);
 
     std::vector<SymlinkRepairResult> results;
@@ -348,7 +367,10 @@ void writeJsonDocument(Console& console, const std::string& json)
         }
     }
 
-    ::SetConsoleCtrlHandler(&consoleCtrlHandler, FALSE);
+    if (ctrlHandlerRegistered)
+    {
+        ::SetConsoleCtrlHandler(&consoleCtrlHandler, FALSE);
+    }
 
     if (options.jsonOutput)
     {

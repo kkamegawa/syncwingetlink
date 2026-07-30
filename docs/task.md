@@ -1754,3 +1754,30 @@ under the session's own temp scratchpad (never the real, shared
 - `Debug|ARM64`/`Release|ARM64`: cross-built, not run (this machine is x64).
 - No dependency added.
 - No `*_ja.md` file was read or changed.
+
+### Copilot review feedback addressed (PR #111, before merge)
+
+- `src/cli/Dispatch.cpp`'s `utf8ToWide()` now checks both `MultiByteToWideChar()`
+  return values and falls back to `L"<unrepresentable>"` on failure, instead of
+  returning a NUL-filled buffer that would print as blank/garbled diagnostic text.
+- `src/cli/Dispatch.cpp`'s `runFix()` now checks `SetConsoleCtrlHandler()`'s return
+  value. A registration failure is not treated as fatal - Ctrl+C then simply
+  terminates the process immediately instead of stopping the batch cleanly between
+  items, and no candidate is ever left half-mutated regardless - but it is reported as
+  a warning, since it silently changes what Ctrl+C does. The matching unregister call
+  at the end of the batch is now skipped when registration itself failed.
+- `src/main.cpp`'s `wmain()` now checks `SetDefaultDllDirectories()`'s return value and
+  reports a warning with `GetLastError()` on failure, rather than silently proceeding
+  without the intended DLL-search restriction.
+- `src/main.cpp`'s last-resort `catch` block no longer prints `error.what()` via
+  `%hs`, which converts through the CRT's current narrow locale/codepage - since
+  `what()` is UTF-8 by this codebase's convention (ADR-0021), that could garble
+  non-ASCII diagnostic text. Added a small local `printUnexpectedError()` helper that
+  explicitly decodes UTF-8 via `MultiByteToWideChar()` before printing with `%ls`.
+- `src/cli/Console.cpp`'s `toUtf8()` (the redirected-stdout/stderr encoding boundary)
+  now checks both `WideCharToMultiByte()` return values and falls back to
+  `"<unrepresentable>"` on failure, matching the same fix already made to
+  `cli/ArgParser.cpp`'s `toUtf8()` in #107's review.
+- Rebuilt and reran the full suite after these changes: `Debug|x64`/`Release|x64` still
+  312/312, no new warnings; re-verified `syncwingetlink.exe --version`/`--help` by
+  hand.
