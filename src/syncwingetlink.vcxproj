@@ -38,10 +38,22 @@
     <Manifest Include="app.manifest" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="main.cpp" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="syncwingetlink.core.vcxproj">
       <Project>{F662528B-4B65-4276-8F84-1DB853F869A3}</Project>
     </ProjectReference>
   </ItemGroup>
+  <ItemDefinitionGroup>
+    <Link>
+      <!-- Entry-point DLL search hardening (docs/adr-phase-5.md ADR-0024): restricts
+           the load flags embedded for this executable's dependent-DLL loads. Scoped to
+           the executable project only, not core/tests, since it is a property of the
+           shipped binary. -->
+      <AdditionalOptions>/DEPENDENTLOADFLAG:0x800 %(AdditionalOptions)</AdditionalOptions>
+    </Link>
+  </ItemDefinitionGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets" />
 </Project>

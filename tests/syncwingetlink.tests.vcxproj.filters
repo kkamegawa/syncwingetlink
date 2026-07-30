@@ -21,6 +21,9 @@
     <ClCompile Include="DefaultRulesTests.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
+    <ClCompile Include="DispatchTests.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
     <ClCompile Include="ExecutableScannerTests.cpp">
       <Filter>Tests</Filter>
     </ClCompile>

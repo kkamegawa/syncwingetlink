@@ -18,6 +18,9 @@
     <ClInclude Include="cli\Console.h">
       <Filter>cli</Filter>
     </ClInclude>
+    <ClInclude Include="cli\Dispatch.h">
+      <Filter>cli</Filter>
+    </ClInclude>
     <ClInclude Include="cli\Json.h">
       <Filter>cli</Filter>
     </ClInclude>
@@ -75,6 +78,9 @@
       <Filter>cli</Filter>
     </ClCompile>
     <ClCompile Include="cli\Console.cpp">
+      <Filter>cli</Filter>
+    </ClCompile>
+    <ClCompile Include="cli\Dispatch.cpp">
       <Filter>cli</Filter>
     </ClCompile>
     <ClCompile Include="cli\Json.cpp">

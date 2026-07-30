@@ -41,6 +41,7 @@
     <ClCompile Include="ArgParserTests.cpp" />
     <ClCompile Include="ConsoleTests.cpp" />
     <ClCompile Include="DefaultRulesTests.cpp" />
+    <ClCompile Include="DispatchTests.cpp" />
     <ClCompile Include="ExecutableScannerTests.cpp" />
     <ClCompile Include="FsScanSourceTests.cpp" />
     <ClCompile Include="JsonTests.cpp" />
