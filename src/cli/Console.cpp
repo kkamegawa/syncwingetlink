@@ -62,6 +62,9 @@ namespace
     return text.substr(begin, end - begin);
 }
 
+// Part of the redirected-stdout/stderr encoding boundary (writeFileChunked() below), so
+// a conversion failure must still produce something visible rather than silently
+// writing an empty or partial buffer.
 [[nodiscard]] std::string toUtf8(std::wstring_view text)
 {
     if (text.empty())
@@ -72,9 +75,20 @@ namespace
     const int required = ::WideCharToMultiByte(CP_UTF8, 0, text.data(),
                                                 static_cast<int>(text.size()), nullptr, 0,
                                                 nullptr, nullptr);
+    if (required <= 0)
+    {
+        return "<unrepresentable>";
+    }
+
     std::string result(static_cast<std::size_t>(required), '\0');
-    ::WideCharToMultiByte(CP_UTF8, 0, text.data(), static_cast<int>(text.size()), result.data(),
-                         required, nullptr, nullptr);
+    const int written =
+        ::WideCharToMultiByte(CP_UTF8, 0, text.data(), static_cast<int>(text.size()),
+                             result.data(), required, nullptr, nullptr);
+    if (written <= 0)
+    {
+        return "<unrepresentable>";
+    }
+
     return result;
 }
 

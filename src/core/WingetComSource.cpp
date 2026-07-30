@@ -2,7 +2,6 @@
 
 #include "WingetComSource.h"
 
-#include "ComApartment.h"
 #include "ExecutableScanner.h"
 #include "PackageSourceError.h"
 
@@ -85,10 +84,13 @@ constexpr GUID kPackageMatchFilterClsid = {
 
 struct WingetComSource::Impl
 {
-    // Must be the first member: destructor order is reverse-declaration-order, and
-    // CoUninitialize() must not run before manager/catalog (out-of-proc COM proxies)
-    // release their marshaled connections.
-    ComApartment apartment;
+    // No longer owns its own ComApartment (removed in #56, per the forward note this
+    // class's own header comment and docs/adr-phase-2.md ADR-0009 both carried since
+    // M2): main.cpp now constructs the single process-wide ComApartment before any
+    // core call, including the one that constructs this Impl, so a per-instance
+    // apartment here would only be a redundant (if harmless) nested one. Any caller
+    // that constructs a WingetComSource is responsible for the process already having
+    // an initialized apartment - see docs/adr-phase-5.md ADR-0024.
     PackageManager manager{nullptr};
     PackageCatalog catalog{nullptr};
     // Activated during construction, not lazily in enumeratePackages(), so that every COM

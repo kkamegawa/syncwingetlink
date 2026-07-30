@@ -145,7 +145,10 @@ Build system decisions are recorded in [`adr.md`](./adr.md) (ADR-0001 … ADR-00
       `AliasCollision`, and `SymlinkRepairResult` into the schema documented in
       `docs/PLAN.md` §8 (#55, ADR-0022). Ensuring stdout carries only the JSON document
       when `--json` is set is `main.cpp`'s (#56) job, not this module's
-- [ ] `main.cpp`: mode dispatch and exit-code mapping
+- [x] `main.cpp`: mode dispatch and exit-code mapping. `cli/Dispatch::run()` implements
+      `scan`/`fix`/`test-rule`, the total exit-code map, alias-collision exclusion from
+      `fix`, and Ctrl+C handling (#56, ADR-0024). `syncwingetlink.exe` links
+      successfully for the first time in this project's history
 - [ ] `--help`/`--version`
 
 ## M7. TUI (`--tui`)

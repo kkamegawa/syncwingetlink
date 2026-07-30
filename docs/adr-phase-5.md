@@ -400,3 +400,156 @@ This file continues the chronological record in [`adr-phase-4.md`](./adr-phase-4
 - #56 (dispatch) maps `RuleSetErrorKind::LimitExceeded` and
   `RuleSetErrorKind::RegexEvaluationFailed` onto exit code 3, alongside every other
   `RuleSetErrorKind`, once its exit-code mapping exists.
+
+---
+
+## ADR-0024 — main.cpp, the total exit-code map, the scan/fix pipeline, and the ComApartment ownership move
+
+- **Date**: 2026-07-30
+- **Affected**: `main.cpp` (new), `cli/Dispatch` (new), `core/WingetComSource`,
+  `core/ComApartment`, `docs/TODO.md` M6, the Wiki page
+  `plan/syncwingetlink/m6-command-line-interface`
+- **Status**: Accepted
+
+### Decision
+
+1. **`main.cpp` is a thin shim, exactly as ADR-0002 requires**: `SetDefaultDllDirectories
+   (LOAD_LIBRARY_SEARCH_SYSTEM32)` as its first statement, one process-wide
+   `core::ComApartment` constructed before anything else, `argv[1..]` copied into a
+   `std::vector<std::wstring>`, one call to `cli::run()`, and a top-level `try`/`catch`
+   as a last-resort net. `/DEPENDENTLOADFLAG:0x800` is added to
+   `syncwingetlink.vcxproj`'s own link settings, not the core or tests project, since
+   it is a property of the shipped binary. Both are cheap defense-in-depth ahead of the
+   M8 unsigned single-exe release, not a fix for a demonstrated vulnerability - most of
+   this process's current imports are already KnownDLLs.
+2. **`WingetComSource::Impl` no longer constructs its own `ComApartment`.** Both this
+   class's own header comment and `core/ComApartment.h`'s class comment have carried a
+   forward note since M2 (`docs/adr-phase-2.md` ADR-0009) that it owned one only
+   because `main.cpp` did not exist yet. Now that `main.cpp` constructs the single
+   process-wide apartment before any core call - including the one that constructs a
+   `WingetComSource` - the nested one was redundant. `rules/RuleSet.cpp`'s `parse()`
+   keeps constructing its own independently: its need for an initialized apartment
+   (`winrt::Windows::Data::Json`, ADR-0011) applies even to a `--source fs` or
+   `test-rule` invocation that never touches `WingetComSource` at all, so it was never
+   solely a stand-in for the process-wide one the way `WingetComSource`'s was.
+3. **`cli::run(const std::vector<std::wstring>&)` is the single testable entry point**,
+   deliberately decoupled from `wmain`'s exact signature (mirroring `cli::parseArguments`'s
+   own `std::vector<std::wstring>` choice, ADR-0020 point 1). It parses argv, handles
+   `--help`/`--version` immediately, then dispatches `scan`/`fix`/`test-rule`, catching
+   every exception type its own dependencies can throw
+   (`ArgParseError`/`PackageSourceError`/`RuleSetError`/`SymlinkServiceError`/
+   `LinkInspectionError`, and a generic `std::exception` fallback for anything else,
+   such as a `std::filesystem::filesystem_error`) and mapping each to the documented
+   exit code. `main.cpp`'s own `try`/`catch` is a defensive backstop for anything that
+   still escapes despite that contract, not a normal path.
+4. **`exitCodeFor()` is three separate, exhaustive `switch` statements with no
+   `default` case** - one per error-kind enum (`PackageSourceErrorKind`,
+   `RuleSetErrorKind`, `SymlinkServiceErrorKind`). Omitting `default` is deliberate: if
+   a future change adds a new enumerator to any of these three enums without updating
+   the matching `exitCodeFor()` overload, the switch no longer covers every case and
+   `/W4 /WX` turns the resulting "not all control paths return a value" (C4715)
+   diagnostic into a build failure - the totality this ADR documents is
+   self-enforcing, not just asserted in a comment or a test that could go stale.
+5. **Every `PackageSourceErrorKind` maps to exit code 4, every `RuleSetErrorKind` maps
+   to exit code 3, and `SymlinkServiceErrorKind::InsufficientPermission` maps to exit
+   code 2** while its three sibling kinds (`DeleteFailed`/`CreateFailed`/
+   `VerificationFailed`) map to exit code 10 - a single failing item in an otherwise
+   successful batch is the "some repairs failed" case the Wiki page's exit-code table
+   already documents, not the permission case.
+6. **`scan` builds one inventory (`buildRepairCandidates()`) that `fix` reuses
+   unchanged**: enumerate via `createPackageSource(options, onDegrade)`, filter via
+   `PackageFilter`, select rules via `selectRuleSet()`, resolve each executable's alias
+   via `resolveAlias()`, and inspect each resulting `Links\<alias>.exe` via
+   `inspectLink()`. `detectAliasCollisions()` runs once over the full inventory;
+   `scan` reports every item (including a colliding alias's own status) plus the
+   collision list separately, while `fix` filters colliding aliases out of its own
+   repair set entirely before ever calling `repairLink()` - the security contract's
+   collision-exclusion rule, enforced at exactly one point common to both commands
+   rather than duplicated in each.
+7. **A declined confirmation is executed as a `DryRun`, not skipped.** When the user is
+   prompted (only for a pre-fetched `Missing`/`Broken` status, under the interactive
+   default - `--dry-run` and `--yes` both skip prompting entirely) and declines,
+   `fix` still calls `repairLink()` for that candidate, but in `RepairMode::DryRun`
+   rather than `Execute`. This reuses `SymlinkService`'s existing
+   `WouldCreate`/`WouldReplaceBroken` outcome vocabulary to represent "what would have
+   happened, had the user agreed" instead of inventing a fifth, dispatch-only "declined"
+   outcome that every consumer (console text, JSON schema) would then need to know
+   about separately.
+8. **Ctrl+C is handled with `SetConsoleCtrlHandler` setting a process-wide
+   `std::atomic<bool>`, checked once per loop iteration in `runFix()`, never mid-item.**
+   The handler returns `TRUE` for `CTRL_C_EVENT`/`CTRL_BREAK_EVENT`, suppressing the
+   default immediate-termination behavior so the main thread's own loop can stop
+   cooperatively at its next check instead - an in-flight `repairLink()` call is never
+   interrupted, matching the Wiki page's "not cancellable mid-operation" note. An
+   interrupted batch's exit code is 10 (`PartialFailure`), the same code an
+   otherwise-complete batch with a failed item uses, since both describe "did not
+   finish everything it set out to do."
+9. **`test-rule`, `--help`, and `--version` have minimal but real, functional output in
+   this issue** - `test-rule` prints "`<name> -> rule "<rule>" -> <alias>`" (or the
+   no-match/invalid-fallback cases), `--help` prints the option/exit-code summary, and
+   `--version` prints a hardcoded `"syncwingetlink 0.1.0"`. None of these is final: #40
+   (M3) owns `test-rule`'s actual presentation design, and #57 owns `--help`/
+   `--version`'s final polish and a non-duplicated version source. This issue only
+   needed each `AppCommand` value to be handled by *something*, since an unhandled one
+   would leave those commands non-functional rather than merely unpolished.
+
+### Reason
+
+- A single shared `buildRepairCandidates()` was chosen over separately duplicating the
+  enumerate/filter/resolve/inspect sequence in `runScan()` and `runFix()` because the
+  two commands must see identical link-state observations for the same invocation -
+  any divergence between two copies of this logic would be a correctness bug (a
+  candidate `fix` considers repairing must be the same one `scan` would have reported).
+- Reusing `RepairMode::DryRun` for a declined confirmation, rather than adding a new
+  outcome, keeps `SymlinkRepairOutcome` and the `--json` schema (`docs/PLAN.md`,
+  ADR-0022) exactly as already documented - a JSON consumer parsing `fix` output does
+  not need a schema update to understand what a declined item's outcome means.
+- Exit code 10 for both an interrupted batch and a batch with a failed item reflects
+  that a caller checking the exit code cares about "did everything I asked for
+  happen," not the specific reason it did not - the per-item console/JSON output
+  already carries the more specific reason.
+
+### A bug found and fixed during this issue's own manual verification
+
+While hand-testing the built `syncwingetlink.exe` (see Consequences below),
+`--help`'s output rendered as one unreadable line instead of the intended multi-line
+text. The cause: `Console::writeLine()` sanitizes its argument via
+`sanitizeForDisplay()` (ADR-0021), which strips every C0 control character -
+including `\n` - by design, so that an untrusted package id or alias can never forge
+an extra output line. `printHelp()`'s original implementation passed one large string
+literal containing embedded `\n` characters to a single `writeLine()` call, and
+`sanitizeForDisplay()` correctly (per its own contract) stripped every one of them.
+The fix was in `printHelp()`, not in `sanitizeForDisplay()`: the help text is now an
+array of individual lines, each written through its own `writeLine()` call.
+`sanitizeForDisplay()`'s behavior is unchanged and remains correctly documented and
+tested by #54's `ConsoleTests.cpp`.
+
+### Consequences
+
+- `src/main.cpp` (new, in the executable project only) and `src/cli/Dispatch.{h,cpp}`
+  (new, in `syncwingetlink.core`) implement the above.
+- `src/core/WingetComSource.cpp`'s `Impl` no longer has a `ComApartment` member;
+  `src/core/ComApartment.h`'s class comment is updated to match the new ownership.
+- `src/syncwingetlink.vcxproj`/`.filters` register `main.cpp` and add the
+  `/DEPENDENTLOADFLAG:0x800` link option.
+- **`syncwingetlink.exe` links successfully for the first time** in this project's
+  history - every prior M0-M5 build produced only `LNK1561` ("an entry point must be
+  defined") for the executable project, which every prior issue's `task.md` entry
+  documented as a known, pre-existing condition. That condition is now resolved in all
+  four configurations (`Debug|Release` × `x64|ARM64`).
+- `tests/DispatchTests.cpp` covers `exitCodeFor()`'s totality over all three error-kind
+  enums. The rest of `cli::run()`'s behavior - argument parsing through to exit code,
+  across `scan`/`fix`/`test-rule`/`--help`/`--version`, `--json`, `--dry-run`,
+  confirmation accept/decline/EOF, `InsufficientPermission` guidance text, and alias
+  collision exclusion - was verified by hand against a real build, driven with
+  `--source fs` and `--packages-dir`/`--links-dir` pointed at a scratch directory tree
+  (not against the real, shared `%LOCALAPPDATA%\Microsoft\WinGet` paths). This is not
+  covered by an automated test: unlike `core/SymlinkService`'s injectable
+  `SymlinkServiceOperations` seam, `cli::Dispatch` does not mock out package
+  enumeration, alias resolution, or console I/O, so exercising the full pipeline
+  deterministically would need infrastructure this issue does not add. The manual
+  transcript is recorded in `docs/task.md`'s entry for this issue.
+- #40 (M3) and #57 (M6) each still have real work: `test-rule`'s presentation and
+  `--help`/`--version`'s final polish/single version source, respectively - both
+  build on top of the minimal, functional versions this issue ships rather than
+  leaving those commands unhandled.

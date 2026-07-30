@@ -1642,3 +1642,142 @@ the Wiki plan `plan/syncwingetlink/m6-command-line-interface`.
     the same way the redirected-stream fix's untested status was documented.
 - Rebuilt and reran the full suite after these changes: `Debug|x64`/`Release|x64` still
   308/308, no new warnings.
+
+## 2026-07-30 — CLI: dispatch commands and exit codes (issue #56)
+
+**Trigger**: issue #8 (M6 milestone), sub-issue #56, stacked on #105 (PR #110, not yet
+merged - branch `feature/56-dispatch-and-exit-codes` branches from
+`feature/105-harden-rules-input`), referencing the Wiki plan
+`plan/syncwingetlink/m6-command-line-interface`.
+
+### Completed
+
+- `src/main.cpp` (new): `wmain`, `SetDefaultDllDirectories(LOAD_LIBRARY_SEARCH_SYSTEM32)`
+  as its first statement, one process-wide `core::ComApartment`, argv copied into
+  `cli::run()`'s vector, top-level `try`/`catch` as a last-resort net (exit code 3 for
+  anything unexpected).
+- `src/cli/Dispatch.{h,cpp}` (new): `ExitCode`, three exhaustive (no-`default`)
+  `exitCodeFor()` overloads over `PackageSourceErrorKind`/`RuleSetErrorKind`/
+  `SymlinkServiceErrorKind`, and `run()` - `scan`/`fix` share one
+  `buildRepairCandidates()` inventory (enumerate, filter, resolve aliases, inspect
+  links, detect collisions); `fix` excludes colliding aliases entirely before calling
+  `repairLink()`; a declined confirmation runs as `RepairMode::DryRun` rather than
+  being skipped; Ctrl+C is handled via `SetConsoleCtrlHandler` + an atomic flag checked
+  between (never during) items; `--help`/`--version`/`test-rule` get minimal but real
+  output (final polish is #57's/#40's job, not duplicated here).
+- `src/core/WingetComSource.cpp`: removed `Impl`'s own `ComApartment` member - it owned
+  one only because `main.cpp` did not exist yet (the forward note both this class and
+  `core/ComApartment.h` carried since M2, ADR-0009). `core/ComApartment.h`'s class
+  comment updated to describe the new ownership and why `rules/RuleSet.cpp`'s own
+  independent apartment construction is unaffected.
+- `src/syncwingetlink.vcxproj`/`.filters`: registered `main.cpp`; added
+  `/DEPENDENTLOADFLAG:0x800` to the executable's own link settings (not core/tests).
+- `docs/adr-phase-5.md`: **ADR-0024** records all of the above, including a bug found
+  and fixed during this issue's own manual verification (below).
+- `docs/TODO.md` M6: checked off the `main.cpp` line, pointing at #56 and ADR-0024.
+- Tests: `tests/DispatchTests.cpp` (new) covers `exitCodeFor()`'s totality over all
+  three error-kind enums exhaustively.
+
+### A bug found and fixed during manual verification
+
+`--help`'s output first rendered as one unreadable line: `printHelp()` passed one
+string literal with embedded `\n` characters to a single `Console::writeLine()` call,
+and `writeLine()`'s `sanitizeForDisplay()` step (correctly, by its own #54-established
+contract) strips every C0 control character including `\n`, so an untrusted alias or
+package id can never forge an extra output line. The fix was in `printHelp()`, not in
+`sanitizeForDisplay()`: help text is now an array of individual lines, one
+`writeLine()` call each. See ADR-0024 for the full account.
+
+### Manual verification transcript
+
+`cli::Dispatch` does not mock out package enumeration, alias resolution, or console
+I/O (unlike `core/SymlinkService`'s injectable operations seam), so the full pipeline
+was verified by hand against a real `Debug|x64` build of `syncwingetlink.exe`, using
+`--source fs` and `--packages-dir`/`--links-dir` pointed at a scratch directory tree
+under the session's own temp scratchpad (never the real, shared
+`%LOCALAPPDATA%\Microsoft\WinGet` paths):
+
+- `--help` → full multi-line usage text, exit 0 (after the fix above).
+- `--version` → `syncwingetlink 0.1.0`, exit 0.
+- `--bogus` (unknown option) → `unknown option: --bogus` + usage hint on stderr, exit 3.
+- `test-rule codex-x86_64-pc-windows-msvc.exe` →
+  `codex-x86_64-pc-windows-msvc.exe -> rule "strip-rust-target-triple" -> codex.exe`,
+  exit 0.
+- `test-rule plainname.exe` (no rule matches) →
+  `plainname.exe -> no rule matched -> plainname.exe (raw file name)`, exit 0.
+- `scan` against one fake portable exe with no existing link → `Missing: tool.exe -> ...`,
+  exit 0; the same scan with `--json` → a single valid JSON document matching the
+  documented schema; the same scan with `--fail-on-missing` → exit 1.
+- `fix --dry-run --yes` → `tool.exe: would create`, and the Links scratch directory
+  confirmed empty afterward (no mutation).
+- `fix --yes` (real execution attempt, this host has neither Developer Mode nor
+  elevation) → `error: tool.exe - Check whether Developer Mode is enabled, or run
+  elevated.`, exit 2 - the correct guidance string for this host's actual
+  (non-elevated, Developer-Mode-unknown) state.
+- `fix` with a redirected `"no"` on stdin, and again with stdin closed (`< /dev/null`)
+  → both printed the confirmation prompt, then `tool.exe: would create` (declined ==
+  `DryRun`, not skipped), exit 0, no mutation.
+- `fix` with a redirected `"yes"` on stdin → prompt, then the same
+  `InsufficientPermission` outcome as the `--yes` case above (confirmed proceeds to a
+  real `Execute` attempt), exit 2.
+- Two fake executables resolving to the same alias (`tool.exe`) via `scan` → both
+  listed with their own status, plus
+  `warning: alias collision for tool.exe - 2 executables resolve to it; excluded from
+  automatic repair` on stderr, exit 0; the same setup via `fix --yes` → only the
+  collision warning, no repair attempted for either executable, exit 0.
+
+### Deliberately not done
+
+- `docs/PLAN_ja.md`/`docs/TODO_ja.md` were not touched - Japanese translations, per
+  `AGENTS.md`'s language policy.
+- `test-rule`'s presentation is intentionally minimal - #40 (M3) owns its final design.
+  `--help`/`--version` are intentionally minimal and `--version`'s string is a second
+  hardcoded literal alongside `app.manifest`'s - #57 owns deriving both from one
+  source and any further polish.
+- No automated test of the full `run()` pipeline - see ADR-0024's Consequences section
+  for why, and the manual transcript above for what was actually verified instead.
+- The interactive (real-console, not redirected) confirmation-prompt and `--tui` paths
+  were not exercised - no real interactive terminal was available in this environment;
+  `--tui` remains M7 scope regardless.
+
+### Verified
+
+- `Debug|x64`, `Release|x64`, `Debug|ARM64`, `Release|ARM64`:
+  `syncwingetlink.core.vcxproj`, `syncwingetlink.tests.vcxproj`, **and
+  `syncwingetlink.vcxproj`** all build clean at `/W4 /WX`, no new warnings.
+  `syncwingetlink.exe` links successfully in all four configurations - the first time
+  in this project's history the executable project has produced a linkable binary;
+  every prior M0-M5 entry in this file documented `LNK1561` as a known, pre-existing
+  condition, which is now resolved.
+- `vstest.console.exe /Platform:x64`: 312/312 passed in both `Debug|x64` and
+  `Release|x64` (up from 308; 4 of the 312 are new `DispatchTests.cpp` cases).
+- `Debug|ARM64`/`Release|ARM64`: cross-built, not run (this machine is x64).
+- No dependency added.
+- No `*_ja.md` file was read or changed.
+
+### Copilot review feedback addressed (PR #111, before merge)
+
+- `src/cli/Dispatch.cpp`'s `utf8ToWide()` now checks both `MultiByteToWideChar()`
+  return values and falls back to `L"<unrepresentable>"` on failure, instead of
+  returning a NUL-filled buffer that would print as blank/garbled diagnostic text.
+- `src/cli/Dispatch.cpp`'s `runFix()` now checks `SetConsoleCtrlHandler()`'s return
+  value. A registration failure is not treated as fatal - Ctrl+C then simply
+  terminates the process immediately instead of stopping the batch cleanly between
+  items, and no candidate is ever left half-mutated regardless - but it is reported as
+  a warning, since it silently changes what Ctrl+C does. The matching unregister call
+  at the end of the batch is now skipped when registration itself failed.
+- `src/main.cpp`'s `wmain()` now checks `SetDefaultDllDirectories()`'s return value and
+  reports a warning with `GetLastError()` on failure, rather than silently proceeding
+  without the intended DLL-search restriction.
+- `src/main.cpp`'s last-resort `catch` block no longer prints `error.what()` via
+  `%hs`, which converts through the CRT's current narrow locale/codepage - since
+  `what()` is UTF-8 by this codebase's convention (ADR-0021), that could garble
+  non-ASCII diagnostic text. Added a small local `printUnexpectedError()` helper that
+  explicitly decodes UTF-8 via `MultiByteToWideChar()` before printing with `%ls`.
+- `src/cli/Console.cpp`'s `toUtf8()` (the redirected-stdout/stderr encoding boundary)
+  now checks both `WideCharToMultiByte()` return values and falls back to
+  `"<unrepresentable>"` on failure, matching the same fix already made to
+  `cli/ArgParser.cpp`'s `toUtf8()` in #107's review.
+- Rebuilt and reran the full suite after these changes: `Debug|x64`/`Release|x64` still
+  312/312, no new warnings; re-verified `syncwingetlink.exe --version`/`--help` by
+  hand.
