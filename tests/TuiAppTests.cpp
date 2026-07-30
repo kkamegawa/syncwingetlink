@@ -258,5 +258,40 @@ public:
         }
         Assert::IsTrue(found);
     }
+
+    // The case above alone would still pass if render() stopped sanitizing entirely -
+    // "tool.exe" has nothing for cli::sanitizeForDisplay() to strip. This case uses an
+    // alias carrying an embedded ESC byte (as an untrusted package/executable name
+    // could) and asserts the *sanitized* form is what actually reaches the terminal,
+    // while the raw, ESC-carrying form - which could otherwise forge a fake ANSI
+    // color/control sequence into the checklist's own intentional output - never does.
+    TEST_METHOD(renderedFrameSanitizesCandidateTextBeforeCombiningWithControlSequences)
+    {
+        ScriptedTerminal fake;
+        fake.events.push_back(keyEvent(kVkReturn));
+
+        const std::wstring maliciousAlias =
+            std::wstring(L"tool") + wchar_t(0x1B) + L"[31mFAKE.exe";
+        TerminalSession session = makeSession(fake);
+        ChecklistModel model({makeCandidate(maliciousAlias)});
+
+        static_cast<void>(runChecklist(session, model));
+
+        bool sanitizedFormFound = false;
+        bool rawFormFound = false;
+        for (const std::wstring& write : fake.controlWrites)
+        {
+            if (write.find(L"tool[31mFAKE.exe") != std::wstring::npos)
+            {
+                sanitizedFormFound = true;
+            }
+            if (write.find(maliciousAlias) != std::wstring::npos)
+            {
+                rawFormFound = true;
+            }
+        }
+        Assert::IsTrue(sanitizedFormFound);
+        Assert::IsFalse(rawFormFound);
+    }
 };
 } // namespace syncwingetlink::tests
