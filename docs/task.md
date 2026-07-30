@@ -1406,6 +1406,31 @@ merged - branch `feature/54-console-interaction` branches from
 - No dependency added.
 - No `*_ja.md` file was read or changed.
 
+### Copilot review feedback addressed (PR #108, before merge)
+
+- `src/cli/Console.cpp`'s `readLineFromRedirectedStream()` now caps retained bytes at
+  `kMaxRedirectedLineBytes` (4096) instead of growing the buffer without bound. Past the
+  cap, the byte-at-a-time read still drains to the next newline or EOF (so a later read
+  starts at the next line) but stops retaining bytes, and the call reports refusal
+  directly rather than handing back a misleadingly truncated fragment - a hostile or
+  merely misbehaving redirected stdin can no longer grow this buffer unboundedly during
+  a confirmation prompt.
+  - Not covered by an automated test: the production `readLineFromRedirectedStream()`
+    path reads from the real `STD_INPUT_HANDLE`, which a unit test cannot safely
+    redirect to an oversized synthetic pipe without affecting the test host process's
+    own stdin. The existing `ConsoleTests.cpp` coverage exercises this logic's
+    *decision* shape (EOF/bare-Enter/negative-answer refusal) through the
+    `ConsoleOperations` fake seam instead, consistent with this codebase's existing
+    precedent for real-Win32-only code paths (e.g. `docs/adr-phase-2.md` ADR-0010's
+    unexercised `FsScanSource` access-denied path).
+- `src/cli/Console.h`'s `sanitizeForDisplay()` comment now states plainly that it
+  performs no JSON string escaping (quotes, backslashes, `\uXXXX`) - it only strips
+  control/bidi characters for display safety - and that a JSON writer must still run its
+  own escaper (`cli::escapeJsonString()`, added in #55) afterward to produce a valid
+  JSON string.
+- Rebuilt and reran the full suite after these changes: `Debug|x64`/`Release|x64` still
+  276/276, no new warnings.
+
 ## 2026-07-30 — CLI: machine-readable JSON output (issue #55)
 
 **Trigger**: issue #8 (M6 milestone), sub-issue #55, stacked on #54 (PR #108, not yet
@@ -1475,4 +1500,3 @@ merged - branch `feature/55-json-output` branches from
 - `Debug|ARM64`/`Release|ARM64`: cross-built, not run (this machine is x64).
 - No dependency added.
 - No `*_ja.md` file was read or changed.
-
