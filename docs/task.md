@@ -2667,3 +2667,57 @@ documents; precedes #65, whose release notes point at this README.
   `README.md`, `docs/PLAN.md` §8, `AGENTS.md` §3, and `docs/TODO.md` to confirm they
   agree with each other and with the actual implemented behavior in `src/`.
 - No dependency added. No `*_ja.md` file was read or changed.
+
+## 2026-08-01 — M8: publish the unsigned single-exe pre-release, closing M8 (issue #65)
+
+**Trigger**: eighth and final layer of the M8 stack, on top of #64's branch. Depends on
+#106 (hardening flags), #64 (the README the release notes point at), and #118
+(`VS_VERSION_INFO`/version source) - all landed earlier in this same stack.
+
+### Completed
+
+- Built the release artifacts per `docs/adr.md` ADR-0003:
+  `msbuild syncwingetlink.sln -p:Configuration=Release -p:Platform=x64
+  -p:StaticRuntime=true -t:syncwingetlink` and the same for `ARM64`.
+- Verified `#106`'s hardening is present in both shipped binaries via
+  `dumpbin /headers /loadconfig`: Guard CF instrumented on both; EH Continuation
+  table present and CET compatible on `x64` only, correctly absent on `ARM64` -
+  matching the x64-only scoping ADR-0029 records.
+- Verified the static CRT via `dumpbin /dependents` on both: neither lists
+  `MSVCP140.dll` nor `VCRUNTIME140.dll`.
+- Verified `#118`'s single version source: `(Get-Item ...).VersionInfo` on both
+  built executables reports `FileVersion`/`ProductVersion` `0.1.0`, matching
+  `cli::kVersion` and the first three components of `app.manifest`'s
+  `assemblyIdentity` version (`0.1.0.0`).
+- Staged `syncwingetlink-0.1.0-x64.exe`, `syncwingetlink-0.1.0-arm64.exe`, and a
+  generated `SHA256SUMS.txt`; verified the checksums against the files in a fresh
+  `sha256sum -c` check.
+- `docs/adr-phase-6.md` gains **ADR-0033**: the pre-release rationale (unsigned,
+  no CI, ARM64 cross-built-not-run, manual dependency gate - explicitly not a
+  missing `--tui`, corrected from the issue's original pre-M7-merge wording),
+  the verification evidence above, and what would need to change to drop the
+  pre-release designation in a future version.
+- `docs/PLAN.md` §11 and `docs/TODO.md` M8 gain checked lines pointing at #65 and
+  ADR-0033.
+
+### Deliberately not done in this commit
+
+- **The GitHub release itself was not published from this session.** Creating a
+  public release (even pre-release, even on a private repository) is a
+  publish/post action this project's operating rules require explicit user
+  confirmation for before it happens - a decision distinct from preparing the
+  artifacts and writing the ADR that describes them. The built executables,
+  `SHA256SUMS.txt`, and the exact `gh release create` invocation (tag, title,
+  honesty-contract release notes satisfying all five rules in the issue) are
+  staged and ready; publishing is the user's call.
+
+### Verified
+
+- `Debug|x64`, `Release|x64`, `Debug|ARM64`, `Release|ARM64` (the normal,
+  non-`StaticRuntime` configurations already used by every earlier layer of this
+  stack) remain green - this issue changed no source file, only produced release
+  artifacts and documentation, so no new test run was needed beyond what #118's
+  entry above already recorded (405/405).
+- `Release|x64 -p:StaticRuntime=true` and `Release|ARM64 -p:StaticRuntime=true`:
+  both build clean; `dumpbin` and `VersionInfo` evidence as described above.
+- No dependency added. No `*_ja.md` file was read or changed.

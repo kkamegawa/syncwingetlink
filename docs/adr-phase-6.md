@@ -795,3 +795,75 @@ exists today, and none of it is in scope for the first release.
   ADR. #65 (the M8 pre-release) can now cite a real `VS_VERSION_INFO` resource as
   part of its release evidence, and its own tag-matches-`kVersion` checklist step
   has this ADR's manifest check as a partial mechanical backstop.
+
+## ADR-0033 — `0.1.0` ships as an unsigned GitHub pre-release, and why
+
+- **Date**: 2026-08-01
+- **Affected**: the `v0.1.0` GitHub release, `docs/PLAN.md` §11, `docs/TODO.md` M8
+- **Status**: Accepted
+
+### Decision
+
+**`0.1.0` is published as a GitHub pre-release**, with two statically linked
+executables (`syncwingetlink-0.1.0-x64.exe`, `syncwingetlink-0.1.0-arm64.exe`) and a
+`SHA256SUMS.txt`, built locally per `docs/adr.md` ADR-0003:
+
+```
+msbuild syncwingetlink.sln -p:Configuration=Release -p:Platform=x64 -p:StaticRuntime=true -t:syncwingetlink
+msbuild syncwingetlink.sln -p:Configuration=Release -p:Platform=ARM64 -p:StaticRuntime=true -t:syncwingetlink
+```
+
+The pre-release designation rests on exactly four reasons, none of which is a missing
+feature:
+
+1. **Unsigned.** No code-signing certificate is used. Windows SmartScreen and antivirus
+   reputation heuristics will warn on first run; the release notes state this plainly and
+   give the exact `Get-FileHash`/`sha256sum` verification command against
+   `SHA256SUMS.txt`.
+2. **No CI.** `.github/` has no `workflows/` directory (`#21` is open) - these artifacts
+   were built by a human, locally, from a named commit, not by a pipeline. The release
+   notes say so rather than implying otherwise.
+3. **`ARM64` is cross-built, not run.** Per `docs/adr.md` open item 3, this build ran on
+   an `x64` host; the `ARM64` executable was never executed, only cross-compiled and
+   inspected (`dumpbin`, `VersionInfo`). The release notes report it as
+   "cross-built, not run," never as tested.
+4. **The dependency-vulnerability gate is manual.** Per `docs/adr.md` open item 6, no
+   scanner here understands vcpkg, and there is no `vcpkg.json` at all - the project has
+   zero third-party dependencies. The release notes say "no third-party dependencies, so
+   nothing to scan," never "scanned clean" - a materially different, and false, claim.
+
+**This corrects the issue's own original rationale**, written before M7 (#9, #58–#60)
+merged: it had cited a missing `--tui` as a fifth reason. `--tui` is now implemented
+(`docs/adr-phase-6.md` ADR-0026-0028; `docs/PLAN.md` §11's line for it is already
+checked), and this ADR's four reasons above are the complete, corrected rationale - none
+of them depend on `--tui` at all.
+
+### Verification
+
+Evidence gathered from the actual built artifacts, not assumed from a clean build alone
+(matching #106's own precedent):
+
+- `dumpbin /headers /loadconfig` on `Release|x64 -p:StaticRuntime=true`: Guard CF
+  instrumented, EH Continuation table present, CET compatible (`extended DLL
+  characteristics: CET compatible`) - matching #106/ADR-0029's hardening flags.
+- The same command on `Release|ARM64 -p:StaticRuntime=true`: Guard CF instrumented; EH
+  Continuation table and CET compatibility correctly **absent** (x64-only, by design).
+- `dumpbin /dependents` on both: neither lists `MSVCP140.dll` nor `VCRUNTIME140.dll`,
+  confirming the static CRT `-p:StaticRuntime=true` requests.
+- `(Get-Item .\syncwingetlink.exe).VersionInfo` on both: `FileVersion`/`ProductVersion`
+  `0.1.0`, matching `cli::kVersion` and the first three components of
+  `app.manifest`'s `assemblyIdentity` version (`0.1.0.0`) - the single-source guarantee
+  #118/ADR-0032 established.
+- `SHA256SUMS.txt`, generated from the two built executables, verified in a fresh
+  `sha256sum -c` check against them.
+
+### Consequences
+
+- `docs/PLAN.md` §11 gains a checked line recording the pre-release publication and
+  citing this ADR, making explicit that the designation is not about missing
+  functionality.
+- `docs/TODO.md` M8's release line is checked, pointing at this ADR.
+- A future `0.2.0` (or later) release that resolves enough of these four reasons - CI
+  existing (#21/#22), code signing, or an ARM64 CI runner actually executing the tests -
+  can drop the pre-release designation for the reasons it resolves; resolving all four is
+  not required to do so for any one of them.

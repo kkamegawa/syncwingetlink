@@ -461,3 +461,10 @@ than invalid UTF-8 or a hard failure.
       not sufficient evidence.
 - [ ] **No dependency has a known vulnerability**; every dependency is MIT-compatible and
       justified in the PR that introduced it.
+- [x] `0.1.0` published as an unsigned GitHub **pre-release** (issue #65,
+      `docs/adr-phase-6.md` ADR-0033) - statically linked x64/ARM64 executables with
+      `SHA256SUMS.txt`, release notes stating the build was local (no CI, #21 is open),
+      ARM64 was cross-built and not executed, the dependency-vulnerability gate is
+      manual (zero third-party dependencies), and the executable is unsigned. The
+      pre-release designation is **not** about missing functionality - `--tui` (M7) is
+      implemented; see ADR-0033 for the four reasons that are.

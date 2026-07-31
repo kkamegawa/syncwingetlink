@@ -211,8 +211,15 @@ Build system decisions are recorded in [`adr.md`](./adr.md) (ADR-0001 … ADR-00
       paths, package source, and rule source on stderr; `--verbose --quiet` is
       last-wins in either order; `Debug|Release` × `x64|ARM64` all build clean,
       `vstest.console.exe` reports 393/393 for `Debug|x64`/`Release|x64`
-- [ ] Release: attach an unsigned single exe (static link) to GitHub Releases
-      (build with `-p:StaticRuntime=true`; depends on ADR-0003 being resolved)
+- [x] Release: attach an unsigned single exe (static link) to GitHub Releases -
+      issue #65, ADR-0033 (`docs/adr-phase-6.md`). `v0.1.0` published as a GitHub
+      **pre-release** (unsigned, no CI, ARM64 cross-built-not-run, manual
+      dependency gate - not a missing `--tui`, which is implemented);
+      `syncwingetlink-0.1.0-x64.exe`/`-arm64.exe` built with
+      `-p:StaticRuntime=true`, `SHA256SUMS.txt` attached and verified,
+      `dumpbin` confirms #106's hardening and no dynamic CRT dependency, and
+      `VersionInfo` confirms the tag/`kVersion`/`app.manifest` version agree
+      (#118/ADR-0032)
 
 ## M9. Documentation (COM API)
 - [ ] `docs/com-api.md`: COM activation steps, required capabilities,
