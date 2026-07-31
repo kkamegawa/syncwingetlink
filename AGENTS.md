@@ -168,6 +168,10 @@ The essentials:
   logic in `syncwingetlink.core`, never directly in the executable project (see §3).
 - **Explicit side effects**: honor `--dry-run` for any filesystem-mutating operation.
   `scan` must stay read-only.
+- **Diagnostic language**: runtime diagnostics (warnings, errors, `--help` text) are
+  English-only for the first release (`docs/adr-phase-6.md` ADR-0031). This is a
+  decision about message *language*, not about non-ASCII *data* — paths and file names
+  must still round-trip correctly regardless of script.
 
 ---
 

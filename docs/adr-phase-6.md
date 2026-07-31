@@ -602,3 +602,69 @@ executed on this x64 host.
   content it gates, and the last-wins rule.
 - `docs/TODO.md` M8 gains a checked `--verbose`/`--quiet` line pointing at #113 and this
   ADR.
+
+## ADR-0031 — Diagnostic messages are English-only for the first release
+
+- **Date**: 2026-07-31
+- **Affected**: `AGENTS.md` §5, `README.md`, `docs/TODO.md` M8
+- **Status**: Accepted
+
+### Decision
+
+**Every runtime diagnostic (warnings, errors, `--help` text) is English-only for the
+first release.** Japanese is served entirely by this repository's own documentation
+(`README_ja.md`, `docs/*_ja.md`), never by a runtime message lookup. This is a decision
+about message *language* only - it says nothing about non-ASCII **data**. Paths, package
+names, and file names must still round-trip correctly through the whole pipeline
+regardless of script; that is #62's scope, not this ADR's.
+
+This issue's original wording ("record and apply the English and Japanese error-message
+policy") read as though the tool ships Japanese diagnostics at runtime. It does not, and
+never did:
+
+- every diagnostic string in `src/` (`PackageSourceError`, `RuleSetError`,
+  `SymlinkServiceError`, `ArgParseError`, and every `printHelp()`/`writeLine()` literal in
+  `src/cli/`) is English, with no exception;
+- the UTF-8 `std::string` these error types build, and `Console`'s `CP_UTF8` decoding of
+  it (`docs/adr-phase-5.md` ADR-0021), is an **encoding** contract - it exists so
+  non-ASCII *data* embedded in a message (e.g. a path) displays correctly - not a
+  **localization** one;
+- there is no message table, resource script, `.mui` file, or lookup layer anywhere in
+  this codebase; and
+- `AGENTS.md` §8/§9 already make English the canonical documentation language, with
+  `*_ja.md` files documented as human-facing translations that are never a source of
+  truth - extending that same rule to runtime diagnostics is consistent, not a new
+  policy invented for this issue.
+
+### Reasoning
+
+- **The machine-readable contract for scripted callers is the exit-code table plus
+  `--json`'s schema, never message text** (`docs/PLAN.md` §8). A script that branches on
+  diagnostic wording would already be fragile regardless of language, so message
+  language carries no compatibility weight.
+- **No message-table/resource/MUI infrastructure exists**, and building one is out of
+  `docs/PLAN.md`'s scope for this release. Adding partial localization now, without that
+  infrastructure, would mean scattering translated string literals through `src/cli/` and
+  `src/core/` by hand.
+- **A half-translated diagnostic set reads worse than a consistent English one.** Every
+  diagnostic a user might see - `ArgParseError`, `PackageSourceError`,
+  `SymlinkServiceError`'s permission guidance, `--help` - either stays English together
+  or the inconsistency itself becomes a bug report.
+
+### What would have to change to revisit this
+
+Not scattered translated literals inline. A real localization decision would need: a
+message-table or resource (`.rc` string table, or a `.mui`/satellite-resource layout)
+keyed by a stable message ID; a lookup layer `Console` or the error types call through
+instead of formatting English text directly; and a decision on how a user selects or the
+process detects the active language (a flag, the system locale, or both). None of that
+exists today, and none of it is in scope for the first release.
+
+### Consequences
+
+- `AGENTS.md` §5 gains a one-sentence diagnostic-language rule citing this ADR.
+- `README.md` gains a one-sentence note, next to the existing `README_ja.md` pointer,
+  making the same distinction (documentation is bilingual; runtime diagnostics are not).
+- `docs/TODO.md` M8's diagnostic-localization line is rewritten from "decide
+  English/Japanese" to the resolved English-only decision, pointing at this ADR.
+- No code changed. This issue is a documentation/decision record only.

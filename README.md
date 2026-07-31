@@ -6,6 +6,10 @@
 
 📖 日本語版は [`README_ja.md`](./README_ja.md) を参照してください。
 
+Runtime diagnostics (warnings, errors, `--help` text) are English-only for the first
+release; this repository's own documentation, including `README_ja.md`, is how
+Japanese is served instead.
+
 ## What is this?
 
 When you install a portable package with winget, a command-alias symlink is normally

@@ -2340,3 +2340,39 @@ into a failure - see the added point 7 in ADR-0030 (`docs/adr-phase-6.md`).
 - `vstest.console.exe /Platform:x64`: 393/393 passed in both `Debug|x64` and
   `Release|x64` (up from 386 - 7 new tests added by this issue).
 - No dependency added. No `*_ja.md` file was read or changed.
+
+## 2026-07-31 — M8: decide the diagnostic localization policy (issue #63)
+
+**Trigger**: third layer of the M8 stack, on top of #113's branch. No code change - a
+documentation/decision record only, per the issue's own acceptance criteria.
+
+### Completed
+
+- `docs/adr-phase-6.md` gains **ADR-0031**: diagnostics (warnings, errors, `--help`
+  text) are English-only for the first release; Japanese is served by documentation
+  (`README_ja.md`, `docs/*_ja.md`) rather than a runtime message lookup. Records why
+  this is consistent with the existing codebase (every diagnostic string in `src/` is
+  already English, no message table/resource/MUI exists) rather than a new
+  restriction, the reasoning (scripts key off exit codes/`--json`, not message text;
+  no localization infrastructure exists; a half-translated set is worse than a
+  consistent one), and what would have to change to revisit it (a message-table/MUI
+  layer plus a language-selection mechanism, not scattered translated literals).
+  Explicitly carves out non-ASCII **data** (paths, file names) as unaffected and out
+  of this ADR's scope - that is #62's job.
+- `AGENTS.md` §5 gains a one-sentence diagnostic-language rule citing ADR-0031.
+- `README.md` gains a one-sentence note next to the existing `README_ja.md` pointer.
+- `docs/TODO.md` M8's diagnostic-localization line is rewritten from "decide
+  English/Japanese" to the resolved English-only decision, pointing at #63/ADR-0031.
+
+### Deliberately not done
+
+- No source file was touched - this issue is a policy decision, not an
+  implementation. `docs/PLAN.md` was not changed either; the CLI's option semantics
+  are unaffected by this decision.
+
+### Verified
+
+- No build/test run needed - no code changed. `docs/TODO.md`'s M8 checklist,
+  `AGENTS.md`, and `README.md` were read back to confirm they agree with the recorded
+  decision.
+- No dependency added. No `*_ja.md` file was read or changed.

@@ -162,7 +162,10 @@ Build system decisions are recorded in [`adr.md`](./adr.md) (ADR-0001 … ADR-00
 ## M8. Quality / polish
 - [ ] Integration test: with a dummy Packages/Links tree, scan→fix→re-scan becomes Ok
 - [ ] Verify display/creation with non-ASCII paths
-- [ ] Decide the localization policy for error messages (English/Japanese)
+- [x] Diagnostic localization policy: **English-only** for the first release - issue
+      #63, ADR-0031 (`docs/adr-phase-6.md`). Japanese is served by documentation
+      (`README_ja.md`, `docs/*_ja.md`), not runtime message lookup; non-ASCII **data**
+      (paths, file names) is unaffected and remains #62's scope
 - [ ] README (install, usage, permission requirements, examples)
 - [x] Harden the release binary: `/guard:cf`, `/guard:ehcont`, `/CETCOMPAT`, `/Gy` -
       issue #106, ADR-0029 (`docs/adr-phase-6.md`). `/guard:ehcont`/`/CETCOMPAT` are
