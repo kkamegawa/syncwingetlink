@@ -2376,3 +2376,56 @@ documentation/decision record only, per the issue's own acceptance criteria.
   `AGENTS.md`, and `README.md` were read back to confirm they agree with the recorded
   decision.
 - No dependency added. No `*_ja.md` file was read or changed.
+
+## 2026-07-31 — M8: scan-fix-rescan integration coverage (issue #61)
+
+**Trigger**: fourth layer of the M8 stack, on top of #63's branch. Proves end to end
+that a dummy `Packages`/`Links` tree reaches `Ok` by driving the real dispatch path,
+rather than re-implementing scan/fix's logic in the test.
+
+### Completed
+
+- New `tests/IntegrationTests.cpp`, registered in both
+  `tests/syncwingetlink.tests.vcxproj` and its `.vcxproj.filters`. Builds a dummy
+  `Packages\SyncTestTool_test\synctesttool.exe` tree with the existing
+  `tests::TempDirectory` helpers (no new temp-tree utility introduced) and an
+  empty-ruleset `--rules` fixture (`{"version": 1, "rules": []}`), so alias resolution
+  always falls through to the raw file name - independent of both the embedded
+  defaults and whatever real user `rules.json` happens to exist on the host running
+  the test.
+- Drives `cli::run()` three times with `--source fs` and explicit
+  `--packages-dir`/`--links-dir`, never touching real COM or the real `%LOCALAPPDATA%`:
+  `scan --fail-on-missing` (expects `ExitCode::FixNeeded`), `fix --yes` (expects
+  `ExitCode::Success`, or logs-and-skips on `ExitCode::InsufficientPermission` per
+  ADR-0016), then the same `scan --fail-on-missing` again (expects
+  `ExitCode::Success`). Also asserts on filesystem state directly: the link is absent
+  before `fix`, then present and a real reparse point (`isReparsePoint()`) after.
+- `docs/TODO.md` M8 gains a checked integration-test line pointing at #61.
+
+### Deliberately not done
+
+- **Output text is not asserted.** `cli::run()` (`src/cli/Dispatch.h`) constructs its
+  own production `Console` with no way to inject `ConsoleOperations`, so this test
+  reads exit codes and filesystem state only. Changing `run()`'s signature to make
+  output assertable would be a design change needing its own ADR; output-level
+  assertions belong at the `Console` level, where `tests/ConsoleTests.cpp` already has
+  that seam.
+- **VT-mode and process-global Ctrl+C state are not asserted or worked around.** The
+  production `Console` still probes/toggles stdout's VT mode for whatever real console
+  this test process is attached to (harmless and unobserved under
+  `vstest.console.exe`), and `runFix()` still registers a process-wide Ctrl+C handler
+  and mutates a process-wide `std::atomic<bool>` for the duration of each `fix` call.
+  In practice this test ran host-side without any parallelism issue, but it is not
+  provably safe to run concurrently, in the same process, against another
+  `fix`-invoking test - noted here rather than solved, per the issue's own guidance.
+- This host lacks Developer Mode/elevation (consistent with every other symlink-backed
+  test in this suite), so the `fix` step exercised the log-and-skip path, not real
+  symlink creation - noted rather than hidden.
+
+### Verified
+
+- `Debug|x64`, `Release|x64`, `Debug|ARM64`, `Release|ARM64`: all four build clean at
+  `/W4 /WX`, no new warnings.
+- `vstest.console.exe /Platform:x64`: 394/394 passed in both `Debug|x64` and
+  `Release|x64` (up from 393 - one new test class added by this issue).
+- No dependency added. No `*_ja.md` file was read or changed.

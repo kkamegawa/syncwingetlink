@@ -160,7 +160,13 @@ Build system decisions are recorded in [`adr.md`](./adr.md) (ADR-0001 … ADR-00
 - [x] Progress / result summary display - issue #60, ADR-0028 (`docs/adr-phase-6.md`)
 
 ## M8. Quality / polish
-- [ ] Integration test: with a dummy Packages/Links tree, scan→fix→re-scan becomes Ok
+- [x] Integration test: with a dummy Packages/Links tree, scan→fix→re-scan becomes Ok -
+      issue #61 (`tests/IntegrationTests.cpp`). Drives the real `cli::run()` dispatch
+      path (`--source fs`, explicit `--packages-dir`/`--links-dir`/`--rules`, never the
+      real `%LOCALAPPDATA%`) and asserts exit codes plus filesystem state - not output
+      text, since `cli::run()` has no `Console`-injection seam. Hosts without symlink
+      privilege log and skip per ADR-0016; `Debug|Release` × `x64|ARM64` all build
+      clean, `vstest.console.exe` reports 394/394 for `Debug|x64`/`Release|x64`
 - [ ] Verify display/creation with non-ASCII paths
 - [x] Diagnostic localization policy: **English-only** for the first release - issue
       #63, ADR-0031 (`docs/adr-phase-6.md`). Japanese is served by documentation
