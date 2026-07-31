@@ -291,6 +291,23 @@ a `\\.\` device path; they are **not** required to already exist. An absent Pack
 directory is a normal, tolerated state (ADR-0010), and an absent Links directory is the
 exact condition `fix` exists to correct. See `docs/adr-phase-5.md` ADR-0020.
 
+### `--tui`
+
+`fix --tui` runs the M7 interactive checklist instead of the line-oriented
+confirm-per-item flow (`docs/adr-phase-6.md` ADR-0026-0028). Its real, implemented
+behavior - documented here rather than left as "run in interactive TUI mode", per issue
+#64:
+
+- **Parse-time conflicts, exit code 3**: `--tui` combined with `scan`, `test-rule`,
+  `--json`, or `--yes` is rejected by `ArgParser` before anything is enumerated. `--tui`
+  is meaningful only for an interactive `fix`; the other three all imply an unattended or
+  non-interactive invocation.
+- **Non-interactive fallback, no TUI escape sequence emitted**: if `console.stdinInteractive()`,
+  `console.stdoutInteractive()`, or `console.vtEnabled()` is false, or the terminal
+  session otherwise fails to start, `cli::Dispatch` falls back silently to the existing
+  line-oriented confirmation flow, after printing one warning line to stderr.
+- `--dry-run` and `--no-color` both remain compatible with `--tui`.
+
 ### `--verbose` / `--quiet` (log level)
 
 `--verbose` and `--quiet` set `AppOptions::logLevel` to `Verbose`/`Quiet`; the default is

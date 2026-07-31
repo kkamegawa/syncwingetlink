@@ -75,10 +75,16 @@ syncwingetlink/
 │  └─ syncwingetlink.common.props # shared compiler/linker settings (C++20, /W4 /WX, CRT)
 ├─ src/
 │  ├─ syncwingetlink.core.vcxproj # static library: cli/ core/ rules/ tui/
-│  ├─ syncwingetlink.vcxproj   # executable: main.cpp only
-│  ├─ app.manifest             # longPathAware / asInvoker
+│  ├─ syncwingetlink.vcxproj   # executable: main.cpp + syncwingetlink.rc only
+│  ├─ app.manifest             # longPathAware / asInvoker (version hand-maintained, ADR-0025)
+│  ├─ syncwingetlink.rc        # VS_VERSION_INFO resource (executable project only, ADR-0032)
 │  ├─ main.cpp                 # entry point, arg parsing, mode dispatch
-│  ├─ cli/                     # ArgParser / Console (presentation layer)
+│  ├─ cli/                     # presentation layer: parsing, console I/O, dispatch
+│  │  ├─ ArgParser.*           # command-line parsing into AppOptions
+│  │  ├─ Console.*             # sanitized output, color/VT, confirmation prompts
+│  │  ├─ Dispatch.*            # run(): wires parsed options to core/ and prints results
+│  │  ├─ Json.*                # --json schema serialization
+│  │  └─ Version.h             # kVersion, generated from Directory.Build.props (ADR-0032)
 │  ├─ core/                    # domain logic (Win32/COM dependencies isolated)
 │  │  ├─ IPackageSource.h      # abstract IF for enumerating installed packages
 │  │  ├─ WingetComSource.*     # COM API implementation (default source)
@@ -92,8 +98,14 @@ syncwingetlink/
 │  │  ├─ AliasResolver.*       # decides the alias name
 │  │  ├─ SymlinkService.*      # create/delete/verify symlinks
 │  │  ├─ Paths.* / Model.h
-│  ├─ rules/                   # regex replacement rules (RuleSet / defaults)
-│  └─ tui/                     # interactive UI for --tui
+│  ├─ rules/                   # regex replacement rules
+│  │  ├─ RuleSet.*             # load/validate rules JSON, apply the first matching rule
+│  │  ├─ RuleSetSelector.*     # --rules > user rules.json > embedded defaults priority
+│  │  └─ DefaultRules.*        # the embedded default rules
+│  └─ tui/                     # interactive UI for --tui (M7, ADR-0026–0028)
+│     ├─ TerminalSession.*     # alternate-screen/cursor/stdin-mode lifetime
+│     ├─ ChecklistModel.*      # selection state and key-event handling
+│     └─ TuiApp.*              # rendering
 ├─ tests/
 │  └─ syncwingetlink.tests.vcxproj # MSTest (Microsoft Unit Testing Framework for C++)
 └─ docs/
@@ -106,7 +118,8 @@ syncwingetlink/
    ├─ com-api.md               # COM API usage & notes (English, canonical)
    ├─ com-api_ja.md            # Japanese translation (agents: do not read)
    ├─ task.md                  # work log (English, canonical)
-   └─ adr.md                   # architecture decision records (English, canonical)
+   ├─ adr.md                   # architecture decision records, M0-M5 (English, canonical)
+   └─ adr-phase-2.md … adr-phase-6.md # ADRs by milestone phase (English, canonical)
 ```
 
 ### Layering principles

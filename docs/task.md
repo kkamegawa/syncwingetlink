@@ -2599,3 +2599,57 @@ two fallbacks already used. Recorded as point 6 in ADR-0032.
 - `vstest.console.exe /Platform:x64`: 405/405 passed in both `Debug|x64` and
   `Release|x64` (unchanged from before this issue - no test behavior changed).
 - No dependency added. No `*_ja.md` file was read or changed.
+
+## 2026-08-01 — M8: complete installation and usage documentation (issue #64)
+
+**Trigger**: seventh layer of the M8 stack, on top of #118's branch. Depends on #113
+(option behavior) and #63 (diagnostic-language decision) having settled what this
+documents; precedes #65, whose release notes point at this README.
+
+### Completed
+
+- `README.md`:
+  - Installation section rewritten: no installer/winget package exists - a single
+    unsigned executable is attached to a GitHub release. Replaced the
+    `winget install <publisher>.syncwingetlink` example with a download → SHA-256
+    verification (against `SHA256SUMS.txt`) → `PATH`-placement sequence, in both
+    PowerShell and bash, with the unsigned/SmartScreen caveat stated plainly.
+  - `test-rule`'s example now shows real output and documents all three of
+    `runTestRule()`'s possible shapes (matched rule, unmatched-but-valid raw name,
+    unmatched-and-invalid raw name).
+  - New `--tui` subsection: its real parse-time conflicts (`scan`/`test-rule`/
+    `--json`/`--yes` → exit 3) and its silent fallback to the line-oriented
+    confirmation flow when the terminal lacks the required capability - documented
+    as implemented behavior, not a caveat that it's missing.
+  - Option table: added the six missing options (`--packages-dir`, `--links-dir`,
+    `--include`, `--exclude`, `--fail-on-missing`, `--no-color`) plus `--verbose`/
+    `--quiet` (from #113), so it now lists everything `ArgParser` accepts, matching
+    `docs/PLAN.md` §8.
+  - Exit-code table re-verified against `cli::ExitCode` (`src/cli/Dispatch.h`)
+    rather than restated from memory - unchanged in substance, but the wording
+    now matches the enum's own doc comments exactly.
+- `docs/PLAN.md` §8: new `--tui` subsection (mirroring README's), inserted ahead of
+  #113's `--verbose`/`--quiet` subsection, in option-introduction order.
+- `AGENTS.md` §3: repository layout reconciled with the actual tree. Added
+  `src/cli/Dispatch.*`, `src/cli/Json.*`, `src/cli/Version.h`,
+  `src/rules/RuleSetSelector.*`, `src/rules/DefaultRules.*`, `src/tui/*`'s three
+  actual file pairs, `src/syncwingetlink.rc` (new from #118), and
+  `docs/adr-phase-2.md` through `adr-phase-6.md`. **`src/tui/` was kept, not
+  removed** - the original issue text (written pre-M7-merge) said to remove it;
+  M7 has since merged and it is real.
+- `docs/TODO.md` M3's `test-rule` checkbox ticked, citing #40 (which closed on this
+  exact evidence) and #56 (`runTestRule()`'s implementation).
+
+### Deliberately not done
+
+- `docs/TODO.md` M8's diagnostic-localization line was already updated to reflect
+  #63's resolved English-only decision when that issue's own PR landed - nothing
+  further needed here.
+- No `*_ja.md` file was read or changed.
+
+### Verified
+
+- No build/test run needed - no source file changed, only documentation. Read back
+  `README.md`, `docs/PLAN.md` §8, `AGENTS.md` §3, and `docs/TODO.md` to confirm they
+  agree with each other and with the actual implemented behavior in `src/`.
+- No dependency added. No `*_ja.md` file was read or changed.

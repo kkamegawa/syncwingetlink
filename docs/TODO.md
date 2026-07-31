@@ -78,7 +78,9 @@ Build system decisions are recorded in [`adr.md`](./adr.md) (ADR-0001 … ADR-00
       such field, and the now-removed `PackageExe::metadataAlias` field it would have used
       confirmed there was no writer anywhere in the codebase. See `docs/adr-phase-2.md`
       ADR-0009 and ADR-0012.
-- [ ] `test-rule` subcommand: show file name → matched rule name → alias
+- [x] `test-rule` subcommand: show file name → matched rule name → alias - implemented
+      by `runTestRule()` (`src/cli/Dispatch.cpp`), issue #56; confirmed already done and
+      closed as such by issue #40 (M8's #64 review folds this stale checkbox in)
 - [x] Unit tests: cover cases including `codex-x86_64-pc-windows-msvc.exe → codex.exe`.
       `tests/AliasPipelineTests.cpp` adds cross-component coverage: `RuleSetSelector` →
       `AliasResolver` end to end for representative real file names, and the regression
