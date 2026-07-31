@@ -8,12 +8,16 @@
 // property src/syncwingetlink.rc's VS_VERSION_INFO resource derives its FILEVERSION/
 // PRODUCTVERSION from. The #ifndef fallbacks below only matter for a tool that parses
 // this header outside a full MSBuild invocation (e.g. a standalone clang-tidy run or
-// IDE Intellisense pass); an actual build always has the real values defined.
+// IDE Intellisense pass); an actual build always has the real values defined. All three
+// fall back to the neutral sentinel 0, not the current release's actual numbers - a
+// real version literal here would silently drift from ProductVersion after the next
+// version bump and defeat the point of a fallback that's supposed to make a missing
+// define obvious rather than plausible-looking.
 #ifndef SYNCWINGETLINK_VER_MAJOR
 #define SYNCWINGETLINK_VER_MAJOR 0
 #endif
 #ifndef SYNCWINGETLINK_VER_MINOR
-#define SYNCWINGETLINK_VER_MINOR 1
+#define SYNCWINGETLINK_VER_MINOR 0
 #endif
 #ifndef SYNCWINGETLINK_VER_PATCH
 #define SYNCWINGETLINK_VER_PATCH 0

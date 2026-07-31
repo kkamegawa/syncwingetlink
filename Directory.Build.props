@@ -12,11 +12,32 @@
          VerifyManifestVersionMatchesProductVersion target fails the build if it
          drifts from this same property. -->
     <ProductVersion Condition="'$(ProductVersion)' == ''">0.1.0</ProductVersion>
-    <ProductVersionMajor>$(ProductVersion.Split('.')[0])</ProductVersionMajor>
-    <ProductVersionMinor>$(ProductVersion.Split('.')[1])</ProductVersionMinor>
-    <ProductVersionPatch>$(ProductVersion.Split('.')[2])</ProductVersionPatch>
+    <!-- Guarded by count first, not indexed directly: $(ProductVersion.Split('.')[2])
+         throws an MSBuild evaluation error (MSB4184) and aborts the whole project load
+         if ProductVersion doesn't have exactly three dot-separated parts - a real risk
+         since ADR-0032 explicitly allows overriding it via -p:ProductVersion=... . The
+         Condition on each property below is evaluated before its value expression, so
+         the Split(...)[N] indexing is never reached unless _ProductVersionPartCount is
+         already known to be 3; a "0" fallback plus the VerifyProductVersionFormat
+         target's <Error> further down give a clear message instead of a raw MSB4184. -->
+    <_ProductVersionPartCount>$(ProductVersion.Split('.').Length)</_ProductVersionPartCount>
+    <ProductVersionMajor Condition="'$(_ProductVersionPartCount)' == '3'">$(ProductVersion.Split('.')[0])</ProductVersionMajor>
+    <ProductVersionMinor Condition="'$(_ProductVersionPartCount)' == '3'">$(ProductVersion.Split('.')[1])</ProductVersionMinor>
+    <ProductVersionPatch Condition="'$(_ProductVersionPartCount)' == '3'">$(ProductVersion.Split('.')[2])</ProductVersionPatch>
+    <ProductVersionMajor Condition="'$(_ProductVersionPartCount)' != '3'">0</ProductVersionMajor>
+    <ProductVersionMinor Condition="'$(_ProductVersionPartCount)' != '3'">0</ProductVersionMinor>
+    <ProductVersionPatch Condition="'$(_ProductVersionPartCount)' != '3'">0</ProductVersionPatch>
     <OutDir>$(MSBuildThisFileDirectory)build\$(Platform)\$(Configuration)\</OutDir>
     <IntDir>$(MSBuildThisFileDirectory)build\obj\$(MSBuildProjectName)\$(Platform)\$(Configuration)\</IntDir>
     <GenerateProjectSpecificOutputFolder>false</GenerateProjectSpecificOutputFolder>
   </PropertyGroup>
+  <!-- Fails every project's build with a clear message, rather than letting a malformed
+       -p:ProductVersion=... reach either the (safe, "0"-defaulted) properties above or
+       syncwingetlink.vcxproj's own VerifyManifestVersionMatchesProductVersion target
+       silently comparing against a wrong fallback. -->
+  <Target Name="VerifyProductVersionFormat" BeforeTargets="Build">
+    <Error
+      Condition="'$(_ProductVersionPartCount)' != '3'"
+      Text="ProductVersion ('$(ProductVersion)') must have exactly three dot-separated numeric parts (e.g. '0.1.0') - found $(_ProductVersionPartCount)." />
+  </Target>
 </Project>

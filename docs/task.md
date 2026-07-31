@@ -2566,12 +2566,29 @@ captured value) - fixed by anchoring the pattern to
 `assemblyIdentity[\s\S]*?version=&quot;([\d\.]+)&quot;`, which only starts
 searching after the literal `assemblyIdentity` text.
 
+### A second bug found and fixed by PR review (GitHub Copilot, PR #125)
+
+`ProductVersionMajor`/`Minor`/`Patch` originally indexed
+`$(ProductVersion.Split('.')[N])` directly - which throws an MSBuild evaluation
+error (`MSB4184`) and aborts the *entire project load* if `ProductVersion` (which
+ADR-0032 explicitly allows overriding via `-p:ProductVersion=...`) doesn't have
+exactly three dot-separated parts. Fixed by computing a part count via `.Length`
+first (which never throws) and gating each property's indexing behind a
+`Condition` on that count being `3`, with a `"0"` fallback and a new
+`VerifyProductVersionFormat` target that reports a clear `<Error>` instead of a
+raw `MSB4184`. Separately, `src/cli/Version.h`'s `#ifndef` fallback for
+`SYNCWINGETLINK_VER_MINOR` was corrected from a hardcoded `1` (which would have
+drifted after the next version bump) to the same neutral `0` sentinel the other
+two fallbacks already used. Recorded as point 6 in ADR-0032.
+
 ### Verified
 
 - Deliberately drifted `app.manifest`'s version to `0.2.0.0` and rebuilt: the
   build failed with `app.manifest's assemblyIdentity version ('0.2.0.0') does not
   match ProductVersion ('0.1.0', expected manifest value '0.1.0.0')` - confirming
   the gate actually fires, not just that it compiles. Reverted before committing.
+- Rebuilt with `-p:ProductVersion=0.1` (two parts): the build failed with the new,
+  clear `VerifyProductVersionFormat` error message, not a raw `MSB4184`.
 - `(Get-Item .\syncwingetlink.exe).VersionInfo` on the built `Release|x64`
   executable: `FileVersion`/`ProductVersion` `0.1.0` (`0.1.0.0` raw),
   `FileDescription`, `CompanyName`, `LegalCopyright` all populated correctly.

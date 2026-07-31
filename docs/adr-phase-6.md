@@ -735,12 +735,34 @@ exists today, and none of it is in scope for the first release.
    fragile relative-path reasoning a build-time check entirely avoids, and it
    fails earlier (before anything even attempts to link) rather than only at test
    time.
+6. **`ProductVersionMajor`/`Minor`/`Patch` guard the `Split('.')[N]` indexing behind
+   a part-count check first, and a `VerifyProductVersionFormat` target reports a
+   clear `<Error>` if it fails.** Found during review: indexing
+   `$(ProductVersion.Split('.')[N])` directly throws an MSBuild evaluation error
+   (`MSB4184`) and aborts the *entire project load* - not just this target - the
+   moment `ProductVersion` doesn't have exactly three dot-separated parts, which
+   point 1 above explicitly allows a caller to trigger via `-p:ProductVersion=...`.
+   `Directory.Build.props` now computes `_ProductVersionPartCount` via `.Length`
+   (which never throws) and gates each `Major`/`Minor`/`Patch` property's `Condition`
+   on it being `3` - the value expression on the right of a conditioned MSBuild
+   property is never evaluated when its `Condition` is false, so the indexing
+   itself is unreachable for a malformed override. A `"0"` fallback keeps property
+   evaluation total either way, and the new target's `<Error>` names the bad value
+   and what's expected, rather than surfacing a raw `MSB4184` with no context.
+   `src/cli/Version.h`'s `#ifndef` fallback for `SYNCWINGETLINK_VER_MINOR` was also
+   corrected from a hardcoded `1` to the same neutral `0` every other fallback
+   already used - the whole point of a fallback is to make a missing macro
+   *obvious*, and a plausible-looking version number that silently drifts after
+   the next release defeats that.
 
 ### Verification
 
 - Confirmed the check actually fires: temporarily edited `app.manifest`'s version
   to `0.2.0.0` and rebuilt - the build failed with exactly the intended message,
   naming both the drifted and expected values. Reverted before committing.
+- Confirmed point 6's guard: rebuilt with `-p:ProductVersion=0.1` (two parts, not
+  three) - the build failed with `ProductVersion ('0.1') must have exactly three
+  dot-separated numeric parts (e.g. '0.1.0') - found 2`, not a raw `MSB4184`.
 - `(Get-Item .\syncwingetlink.exe).VersionInfo` on the built `Release|x64`
   executable shows `FileVersion`/`ProductVersion` `0.1.0` (`0.1.0.0` raw),
   `FileDescription`, `CompanyName`, and `LegalCopyright` all populated - the same
