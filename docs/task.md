@@ -2721,3 +2721,82 @@ documents; precedes #65, whose release notes point at this README.
 - `Release|x64 -p:StaticRuntime=true` and `Release|ARM64 -p:StaticRuntime=true`:
   both build clean; `dumpbin` and `VersionInfo` evidence as described above.
 - No dependency added. No `*_ja.md` file was read or changed.
+
+## 2026-07-31 — Split PR #128 into one Draft PR per finding (stacked), implementation deferred
+
+**Trigger**: user request on PR #128 — instead of one PR bundling all three Windows API
+findings, produce one issue and one stacked Draft PR per finding. Implementation is
+explicitly prohibited for now.
+
+### Target structure (3 findings → 3 stacked Draft PRs)
+
+| PR | Branch | Base | Finding |
+|---|---|---|---|
+| A | `fix/linkinspector-directory-reparse` | `main` | Issue 1 — `LinkInspector` directory-symlink misclassification |
+| B | `fix/symlinkservice-toctou` | PR A's branch | Issue 2 — `SymlinkService` TOCTOU race in delete |
+| C | `fix/console-stale-lasterror` | PR B's branch | Issue 3 — `Console` stale last error around `NO_COLOR` probe |
+
+The findings touch disjoint files, so independent `main`-based PRs would also work; the
+stacked chain A→B→C (highest risk first) is kept per the explicit request. After each
+predecessor merges, GitHub retargets the successor's base to `main` automatically.
+
+### Issue drafts (paste-ready)
+
+#### Issue 1 — `LinkInspector`: directory symlink classified `Broken`, repaired with the wrong delete API
+
+- `inspectLink()` decodes a *directory* symbolic link under `Links\*.exe` as
+  `SymbolicLink`; with a missing target it becomes `Broken`.
+- Repair then calls `DeleteFileW`, which cannot remove a directory entry
+  (`RemoveDirectoryW` is required). The access-denied failure is misdiagnosed as
+  `InsufficientPermission` (Developer Mode guidance).
+- Proposed fix: classify any reparse point with `FILE_ATTRIBUTE_DIRECTORY` as
+  `OtherReparsePoint` → `Mismatch` (never touched), without decoding.
+- A working implementation exists in the history of the
+  `copilot/extract-windows-api-issues` branch (commit `0bb0999`, reverted by
+  `e92b6d4`); it can be restored via revert-of-revert once implementation is
+  unblocked.
+
+#### Issue 2 — `SymlinkService`: TOCTOU race in the broken-link delete
+
+- `deleteEntry` deletes by name (`DeleteFileW(linkPath)`) after `inspectLink()`
+  classified the entry; a racing replacement between inspect and delete gets deleted
+  instead of the inspected object.
+- Proposed fix: open with `DELETE | FILE_FLAG_OPEN_REPARSE_POINT`, re-verify
+  `IO_REPARSE_TAG_SYMLINK` via `FileAttributeTagInfo` on that handle, then delete by
+  handle (`SetFileInformationByHandle(FileDispositionInfo)`).
+- Needs confirmation: this changes `SymlinkServiceError::operation()` from
+  `"DeleteFileW"` to a neutral label (one test expectation update in
+  `tests/SymlinkServiceTests.cpp`).
+
+#### Issue 3 — `Console`: stale last error around `GetEnvironmentVariableW(NO_COLOR)`
+
+- The API returns 0 for both failure and an empty-but-present value, and success does
+  not reliably clear the thread's last error; checking
+  `GetLastError() == ERROR_ENVVAR_NOT_FOUND` without priming can misclassify presence.
+- Proposed fix: `::SetLastError(ERROR_SUCCESS)` immediately before the call in
+  `src/cli/Console.cpp`.
+
+### Execution steps (require human / per-task actions outside this session)
+
+1. File the three issues above (this environment cannot create issues).
+2. Launch one Copilot coding-agent task per issue (this agent is limited to one
+   branch/PR per task): task A on `main`; after PR A exists, task B, then retarget
+   PR B's base to PR A's branch via the GitHub UI; likewise task C onto PR B's branch.
+3. While implementation stays prohibited, each PR remains Draft with the issue text as
+   its body plus a minimal commit (GitHub cannot open a zero-diff PR).
+4. Once unblocked, merge A → B → C.
+5. Close PR #128 with links to the three issues and three PRs.
+
+### Deliberately not done in this session
+
+- **No new branches, PRs, or issues were created.** This session is bound to the
+  `copilot/extract-windows-api-issues` branch (PR #128) and cannot push other
+  branches, open additional PRs, or file issues. Only this work-log entry and the
+  PR #128 description rewrite (to a split index) were produced here.
+
+### Verified
+
+- No source file changed; documentation only, so no build/test run was needed. The
+  file/line references in the drafts were re-checked against the current tree
+  (`src/cli/Console.cpp` `NO_COLOR` probe, `src/core/SymlinkService.cpp`
+  `DeleteFileW`). No dependency added. No `*_ja.md` file was read or changed.
