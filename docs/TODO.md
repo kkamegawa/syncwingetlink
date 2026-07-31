@@ -183,6 +183,18 @@ Build system decisions are recorded in [`adr.md`](./adr.md) (ADR-0001 … ADR-00
       #63, ADR-0031 (`docs/adr-phase-6.md`). Japanese is served by documentation
       (`README_ja.md`, `docs/*_ja.md`), not runtime message lookup; non-ASCII **data**
       (paths, file names) is unaffected and remains #62's scope
+- [x] `VS_VERSION_INFO` resource and a single version source - issue #118, ADR-0032
+      (`docs/adr-phase-6.md`). One new `Directory.Build.props` property
+      (`ProductVersion`) is what `src/syncwingetlink.rc` (new, executable project
+      only) and `src/cli/Version.h`'s generated `kVersion` both derive from;
+      `app.manifest`'s version stays hand-maintained (ADR-0025) but a new
+      `VerifyManifestVersionMatchesProductVersion` MSBuild target fails the build
+      if it drifts (verified by deliberately drifting it and confirming the
+      build fails, then reverting). `(Get-Item .\syncwingetlink.exe).VersionInfo`
+      on the built `Release|x64` and cross-built `ARM64` executables shows
+      populated `FileVersion`/`ProductVersion`/`FileDescription`/`LegalCopyright`;
+      `Debug|Release` × `x64|ARM64` all build clean, `vstest.console.exe` reports
+      405/405 for `Debug|x64`/`Release|x64`
 - [ ] README (install, usage, permission requirements, examples)
 - [x] Harden the release binary: `/guard:cf`, `/guard:ehcont`, `/CETCOMPAT`, `/Gy` -
       issue #106, ADR-0029 (`docs/adr-phase-6.md`). `/guard:ehcont`/`/CETCOMPAT` are

@@ -41,6 +41,12 @@
     <ClCompile Include="main.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <!-- VS_VERSION_INFO resource (issue #118, docs/adr-phase-6.md ADR-0032). Executable
+         project only, matching how app.manifest above is already scoped - not
+         syncwingetlink.core, which produces a static library, not a shipped binary. -->
+    <ResourceCompile Include="syncwingetlink.rc" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="syncwingetlink.core.vcxproj">
       <Project>{F662528B-4B65-4276-8F84-1DB853F869A3}</Project>
     </ProjectReference>
@@ -53,7 +59,31 @@
            shipped binary. -->
       <AdditionalOptions>/DEPENDENTLOADFLAG:0x800 %(AdditionalOptions)</AdditionalOptions>
     </Link>
+    <ResourceCompile>
+      <!-- The same single source src/cli/Version.h's kVersion derives from (issue
+           #118, docs/adr-phase-6.md ADR-0032) - see Directory.Build.props's
+           ProductVersion property. -->
+      <PreprocessorDefinitions>SYNCWINGETLINK_VER_MAJOR=$(ProductVersionMajor);SYNCWINGETLINK_VER_MINOR=$(ProductVersionMinor);SYNCWINGETLINK_VER_PATCH=$(ProductVersionPatch);%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ResourceCompile>
   </ItemDefinitionGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets" />
+  <!-- Issue #118 / docs/adr-phase-6.md ADR-0032: src/app.manifest's assemblyIdentity
+       version stays hand-maintained (docs/adr-phase-5.md ADR-0025) rather than
+       generated, but this target turns that manual checklist step into a mechanical
+       one - it fails the build, not just a test run, so a drift is caught before
+       anything else even attempts to link. -->
+  <Target Name="VerifyManifestVersionMatchesProductVersion" BeforeTargets="Build">
+    <PropertyGroup>
+      <_ManifestContent>$([System.IO.File]::ReadAllText('$(MSBuildThisFileDirectory)app.manifest'))</_ManifestContent>
+      <!-- Anchored to start searching only after "assemblyIdentity" so this never
+           matches the unrelated manifestVersion="1.0" attribute on the root
+           <assembly> element earlier in the file. -->
+      <_ManifestVersion>$([System.Text.RegularExpressions.Regex]::Match($(_ManifestContent), 'assemblyIdentity[\s\S]*?version=&quot;([\d\.]+)&quot;').Groups[1].Value)</_ManifestVersion>
+      <_ExpectedManifestVersion>$(ProductVersion).0</_ExpectedManifestVersion>
+    </PropertyGroup>
+    <Error
+      Condition="'$(_ManifestVersion)' != '$(_ExpectedManifestVersion)'"
+      Text="app.manifest's assemblyIdentity version ('$(_ManifestVersion)') does not match ProductVersion ('$(ProductVersion)', expected manifest value '$(_ExpectedManifestVersion)'). Update app.manifest's version attribute to match (docs/adr-phase-6.md ADR-0032)." />
+  </Target>
 </Project>

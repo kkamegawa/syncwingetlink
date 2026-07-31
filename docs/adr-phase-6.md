@@ -668,3 +668,108 @@ exists today, and none of it is in scope for the first release.
 - `docs/TODO.md` M8's diagnostic-localization line is rewritten from "decide
   English/Japanese" to the resolved English-only decision, pointing at this ADR.
 - No code changed. This issue is a documentation/decision record only.
+
+## ADR-0032 — A single version property, a real VS_VERSION_INFO resource, and a build-time manifest check
+
+- **Date**: 2026-08-01
+- **Affected**: `Directory.Build.props`, `props/syncwingetlink.common.props`,
+  `src/cli/Version.h`, `src/syncwingetlink.rc` (new), `src/syncwingetlink.vcxproj`/
+  `.filters`, `docs/TODO.md` M8
+- **Status**: Accepted
+
+### Decision
+
+1. **One new MSBuild property, `ProductVersion` (`Directory.Build.props`), is the
+   single source of truth** - following the `StaticRuntime` precedent (a
+   Condition-defaulted property, overridable via `-p:ProductVersion=...`). It holds
+   the three-part dotted string (`"0.1.0"`), matching `cli::kVersion`'s existing
+   format. Two derived properties, `ProductVersionMajor`/`Minor`/`Patch`
+   (`$(ProductVersion.Split('.')[N])`), exist purely to feed the numeric
+   `FILEVERSION`/`PRODUCTVERSION` fields a `.rc` file and a C++ preprocessor
+   `#define` both need but a dotted string cannot directly supply.
+2. **`props/syncwingetlink.common.props` defines `SYNCWINGETLINK_VER_MAJOR`/`MINOR`/
+   `PATCH` project-wide** (in the shared `ClCompile` `PreprocessorDefinitions`, not
+   only on the executable project) because `src/cli/Version.h` is compiled into
+   `syncwingetlink.core`, the executable, and the test DLL alike.
+3. **`src/cli/Version.h`'s `kVersion` is generated from those three macros** via a
+   stringize-and-widen macro chain
+   (`SYNCWINGETLINK_STRINGIZE`/`SYNCWINGETLINK_WIDEN`/`SYNCWINGETLINK_WSTRINGIZE`,
+   `#undef`-ed at the end of the header so they don't leak into every translation
+   unit that includes it), rather than a hand-written literal - this is the first of
+   the two options this issue's acceptance criteria offered ("a preprocessor define
+   driven by the same property"), chosen over cross-checking a still-hand-written
+   literal because it removes the literal (and the drift it could have) entirely,
+   not just detects it after the fact. `#ifndef` fallbacks (`0`/`1`/`0`) exist only
+   for a tool that parses this header outside a full MSBuild invocation (a
+   standalone clang-tidy run, IDE Intellisense) - an actual build always has the
+   real macros defined by `props/syncwingetlink.common.props`.
+4. **A new `src/syncwingetlink.rc`, in the executable project only** (matching how
+   `app.manifest` is already scoped, not `syncwingetlink.core` or
+   `syncwingetlink.tests`), defines a `1 VERSIONINFO` (`VS_VERSION_INFO`'s
+   well-known resource ID) resource. `FILEVERSION`/`PRODUCTVERSION` use
+   `SYNCWINGETLINK_VER_MAJOR,MINOR,PATCH,0` (the `.rc` grammar's own comma syntax
+   substitutes the macros textually before parsing); the `FileVersion`/
+   `ProductVersion` string values reuse the same stringize trick to build
+   `"0.1.0"` from the three macros without a second literal. The `.rc` file
+   deliberately does not `#include <windows.h>`/`<winresrc.h>` for the
+   `FILEOS`/`FILETYPE`/`FILESUBTYPE` symbolic constants - their numeric values
+   (`VOS_NT_WINDOWS32`, `VFT_APP`, `VFT2_UNKNOWN`) are stable, documented Win32 ABI
+   constants, spelled out with a comment naming each, avoiding a resource-compiler
+   include-path dependency for a resource this small. `syncwingetlink.vcxproj`'s
+   `ResourceCompile` item definition sets the same three preprocessor definitions
+   the `.rc` file consumes, sourced from the same `ProductVersionMajor`/`Minor`/
+   `Patch` properties `kVersion` derives from.
+5. **`src/app.manifest`'s `assemblyIdentity` version stays hand-maintained** - per
+   ADR-0025, generating it would need a manifest-authoring transform step this
+   project does not have, and this issue does not revisit that decision. Instead,
+   `syncwingetlink.vcxproj` gains a `VerifyManifestVersionMatchesProductVersion`
+   target (`BeforeTargets="Build"`) that reads `app.manifest`'s text, extracts the
+   version attribute with a regex anchored to start searching only after the
+   literal `assemblyIdentity` (so it can never match the unrelated
+   `manifestVersion="1.0"` attribute on the root `<assembly>` element earlier in
+   the same file - found and fixed during this issue's own verification, not
+   assumed correct), and fails the **build itself** with `<Error>` if it does not
+   equal `$(ProductVersion).0`. A build-time MSBuild target was chosen over an
+   MSTest case (the issue's other offered option) because a test would need to
+   locate `app.manifest` at runtime relative to the test binary's own directory -
+   fragile relative-path reasoning a build-time check entirely avoids, and it
+   fails earlier (before anything even attempts to link) rather than only at test
+   time.
+
+### Verification
+
+- Confirmed the check actually fires: temporarily edited `app.manifest`'s version
+  to `0.2.0.0` and rebuilt - the build failed with exactly the intended message,
+  naming both the drifted and expected values. Reverted before committing.
+- `(Get-Item .\syncwingetlink.exe).VersionInfo` on the built `Release|x64`
+  executable shows `FileVersion`/`ProductVersion` `0.1.0` (`0.1.0.0` raw),
+  `FileDescription`, `CompanyName`, and `LegalCopyright` all populated - the same
+  data Explorer's Details tab reads.
+- The same check was repeated on the cross-built `ARM64` executable (`VersionInfo`
+  populated identically) - `VS_VERSION_INFO` is a plain resource, not
+  architecture-specific code, so reading it needs no execution, unlike running the
+  binary itself.
+- `Debug|Release` × `x64|ARM64` all build clean at `/W4 /WX`; `vstest.console.exe`
+  reports 405/405 for `Debug|x64`/`Release|x64` (unchanged from before this issue -
+  no test behavior changed); `ARM64` is cross-built, not run, per `docs/adr.md`
+  open item 3.
+
+### Consequences
+
+- `Directory.Build.props` gains `ProductVersion` and its three derived properties.
+- `props/syncwingetlink.common.props` gains three project-wide preprocessor
+  definitions.
+- `src/cli/Version.h`'s `kVersion` is generated, not a literal; its value is
+  unchanged (`"0.1.0"`), so `tests/DispatchTests.cpp`'s pre-existing
+  `VersionTests` needed no change.
+- `src/syncwingetlink.rc` (new) and its `ResourceCompile`/`.filters` registration,
+  executable project only.
+- `src/syncwingetlink.vcxproj` gains the `VerifyManifestVersionMatchesProductVersion`
+  build-time gate. A version bump is now: change `ProductVersion` in
+  `Directory.Build.props`, then update `app.manifest`'s version attribute to match
+  - the second step is no longer purely a checklist item a human can silently skip;
+  the build refuses to proceed if it's missed.
+- `docs/TODO.md` M8 gains a checked version-resource line pointing at #118 and this
+  ADR. #65 (the M8 pre-release) can now cite a real `VS_VERSION_INFO` resource as
+  part of its release evidence, and its own tag-matches-`kVersion` checklist step
+  has this ADR's manifest check as a partial mechanical backstop.

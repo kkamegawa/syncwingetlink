@@ -2518,3 +2518,67 @@ correct from a clean build. Fixed by building the path as
 - `vstest.console.exe /Platform:x64`: 405/405 passed in both `Debug|x64` and
   `Release|x64` (up from 394 - 11 new tests added by this issue).
 - No dependency added. No `*_ja.md` file was read or changed.
+
+## 2026-08-01 — M8: VS_VERSION_INFO resource and a single version source (issue #118)
+
+**Trigger**: sixth layer of the M8 stack, on top of #62's branch. Independent of
+#106/#113/#63/#61/#62; prerequisite of #65, whose manual tag/`kVersion`/manifest
+checklist step this backs up with a mechanical check.
+
+### Completed
+
+- `Directory.Build.props`: new `ProductVersion` property (`"0.1.0"`, following the
+  `StaticRuntime` Condition-defaulted precedent) plus three derived properties
+  (`ProductVersionMajor`/`Minor`/`Patch`, via `$(ProductVersion.Split('.')[N])`).
+- `props/syncwingetlink.common.props`: `SYNCWINGETLINK_VER_MAJOR`/`MINOR`/`PATCH`
+  added to the shared, project-wide `ClCompile` preprocessor definitions (`core`,
+  the executable, and `tests` all compile `Version.h`).
+- `src/cli/Version.h`: `kVersion` is now generated from those three macros via a
+  stringize-and-widen chain (`#undef`-ed at the end of the header), not a
+  hand-written literal. Value unchanged (`"0.1.0"`) - `DispatchTests.cpp`'s
+  pre-existing `VersionTests` needed no change.
+- New `src/syncwingetlink.rc` (executable project only, registered in
+  `syncwingetlink.vcxproj`/`.filters`): a `1 VERSIONINFO` resource with
+  `FILEVERSION`/`PRODUCTVERSION` from the same three macros (fed via a
+  `ResourceCompile` `PreprocessorDefinitions` entry sourced from the same
+  properties), `FileDescription`/`ProductName`/`LegalCopyright`/`OriginalFilename`
+  populated, and the version string built with the same stringize trick rather
+  than a second literal.
+- `syncwingetlink.vcxproj`: new `VerifyManifestVersionMatchesProductVersion`
+  target (`BeforeTargets="Build"`) - reads `app.manifest`'s text, extracts its
+  `assemblyIdentity` version via a regex anchored to start after the literal
+  `assemblyIdentity`, and fails the build with `<Error>` if it does not equal
+  `$(ProductVersion).0`.
+- `docs/adr-phase-6.md` gains **ADR-0032**, including why a build-time MSBuild
+  target was chosen over an MSTest case (a test would need fragile runtime
+  relative-path reasoning to locate `app.manifest`; a build-time check needs none
+  and fails earlier).
+- `docs/TODO.md` M8 gains a checked version-resource line pointing at #118/ADR-0032.
+
+### A bug found and fixed during this issue's own verification
+
+The manifest-check regex's first draft, `version=&quot;([\d\.]+)&quot;` with no
+anchor, matched the **wrong** attribute: `app.manifest`'s root `<assembly
+manifestVersion="1.0" ...>` element's `manifestVersion` attribute, extracting
+`"1.0"` instead of the `assemblyIdentity` element's actual `"0.1.0.0"`. Caught
+immediately by the very first build attempt (the check fired, but with the wrong
+captured value) - fixed by anchoring the pattern to
+`assemblyIdentity[\s\S]*?version=&quot;([\d\.]+)&quot;`, which only starts
+searching after the literal `assemblyIdentity` text.
+
+### Verified
+
+- Deliberately drifted `app.manifest`'s version to `0.2.0.0` and rebuilt: the
+  build failed with `app.manifest's assemblyIdentity version ('0.2.0.0') does not
+  match ProductVersion ('0.1.0', expected manifest value '0.1.0.0')` - confirming
+  the gate actually fires, not just that it compiles. Reverted before committing.
+- `(Get-Item .\syncwingetlink.exe).VersionInfo` on the built `Release|x64`
+  executable: `FileVersion`/`ProductVersion` `0.1.0` (`0.1.0.0` raw),
+  `FileDescription`, `CompanyName`, `LegalCopyright` all populated correctly.
+- The same `VersionInfo` check was repeated on the cross-built `ARM64` executable
+  (populated identically - reading a resource needs no execution).
+- `Debug|x64`, `Release|x64`, `Debug|ARM64`, `Release|ARM64`: all four build clean
+  at `/W4 /WX`, no new warnings.
+- `vstest.console.exe /Platform:x64`: 405/405 passed in both `Debug|x64` and
+  `Release|x64` (unchanged from before this issue - no test behavior changed).
+- No dependency added. No `*_ja.md` file was read or changed.

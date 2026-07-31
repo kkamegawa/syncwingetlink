@@ -1,0 +1,49 @@
+// SPDX-License-Identifier: MIT
+//
+// Hand-authored VS_VERSION_INFO resource (issue #118, docs/adr-phase-6.md ADR-0032).
+// Deliberately does not #include <windows.h>/<winresrc.h> for the numeric FILEOS/
+// FILETYPE/FILESUBTYPE constants below - their values are stable, documented Win32 ABI
+// constants (see Microsoft's VERSIONINFO resource reference), and spelling them out
+// avoids a resource-compiler include-path dependency for a resource this small. The
+// resource ID 1 is the same well-known value winver.h defines as VS_VERSION_INFO.
+//
+// SYNCWINGETLINK_VER_MAJOR/MINOR/PATCH come from this project's ResourceCompile
+// PreprocessorDefinitions (src/syncwingetlink.vcxproj), ultimately sourced from
+// Directory.Build.props's single ProductVersion property - the same source
+// src/cli/Version.h's kVersion derives from.
+
+#define SYNCWINGETLINK_STRINGIZE2(s) #s
+#define SYNCWINGETLINK_STRINGIZE(s) SYNCWINGETLINK_STRINGIZE2(s)
+#define SYNCWINGETLINK_VERSION_STRING                                                            \
+    SYNCWINGETLINK_STRINGIZE(SYNCWINGETLINK_VER_MAJOR)                                           \
+    "." SYNCWINGETLINK_STRINGIZE(SYNCWINGETLINK_VER_MINOR)                                       \
+    "." SYNCWINGETLINK_STRINGIZE(SYNCWINGETLINK_VER_PATCH)
+
+1 VERSIONINFO
+ FILEVERSION SYNCWINGETLINK_VER_MAJOR,SYNCWINGETLINK_VER_MINOR,SYNCWINGETLINK_VER_PATCH,0
+ PRODUCTVERSION SYNCWINGETLINK_VER_MAJOR,SYNCWINGETLINK_VER_MINOR,SYNCWINGETLINK_VER_PATCH,0
+ FILEFLAGSMASK 0x3fL
+ FILEFLAGS 0x0L
+ FILEOS 0x40004L    // VOS_NT_WINDOWS32
+ FILETYPE 0x1L      // VFT_APP
+ FILESUBTYPE 0x0L   // VFT2_UNKNOWN
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904b0" // U.S. English, Unicode (UTF-16) code page 1200
+        BEGIN
+            VALUE "CompanyName", "syncwingetlink contributors"
+            VALUE "FileDescription", "syncwingetlink - repairs winget portable-package alias symlinks"
+            VALUE "FileVersion", SYNCWINGETLINK_VERSION_STRING
+            VALUE "InternalName", "syncwingetlink.exe"
+            VALUE "LegalCopyright", "Copyright (c) syncwingetlink contributors. Licensed under the MIT License."
+            VALUE "OriginalFilename", "syncwingetlink.exe"
+            VALUE "ProductName", "syncwingetlink"
+            VALUE "ProductVersion", SYNCWINGETLINK_VERSION_STRING
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x0409, 0x04B0
+    END
+END
