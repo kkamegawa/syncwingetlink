@@ -6,8 +6,10 @@
 
 #include <core/ExecutableScanner.h>
 
+#include <filesystem>
 #include <fstream>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "TempDirectory.h"
