@@ -2,6 +2,8 @@
 
 #pragma once
 
+#include "core/Model.h"
+
 #include <functional>
 #include <optional>
 #include <string>
@@ -41,6 +43,21 @@ enum class ConsoleStream
     Output, // stdout
     Error,  // stderr
     Input,  // stdin - only meaningful to ConsoleOperations::isConsole, never to write()
+};
+
+// How load-bearing a line is, independent of which stream it goes to. Console gates
+// emission on this against the active LogLevel (AppOptions::logLevel, docs/adr-phase-6.md
+// ADR-0030), and the three levels form a monotonic chain, each a strict superset of the
+// one before it: Quiet shows Normal-importance lines only; Normal additionally shows
+// Supplementary; Verbose additionally shows Diagnostic on top of that. Warnings/errors
+// always use Normal (the default) or above, never Supplementary, so Quiet never hides
+// them, and --json's stdout-purity document (written at the default Normal importance)
+// is never suppressed at any level either.
+enum class MessageImportance
+{
+    Supplementary, // per-item "Ok" lines, batch/summary headings - skippable noise
+    Normal,        // ordinary results, warnings, errors, the --json document
+    Diagnostic,    // --verbose-only reporting: effective paths, source, rule source
 };
 
 // The Win32-facing operations Console drives. Production code (Console's single-argument
@@ -94,16 +111,20 @@ class Console
 public:
     // Production constructor: wraps the real Win32 APIs. noColorRequested is
     // AppOptions::noColor (--no-color); the NO_COLOR environment variable is also
-    // consulted. Attempts to enable virtual terminal processing on stdout exactly once,
-    // at construction, and restores the original mode in the destructor.
-    explicit Console(bool noColorRequested);
+    // consulted. logLevel is AppOptions::logLevel (--verbose/--quiet), defaulted to
+    // Normal so any existing call site that predates #113 keeps compiling unchanged.
+    // Attempts to enable virtual terminal processing on stdout exactly once, at
+    // construction, and restores the original mode in the destructor.
+    explicit Console(bool noColorRequested, LogLevel logLevel = LogLevel::Normal);
 
-    // Deterministic constructor for tests: operations replaces every Win32 call, and
+    // Deterministic constructor for tests: operations replaces every Win32 call,
     // noColorEnvValueOverride replaces a real NO_COLOR environment lookup (defaulted to
     // nullopt - "unset" - so a test is never at the mercy of the real test runner's
-    // environment unless it explicitly opts in).
+    // environment unless it explicitly opts in), and logLevel defaults to Normal so
+    // every pre-#113 test call site keeps compiling unchanged.
     Console(bool noColorRequested, ConsoleOperations operations,
-           std::optional<std::wstring> noColorEnvValueOverride = std::nullopt);
+           std::optional<std::wstring> noColorEnvValueOverride = std::nullopt,
+           LogLevel logLevel = LogLevel::Normal);
 
     ~Console();
 
@@ -151,8 +172,11 @@ public:
     }
 
     // Sanitizes text (sanitizeForDisplay()) and writes it followed by a newline to the
-    // given stream.
-    void writeLine(std::wstring_view text, ConsoleStream stream = ConsoleStream::Output);
+    // given stream - but only if importance clears the active LogLevel's bar (see
+    // MessageImportance and shouldEmit()). A suppressed line touches neither
+    // sanitizeForDisplay() nor m_operations.write.
+    void writeLine(std::wstring_view text, ConsoleStream stream = ConsoleStream::Output,
+                   MessageImportance importance = MessageImportance::Normal);
 
     // Writes promptText (sanitized) to stdout, with no trailing newline, then evaluates
     // consent. assumeYes bypasses the prompt entirely: neither promptText nor stdin is
@@ -164,7 +188,13 @@ public:
     [[nodiscard]] bool confirm(std::wstring_view promptText, bool assumeYes);
 
 private:
+    // Whether a line at importance clears the active LogLevel's bar. Total over
+    // MessageImportance, so a future importance value fails to compile here rather than
+    // silently defaulting to always-shown or always-hidden.
+    [[nodiscard]] bool shouldEmit(MessageImportance importance) const noexcept;
+
     ConsoleOperations m_operations;
+    LogLevel m_logLevel;
     bool m_colorEnabled;
     bool m_vtEnabled{false};
     bool m_stdinInteractive{false};

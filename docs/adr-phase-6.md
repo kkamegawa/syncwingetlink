@@ -498,3 +498,91 @@ executed on this x64 host.
 - `docs/TODO.md` M8 gains a checked hardening line pointing at #106 and this ADR.
 - #65 (the M8 pre-release) can cite this ADR and the table above as its hardening
   evidence, rather than re-deriving it.
+
+## ADR-0030 — `--verbose`/`--quiet` wired up via `Console::MessageImportance`
+
+- **Date**: 2026-07-31
+- **Affected**: `src/cli/Console.h`/`.cpp`, `src/cli/Dispatch.cpp`, `docs/PLAN.md` §8,
+  `docs/TODO.md` M8
+- **Status**: Accepted
+
+### Decision
+
+1. **`Console` gains a `MessageImportance { Supplementary, Normal, Diagnostic }` enum**
+   and holds the active `LogLevel` (`AppOptions::logLevel`) passed in at construction.
+   `writeLine()` takes a third, defaulted (`Normal`) `importance` parameter and drops the
+   line before it ever reaches `sanitizeForDisplay()`/`ConsoleOperations::write` if the
+   active level does not clear the bar for that importance. Both constructors add
+   `LogLevel logLevel = LogLevel::Normal` as a trailing defaulted parameter (production:
+   right after `noColorRequested`; the deterministic test constructor: after the existing
+   `noColorEnvValueOverride`), so every call site that predates this issue keeps compiling
+   and behaving exactly as before.
+2. **The three levels form a monotonic chain, each a strict superset of the one before -
+   not "Quiet suppresses Supplementary, independently of Diagnostic."** `Quiet` shows
+   `Normal`-importance lines only; `Normal` (the default) additionally shows
+   `Supplementary`; `Verbose` additionally shows `Diagnostic` on top of that. The
+   alternative reading of the original issue text - "Quiet suppresses `Supplementary`
+   only, so `Diagnostic` still gets through" - was considered and rejected: it is
+   unobservable in production either way, because `Diagnostic`-importance lines are only
+   ever produced by the new verbose-reporting function below, which itself only runs when
+   `logLevel == Verbose`. The monotonic chain is the more coherent contract for
+   `Console`'s own unit tests (which exercise all nine `(LogLevel, MessageImportance)`
+   combinations directly, without relying on `Dispatch` only calling `Diagnostic` from
+   one branch) and matches the conventional quiet < normal < verbose ordering.
+3. **Warnings/errors keep their existing call sites unchanged**, at the default `Normal`
+   importance, on `ConsoleStream::Error`. `Normal` is shown at every level, so `--quiet`
+   never suppresses them, and the `--json` document (also written at the default `Normal`
+   importance via `writeJsonDocument()`) is likewise never suppressed at any level -
+   `--json --quiet` still emits exactly the JSON document, unaffected by log level.
+4. **`Supplementary` is applied only to genuinely skippable lines**: `scan`'s per-item
+   line when `LinkStatus::Ok` (not `Missing`/`Broken`/`Mismatch`, which remain actionable
+   and `Normal`), `fix`'s per-item `[current/total] alias: disposition` progress line, and
+   all three lines of the final batch summary. Collision warnings and every error path are
+   untouched (`Normal`, `ConsoleStream::Error`).
+5. **`--verbose`'s additional reporting is a new `reportVerboseDiagnostics()` function**
+   called once from `buildRepairCandidates()` (shared by `scan` and `fix`), gated on
+   `options.logLevel == LogLevel::Verbose` purely as a work-avoidance optimization - the
+   lines it writes are `Diagnostic` importance, which `Console` already drops at every
+   other level regardless. It reports, all on `ConsoleStream::Error` (never stdout,
+   regardless of `--json` - ADR-0022's stdout-purity rule is unaffected by log level):
+   - the resolved effective `Links`/`Packages` directories
+     (`paths::getLinksDirectory`/`getPackagesDirectory`);
+   - the package source actually used, built from `options.source` plus a local flag the
+     existing `onDegrade` callback now also sets - **not a downcast on
+     `AutoPackageSource`**, which the caller cannot see through the returned
+     `unique_ptr<IPackageSource>` (`src/core/PackageSourceFactory.h`);
+   - which rule tier was selected (`--rules`, the user rules file, or the embedded
+     defaults), determined by mirroring `RuleSetSelector.cpp`'s own explicit/user-file/
+     defaults priority with a local `std::filesystem::exists()` check, rather than adding
+     a new return value to `selectRuleSet()`. This is the same "build the report from
+     information already available or cheaply re-derived, don't change the core
+     interface" approach the package-source report above uses.
+6. **`--verbose --quiet` (either order) is last-wins**, requiring no new code:
+   `ArgParser::handleOption()` already assigns `options.logLevel` directly on each
+   occurrence, so a later flag naturally overwrites an earlier one - the same behavior
+   every other repeatable option (`--source`) already has. Tests cover both orders.
+
+### Verification
+
+- New `MessageImportanceTests` in `tests/ConsoleTests.cpp` exercise all nine
+  `(LogLevel, MessageImportance)` combinations against `Console::writeLine()` directly,
+  plus a regression test confirming the pre-#113 two-argument constructor call still
+  defaults to `Normal`, and one confirming `Quiet` never drops an `Error`-stream `Normal`
+  line.
+- `ArgParserTests.cpp` gained `verboseThenQuietIsLastWins`/`quietThenVerboseIsLastWins`.
+- `cli::Dispatch`'s own helpers (`buildRepairCandidates`, `reportVerboseDiagnostics`,
+  `printScanItem`, `printBatchSummary`) remain file-local and are not unit-tested here,
+  consistent with `DispatchTests.cpp`'s existing header comment explaining why `cli::run()`
+  itself is verified by hand rather than mocked.
+- `Debug|Release` × `x64|ARM64` all build clean at `/W4 /WX`; `vstest.console.exe` reports
+  393/393 green for `Debug|x64` and `Release|x64`; `ARM64` is cross-built only, per
+  `docs/adr.md` open item 3.
+
+### Consequences
+
+- `Console`'s public constructor signatures each gain one trailing defaulted parameter;
+  no existing call site needed to change.
+- `docs/PLAN.md` §8 documents the log-level table, the `Supplementary`/`Diagnostic`
+  content it gates, and the last-wins rule.
+- `docs/TODO.md` M8 gains a checked `--verbose`/`--quiet` line pointing at #113 and this
+  ADR.

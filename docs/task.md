@@ -2272,3 +2272,57 @@ sub-issue and the prerequisite #65 itself names.
     item 3): Guard CF instrumented; EH Continuation table and CET compatibility
     correctly **absent**, matching the x64-only scoping above.
 - No dependency added. No `*_ja.md` file was read or changed.
+
+## 2026-07-31 — M8: wire up --verbose/--quiet (issue #113)
+
+**Trigger**: second layer of the M8 stack, on top of #106's branch. Resolves the
+`--verbose`/`--quiet` divergence the M8 pre-implementation review recorded (parsed and
+advertised, but never read by anything - `docs/task.md`'s M8 review entry above).
+
+### Completed
+
+- `src/cli/Console.h`/`.cpp`: added `MessageImportance { Supplementary, Normal,
+  Diagnostic }`; `Console` now holds the active `LogLevel` and `writeLine()` takes a
+  defaulted `importance` parameter, gating emission via a new private `shouldEmit()`.
+  Both constructors gained a trailing defaulted `LogLevel logLevel = LogLevel::Normal`
+  parameter - no existing call site needed to change.
+- `src/cli/Dispatch.cpp`: `Console` is now constructed with `options.logLevel`.
+  `printScanItem()` marks `LinkStatus::Ok` lines `Supplementary` (Missing/Broken/Mismatch
+  stay `Normal` - always shown). `printBatchSummary()`'s three lines and `fix`'s
+  per-item progress line are `Supplementary`. A new `reportVerboseDiagnostics()`,
+  called once from `buildRepairCandidates()`, emits three `Diagnostic`-importance
+  stderr lines when `--verbose` is active: the resolved effective Links/Packages
+  directories, the package source actually used (requested vs. used, including a
+  COM→FS `auto` degrade - built from `options.source` plus a flag the existing
+  `onDegrade` callback now also sets, not a downcast on `AutoPackageSource`), and which
+  rule tier was selected (mirrors `RuleSetSelector.cpp`'s own priority via a local
+  `std::filesystem::exists()` check rather than changing `selectRuleSet()`'s interface).
+- `docs/adr-phase-6.md` gains **ADR-0030**, including the decision to make the three
+  log levels a monotonic chain (`Quiet` ⊂ `Normal` ⊂ `Verbose`) rather than treating
+  `Diagnostic` as independently gated from `Supplementary` - unobservable in production
+  either way, since `Diagnostic` lines are only ever produced while `Verbose` is active.
+- `docs/PLAN.md` §8 gains a `--verbose`/`--quiet` subsection: the log-level table, what
+  `Supplementary`/`Diagnostic` cover, and the last-wins rule for repeating the flags.
+- `docs/TODO.md` M8 gains a checked `--verbose`/`--quiet` line pointing at #113/ADR-0030.
+- Tests: `tests/ConsoleTests.cpp` gained `MessageImportanceTests` (all nine
+  `(LogLevel, MessageImportance)` combinations, the pre-#113 constructor's Normal
+  default, and quiet-never-suppresses-Error-stream-Normal-lines).
+  `tests/ArgParserTests.cpp` gained `verboseThenQuietIsLastWins`/
+  `quietThenVerboseIsLastWins`.
+
+### Deliberately not done
+
+- `cli::Dispatch`'s own helpers (`buildRepairCandidates`, `reportVerboseDiagnostics`,
+  `printScanItem`, `printBatchSummary`) are file-local and not unit-tested directly -
+  consistent with `DispatchTests.cpp`'s existing header comment on why `cli::run()`
+  itself is verified by hand, not mocked.
+- `README.md`/`--help` were not touched - `--verbose`/`--quiet` were already
+  advertised there with correct summary text; #64 owns any further wording pass.
+
+### Verified
+
+- `Debug|x64`, `Release|x64`, `Debug|ARM64`, `Release|ARM64`: all four build clean at
+  `/W4 /WX`, no new warnings.
+- `vstest.console.exe /Platform:x64`: 393/393 passed in both `Debug|x64` and
+  `Release|x64` (up from 386 - 7 new tests added by this issue).
+- No dependency added. No `*_ja.md` file was read or changed.

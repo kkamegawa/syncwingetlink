@@ -158,6 +158,19 @@ public:
         Assert::IsTrue(parseArguments({L"--quiet"}).logLevel == LogLevel::Quiet);
     }
 
+    // #113 (ADR-0030): repeating --verbose/--quiet is last-wins, in either order -
+    // matching every other repeatable ArgParser option (e.g. --source) rather than
+    // leaving the interaction an accident of code order.
+    TEST_METHOD(verboseThenQuietIsLastWins)
+    {
+        Assert::IsTrue(parseArguments({L"--verbose", L"--quiet"}).logLevel == LogLevel::Quiet);
+    }
+
+    TEST_METHOD(quietThenVerboseIsLastWins)
+    {
+        Assert::IsTrue(parseArguments({L"--quiet", L"--verbose"}).logLevel == LogLevel::Verbose);
+    }
+
     TEST_METHOD(failOnMissingFlagSets)
     {
         Assert::IsTrue(parseArguments({L"scan", L"--fail-on-missing"}).failOnMissing);

@@ -470,15 +470,15 @@ bool noColorEnvSet(const std::optional<std::wstring>& noColorEnvValue) noexcept
     return noColorEnvValue.has_value();
 }
 
-Console::Console(bool noColorRequested)
+Console::Console(bool noColorRequested, LogLevel logLevel)
     : Console(noColorRequested, makeProductionConsoleOperations(),
-             readNoColorEnvironmentVariable())
+             readNoColorEnvironmentVariable(), logLevel)
 {
 }
 
 Console::Console(bool noColorRequested, ConsoleOperations operations,
-                 std::optional<std::wstring> noColorEnvValueOverride)
-    : m_operations(std::move(operations)), m_colorEnabled(false)
+                 std::optional<std::wstring> noColorEnvValueOverride, LogLevel logLevel)
+    : m_operations(std::move(operations)), m_logLevel(logLevel), m_colorEnabled(false)
 {
     m_stdoutInteractive =
         m_operations.isConsole && m_operations.isConsole(ConsoleStream::Output);
@@ -504,8 +504,27 @@ Console::~Console()
     }
 }
 
-void Console::writeLine(std::wstring_view text, ConsoleStream stream)
+bool Console::shouldEmit(MessageImportance importance) const noexcept
 {
+    switch (importance)
+    {
+    case MessageImportance::Supplementary:
+        return m_logLevel != LogLevel::Quiet;
+    case MessageImportance::Normal:
+        return true;
+    case MessageImportance::Diagnostic:
+        return m_logLevel == LogLevel::Verbose;
+    }
+    return true;
+}
+
+void Console::writeLine(std::wstring_view text, ConsoleStream stream,
+                        MessageImportance importance)
+{
+    if (!shouldEmit(importance))
+    {
+        return;
+    }
     if (!m_operations.write)
     {
         return;

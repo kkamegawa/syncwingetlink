@@ -291,6 +291,31 @@ a `\\.\` device path; they are **not** required to already exist. An absent Pack
 directory is a normal, tolerated state (ADR-0010), and an absent Links directory is the
 exact condition `fix` exists to correct. See `docs/adr-phase-5.md` ADR-0020.
 
+### `--verbose` / `--quiet` (log level)
+
+`--verbose` and `--quiet` set `AppOptions::logLevel` to `Verbose`/`Quiet`; the default is
+`Normal`. Repeating either flag, in either order, is last-wins - `--verbose --quiet`
+leaves `Quiet` in effect, `--quiet --verbose` leaves `Verbose` in effect - matching every
+other repeatable `ArgParser` option (e.g. `--source`). `cli::Console` gates every line on
+a `MessageImportance` (`Supplementary`/`Normal`/`Diagnostic`) against the active log
+level; the three levels form a strict chain, each a superset of the one before:
+
+| Log level | Emits |
+|---|---|
+| `Quiet` | `Normal`-importance lines only (warnings, errors, the `--json` document) |
+| `Normal` (default) | `Supplementary` + `Normal` |
+| `Verbose` | `Supplementary` + `Normal` + `Diagnostic` |
+
+`Supplementary` covers routine, skippable-under-`--quiet` output: per-item `Ok` lines in
+`scan`, `fix`'s per-item progress lines, and the batch summary headings. Anything a user
+must act on - `Missing`/`Broken`/`Mismatch` scan lines, warnings, errors - is `Normal`
+importance and is never suppressed by `--quiet`. `Diagnostic` is exclusively
+`--verbose`'s additional stderr-only reporting (never stdout, regardless of `--json` -
+ADR-0022's stdout-purity rule is unaffected by log level): the resolved effective
+`Links`/`Packages` directories, the package source actually used (including a COM→FS
+`auto` degrade), and which rule tier was selected (`--rules`, the user rules file, or the
+embedded defaults). See `docs/adr-phase-6.md` ADR-0030.
+
 ### Exit codes
 - `0`: success (nothing to fix or fixed)
 - `1`: fix needed but not performed (e.g. missing detected in scan with `--fail-on-missing`)

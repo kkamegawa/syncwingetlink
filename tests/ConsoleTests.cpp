@@ -8,6 +8,7 @@
 #include <vector>
 
 using namespace Microsoft::VisualStudio::CppUnitTestFramework;
+using namespace syncwingetlink;
 using namespace syncwingetlink::cli;
 
 namespace syncwingetlink::tests
@@ -274,6 +275,90 @@ public:
         Console console(false, makeFakeOperations(true, true, writes, {std::wstring(L"no")}));
 
         Assert::IsFalse(console.confirm(L"Proceed?", /*assumeYes=*/false));
+    }
+};
+
+// #113 (ADR-0030): a table-driven test over every (LogLevel, MessageImportance)
+// combination, so a future regression back to "--verbose/--quiet parsed but ignored"
+// fails here rather than passing silently. Console::writeLine() is the one place that
+// gates emission, so this is exercised directly rather than through cli::Dispatch (whose
+// internal helpers are file-local and untestable, per DispatchTests.cpp's header
+// comment).
+TEST_CLASS(MessageImportanceTests)
+{
+public:
+    TEST_METHOD(quietShowsNormalOnly)
+    {
+        std::vector<std::wstring> writes;
+        Console console(false, makeFakeOperations(true, true, writes, {}), std::nullopt,
+                        LogLevel::Quiet);
+
+        console.writeLine(L"supplementary", ConsoleStream::Output,
+                          MessageImportance::Supplementary);
+        console.writeLine(L"normal", ConsoleStream::Output, MessageImportance::Normal);
+        console.writeLine(L"diagnostic", ConsoleStream::Output, MessageImportance::Diagnostic);
+
+        Assert::AreEqual(size_t{1}, writes.size());
+        Assert::AreEqual(std::wstring(L"normal\n"), writes[0]);
+    }
+
+    TEST_METHOD(normalShowsSupplementaryAndNormalButNotDiagnostic)
+    {
+        std::vector<std::wstring> writes;
+        Console console(false, makeFakeOperations(true, true, writes, {}), std::nullopt,
+                        LogLevel::Normal);
+
+        console.writeLine(L"supplementary", ConsoleStream::Output,
+                          MessageImportance::Supplementary);
+        console.writeLine(L"normal", ConsoleStream::Output, MessageImportance::Normal);
+        console.writeLine(L"diagnostic", ConsoleStream::Output, MessageImportance::Diagnostic);
+
+        Assert::AreEqual(size_t{2}, writes.size());
+        Assert::AreEqual(std::wstring(L"supplementary\n"), writes[0]);
+        Assert::AreEqual(std::wstring(L"normal\n"), writes[1]);
+    }
+
+    TEST_METHOD(verboseShowsEverything)
+    {
+        std::vector<std::wstring> writes;
+        Console console(false, makeFakeOperations(true, true, writes, {}), std::nullopt,
+                        LogLevel::Verbose);
+
+        console.writeLine(L"supplementary", ConsoleStream::Output,
+                          MessageImportance::Supplementary);
+        console.writeLine(L"normal", ConsoleStream::Output, MessageImportance::Normal);
+        console.writeLine(L"diagnostic", ConsoleStream::Output, MessageImportance::Diagnostic);
+
+        Assert::AreEqual(size_t{3}, writes.size());
+        Assert::AreEqual(std::wstring(L"supplementary\n"), writes[0]);
+        Assert::AreEqual(std::wstring(L"normal\n"), writes[1]);
+        Assert::AreEqual(std::wstring(L"diagnostic\n"), writes[2]);
+    }
+
+    TEST_METHOD(defaultConstructorLogLevelIsNormal)
+    {
+        // Every pre-#113 call site (Console(false, operations)) keeps compiling and
+        // behaving as Normal, matching the "existing call sites keep working" design
+        // requirement.
+        std::vector<std::wstring> writes;
+        Console console(false, makeFakeOperations(true, true, writes, {}));
+
+        console.writeLine(L"diagnostic", ConsoleStream::Output, MessageImportance::Diagnostic);
+        console.writeLine(L"normal", ConsoleStream::Output, MessageImportance::Normal);
+
+        Assert::AreEqual(size_t{1}, writes.size());
+        Assert::AreEqual(std::wstring(L"normal\n"), writes[0]);
+    }
+
+    TEST_METHOD(quietNeverSuppressesErrorStreamNormalImportanceLines)
+    {
+        std::vector<std::wstring> writes;
+        Console console(false, makeFakeOperations(true, true, writes, {}), std::nullopt,
+                        LogLevel::Quiet);
+
+        console.writeLine(L"warning: something", ConsoleStream::Error);
+
+        Assert::AreEqual(size_t{1}, writes.size());
     }
 };
 

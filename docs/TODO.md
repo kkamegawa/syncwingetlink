@@ -171,6 +171,12 @@ Build system decisions are recorded in [`adr.md`](./adr.md) (ADR-0001 … ADR-00
       `dumpbin /headers /loadconfig` confirms CF Guard on both platforms and the EH
       Continuation table plus CET compatibility on `x64` only (including with
       `-p:StaticRuntime=true`)
+- [x] Wire up `--verbose`/`--quiet` - issue #113, ADR-0030 (`docs/adr-phase-6.md`).
+      `Console::MessageImportance` (`Supplementary`/`Normal`/`Diagnostic`) gates every
+      line against `AppOptions::logLevel`; `--verbose` additionally reports effective
+      paths, package source, and rule source on stderr; `--verbose --quiet` is
+      last-wins in either order; `Debug|Release` × `x64|ARM64` all build clean,
+      `vstest.console.exe` reports 393/393 for `Debug|x64`/`Release|x64`
 - [ ] Release: attach an unsigned single exe (static link) to GitHub Releases
       (build with `-p:StaticRuntime=true`; depends on ADR-0003 being resolved)
 
