@@ -2429,3 +2429,92 @@ rather than re-implementing scan/fix's logic in the test.
 - `vstest.console.exe /Platform:x64`: 394/394 passed in both `Debug|x64` and
   `Release|x64` (up from 393 - one new test class added by this issue).
 - No dependency added. No `*_ja.md` file was read or changed.
+
+## 2026-07-31 — M8: verify non-ASCII path handling (issue #62)
+
+**Trigger**: fifth layer of the M8 stack, on top of #61's branch, extending its
+integration harness. Current coverage was zero - no wide string literal anywhere
+under `tests/` contained a non-ASCII character before this issue.
+
+### Completed
+
+- A shared fixture, used across every file this issue touches: Japanese katakana
+  (`テストツール`, no case distinction at all) combined with
+  U+1F600 GRINNING FACE (`\U0001F600`, non-BMP, also no case distinction -
+  deliberately chosen to sidestep any mismatch between
+  `Dispatch.cpp`'s `CompareStringOrdinal`-based comparisons and NTFS's own `$UpCase`
+  case-folding table, which are not guaranteed to agree for a case-sensitive
+  script). Every test source uses `\uXXXX`/`\UXXXXXXXX` escapes exclusively - no raw
+  non-ASCII bytes in any file, verified with a byte-level check (`grep`'s own
+  Unicode-aware output was not trustworthy for this - a byte-range check catches
+  what it can silently normalize away).
+- `tests/SmokeTests.cpp`: two new `Paths` round-trip tests -
+  `extendedLengthPrefixRoundTripsNonAsciiAbsolutePath` (the pure-lexical branch) and
+  `...NonAsciiRelativePath` (the `std::filesystem::absolute()`/`GetFullPathNameW`
+  branch) - covering both code paths `toExtendedLengthPath` can take, per the
+  issue's own finding that a round-trip test exercising only one branch does not
+  prove the other preserves non-ASCII characters.
+- `tests/ExecutableScannerTests.cpp`: `nonAsciiNestedExecutableIsCollected` - the
+  fixture nested under a non-ASCII directory is enumerated and its path preserved
+  exactly.
+- `tests/LinkInspectorTests.cpp`: new `NonAsciiInspectLinkTests` class -
+  `nonAsciiRegularFileIsMismatch` (unconditional), `nonAsciiHealthySymbolicLinkIsOk`
+  and `nonAsciiBrokenSymbolicLinkIsBroken` (real symlink creation, log-and-skip per
+  ADR-0016 where privilege is unavailable) - through the real, filesystem-backed
+  `inspectLink()`.
+- `tests/ConsoleTests.cpp`: new `NonAsciiDisplayTests` class. `Console::writeLine()`
+  computes `sanitizeForDisplay(text) + L"\n"` once and hands it to
+  `ConsoleOperations::write` - the `WriteConsoleW`-vs-`WriteFile`(UTF-8) branch (the
+  "real console" vs "redirected" distinction the issue asks to cover) lives entirely
+  inside the production `makeProductionConsoleOperations()` implementation, which is
+  not part of the mockable seam. Two tests prove what the seam *can* prove - Console
+  hands the identical, uncorrupted wide fixture text through regardless of whether
+  `isConsole` reports true or false; a third test calls
+  `WideCharToMultiByte(CP_UTF8, ...)` directly on the same fixture and asserts the
+  exact UTF-8 byte sequence, since that is the actual Win32 API the redirected
+  path's private `toUtf8()` also calls.
+- `tests/JsonTests.cpp`: `nonBmpFixtureNameEncodesPerAdr0022SurrogatePolicy` -
+  exercises the same U+1F600 policy the pre-existing
+  `validSurrogatePairEncodesAsOneCodepoint` test already covered (built with a
+  manually-constructed surrogate pair), but spelled with the compiler-generated
+  `\U0001F600` escape and combined with the Japanese fixture text, catching a
+  different bug class (a compiler mis-encoding the escape into the wide literal).
+- `tests/IntegrationTests.cpp`: new `NonAsciiScanFixRescanIntegrationTests` class,
+  reusing `ScanFixRescanIntegrationTests`' `writeEmptyRulesFile()`/`buildArgs()`
+  helpers - the same `scan`→`fix`→`scan` round trip as #61, but with the non-ASCII
+  fixture tree, through the real `cli::run()` dispatch path. Same output-text/
+  VT-mode/process-global-Ctrl+C-state caveats as #61 apply.
+- `docs/TODO.md` M8 gains a checked non-ASCII line pointing at #62.
+
+### A bug found and fixed during this issue's own verification
+
+The first draft of `NonAsciiScanFixRescanIntegrationTests` built its dummy
+executable at `temp.path() / directoryName / fileName`, omitting the `Packages\`
+prefix the harness's `--packages-dir` actually points at (unlike the ASCII
+`ScanFixRescanIntegrationTests`, which used `LR"(Packages\SyncTestTool_test\...)"`
+literally). The scan step silently found zero packages and returned `Success`
+instead of the expected `FixNeeded`, caught by running the test rather than assumed
+correct from a clean build. Fixed by building the path as
+`std::filesystem::path(L"Packages") / directoryName / fileName`.
+
+### Deliberately not done
+
+- Display is not verified against a genuine attached console (`WriteConsoleW`) or an
+  actually-redirected process stdout (`WriteFile`) - only against the
+  `ConsoleOperations` mock seam plus a direct, isolated `WideCharToMultiByte` call on
+  the fixture text. `Console.cpp`'s `toUtf8()`/`writeConsoleChunked()`/
+  `writeFileChunked()` are file-local and not directly testable without either
+  changing `Console`'s public interface (out of scope for this issue) or running
+  under a real, unpredictable terminal/pipe setup vstest.console.exe does not
+  guarantee. Documented here rather than silently assumed equivalent.
+- `JsonTests.cpp`'s pre-existing surrogate tests already covered the U+1F600
+  encoding policy; this issue's new test adds the escape-literal-form and
+  fixture-name coverage rather than duplicating what already existed.
+
+### Verified
+
+- `Debug|x64`, `Release|x64`, `Debug|ARM64`, `Release|ARM64`: all four build clean at
+  `/W4 /WX`, no new warnings.
+- `vstest.console.exe /Platform:x64`: 405/405 passed in both `Debug|x64` and
+  `Release|x64` (up from 394 - 11 new tests added by this issue).
+- No dependency added. No `*_ja.md` file was read or changed.

@@ -80,6 +80,37 @@ public:
                          static_cast<unsigned char>(result[3]));
     }
 
+    // #62: the same U+1F600 policy as validSurrogatePairEncodesAsOneCodepoint above, but
+    // spelled with the compiler-generated \U (8-digit universal-character-name) escape
+    // this codebase's test literals use for non-BMP characters, combined with Japanese
+    // katakana - the exact fixture text used across SmokeTests.cpp/ConsoleTests.cpp/
+    // ExecutableScannerTests.cpp/LinkInspectorTests.cpp/IntegrationTests.cpp for this
+    // issue. Written with \uXXXX/\UXXXXXXXX escapes only; no raw non-ASCII bytes in this
+    // file. Catches a different bug class than the manually-built-surrogate test above:
+    // a compiler that mis-encodes \U0001F600 into a wide string literal would fail this
+    // test even if escapeJsonString() itself were correct.
+    TEST_METHOD(nonBmpFixtureNameEncodesPerAdr0022SurrogatePolicy)
+    {
+        const std::wstring fixtureName = L"\u30C6\u30B9\u30C8\u30C4\u30FC\u30EB\U0001F600.exe";
+
+        const std::string result = escapeJsonString(fixtureName);
+
+        // 6 katakana characters x 3 UTF-8 bytes each, plus U+1F600's 4-byte encoding,
+        // plus 4 ASCII bytes for ".exe".
+        Assert::AreEqual(std::size_t{6 * 3 + 4 + 4}, result.size());
+        // U+1F600 GRINNING FACE, UTF-8: F0 9F 98 80 - immediately before ".exe".
+        const std::size_t tail = result.size() - 4 - 4;
+        Assert::AreEqual(static_cast<unsigned char>(0xF0),
+                         static_cast<unsigned char>(result[tail + 0]));
+        Assert::AreEqual(static_cast<unsigned char>(0x9F),
+                         static_cast<unsigned char>(result[tail + 1]));
+        Assert::AreEqual(static_cast<unsigned char>(0x98),
+                         static_cast<unsigned char>(result[tail + 2]));
+        Assert::AreEqual(static_cast<unsigned char>(0x80),
+                         static_cast<unsigned char>(result[tail + 3]));
+        Assert::AreEqual(std::string(".exe"), result.substr(result.size() - 4));
+    }
+
     TEST_METHOD(unpairedHighSurrogateBecomesReplacementCharacter)
     {
         const std::wstring input = std::wstring(L"a") + static_cast<wchar_t>(0xD83D) + L"b";

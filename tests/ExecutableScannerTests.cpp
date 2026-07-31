@@ -138,6 +138,25 @@ public:
         Assert::IsTrue(executables.front().path == temp.path() / L"tool.exe");
     }
 
+    // #62: a nested non-ASCII directory/executable name (Japanese katakana + U+1F600,
+    // a non-BMP character with no case distinction - see SmokeTests.cpp's matching
+    // round-trip tests for why) is enumerated and its path preserved exactly. Written
+    // with \uXXXX/\UXXXXXXXX escapes only; no raw non-ASCII bytes in this file.
+    TEST_METHOD(nonAsciiNestedExecutableIsCollected)
+    {
+        const TempDirectory temp(L"scanner-non-ascii");
+        const std::wstring directoryName =
+            L"\u30C6\u30B9\u30C8\u30D1\u30C3\u30B1\u30FC\u30B8";
+        const std::wstring fileName = L"\u30C6\u30B9\u30C8\u30C4\u30FC\u30EB\U0001F600.exe";
+        const std::filesystem::path expected = temp.createFile(directoryName + L"\\" + fileName);
+
+        const auto executables = collectExecutables(temp.path());
+
+        Assert::AreEqual(static_cast<std::size_t>(1), executables.size());
+        Assert::IsTrue(containsFileName(executables, fileName));
+        Assert::IsTrue(executables.front().path == expected);
+    }
+
     TEST_METHOD(resultsAreSortedByPath)
     {
         const TempDirectory temp(L"scanner-sort");

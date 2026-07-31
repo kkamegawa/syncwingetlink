@@ -4,6 +4,8 @@
 
 #include <cli/Console.h>
 
+#include <Windows.h>
+
 #include <string>
 #include <vector>
 
@@ -359,6 +361,79 @@ public:
         console.writeLine(L"warning: something", ConsoleStream::Error);
 
         Assert::AreEqual(size_t{1}, writes.size());
+    }
+};
+
+// #62: Console display fidelity for non-ASCII text (Japanese katakana - no case
+// distinction - plus U+1F600, a non-BMP character also with no case distinction; see
+// SmokeTests.cpp's matching round-trip tests for why that matters). Written with
+// \uXXXX/\UXXXXXXXX escapes only; no raw non-ASCII bytes in this file.
+//
+// Console::writeLine() computes sanitizeForDisplay(text) + L"\n" once and hands it to
+// ConsoleOperations::write - the WriteConsoleW-vs-WriteFile(UTF-8) branch (the "real
+// console" vs "redirected" distinction) lives entirely inside the production
+// implementation (makeProductionConsoleOperations() in Console.cpp), which is not part
+// of this seam. So the two tests below prove the thing this seam *can* prove: Console
+// hands the identical, uncorrupted wide text to whichever write implementation is
+// installed, regardless of whether isConsole reports true or false. The third test
+// separately confirms, via a real WideCharToMultiByte(CP_UTF8) call on this exact
+// fixture, that the redirected path's encoding step (which Console.cpp's private
+// toUtf8() also calls) produces the correct UTF-8 bytes for this text - the standard
+// Win32 conversion API's correctness for well-formed UTF-16 input is not re-implemented
+// or re-tested here, only exercised against this specific fixture.
+TEST_CLASS(NonAsciiDisplayTests)
+{
+public:
+    TEST_METHOD(nonAsciiTextReachesWriteUnmodifiedWhenStdoutIsARealConsole)
+    {
+        std::vector<std::wstring> writes;
+        Console console(false, makeFakeOperations(/*outputIsConsole=*/true, true, writes, {}));
+        const std::wstring text = L"\u30C6\u30B9\u30C8\u30C4\u30FC\u30EB\U0001F600";
+
+        console.writeLine(text);
+
+        Assert::AreEqual(size_t{1}, writes.size());
+        Assert::AreEqual(text + L"\n", writes[0]);
+    }
+
+    TEST_METHOD(nonAsciiTextReachesWriteUnmodifiedWhenStdoutIsRedirected)
+    {
+        std::vector<std::wstring> writes;
+        Console console(false, makeFakeOperations(/*outputIsConsole=*/false, true, writes, {}));
+        const std::wstring text = L"\u30C6\u30B9\u30C8\u30C4\u30FC\u30EB\U0001F600";
+
+        console.writeLine(text);
+
+        Assert::AreEqual(size_t{1}, writes.size());
+        Assert::AreEqual(text + L"\n", writes[0]);
+    }
+
+    TEST_METHOD(redirectedPathEncodingProducesCorrectUtf8ForTheFixture)
+    {
+        const std::wstring text = L"\u30C6\u30B9\u30C8\u30C4\u30FC\u30EB\U0001F600";
+
+        const int required = ::WideCharToMultiByte(CP_UTF8, 0, text.data(),
+                                                    static_cast<int>(text.size()), nullptr, 0,
+                                                    nullptr, nullptr);
+        Assert::IsTrue(required > 0);
+        std::string utf8(static_cast<std::size_t>(required), '\0');
+        const int written = ::WideCharToMultiByte(CP_UTF8, 0, text.data(),
+                                                   static_cast<int>(text.size()), utf8.data(),
+                                                   required, nullptr, nullptr);
+        Assert::IsTrue(written == required);
+
+        // 6 katakana characters x 3 UTF-8 bytes each, plus U+1F600's 4-byte encoding.
+        Assert::AreEqual(std::size_t{6 * 3 + 4}, utf8.size());
+        // U+1F600 GRINNING FACE, UTF-8: F0 9F 98 80 - the last 4 bytes.
+        const std::size_t tail = utf8.size() - 4;
+        Assert::AreEqual(static_cast<unsigned char>(0xF0),
+                         static_cast<unsigned char>(utf8[tail + 0]));
+        Assert::AreEqual(static_cast<unsigned char>(0x9F),
+                         static_cast<unsigned char>(utf8[tail + 1]));
+        Assert::AreEqual(static_cast<unsigned char>(0x98),
+                         static_cast<unsigned char>(utf8[tail + 2]));
+        Assert::AreEqual(static_cast<unsigned char>(0x80),
+                         static_cast<unsigned char>(utf8[tail + 3]));
     }
 };
 

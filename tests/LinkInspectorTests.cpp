@@ -620,6 +620,81 @@ public:
     }
 };
 
+// #62: non-ASCII target comparison through the real, filesystem-backed inspectLink().
+// The fixture alias combines Japanese katakana (no case distinction) with U+1F600 (a
+// non-BMP character also with no case distinction, sidestepping any mismatch between
+// this codebase's CompareStringOrdinal-based comparisons and NTFS's own $UpCase table -
+// see SmokeTests.cpp's matching round-trip tests for the full reasoning). Written with
+// \uXXXX/\UXXXXXXXX escapes only; no raw non-ASCII bytes in this file.
+TEST_CLASS(NonAsciiInspectLinkTests)
+{
+public:
+    TEST_METHOD(nonAsciiRegularFileIsMismatch)
+    {
+        // No symlink privilege needed - runs unconditionally, unlike the Ok/Broken
+        // cases below.
+        const TempDirectory temp(L"inspect-link-non-ascii-file");
+        const std::wstring alias = L"\u30C6\u30B9\u30C8\u30C4\u30FC\u30EB\U0001F600.exe";
+        const std::filesystem::path linkPath = temp.createFile(alias);
+        PackageExe executable;
+        executable.path = temp.createFile(L"codex-real.exe");
+
+        const RepairItem item = inspectLink(executable, alias, linkPath);
+
+        Assert::IsTrue(item.status == LinkStatus::Mismatch);
+        Assert::IsTrue(item.entryKind == LinkEntryKind::RegularFile);
+    }
+
+    TEST_METHOD(nonAsciiHealthySymbolicLinkIsOk)
+    {
+        const TempDirectory temp(L"inspect-link-non-ascii-ok");
+        const std::wstring alias = L"\u30C6\u30B9\u30C8\u30C4\u30FC\u30EB\U0001F600.exe";
+        const std::wstring stem = alias.substr(0, alias.size() - 4); // strip ".exe"
+        const std::filesystem::path executablePath = temp.createFile(stem + L"-real.exe");
+        const std::filesystem::path linkPath = temp.path() / alias;
+        if (!createFileSymlink(executablePath, linkPath))
+        {
+            Logger::WriteMessage(
+                L"Skipped: symbolic link creation needs Developer Mode or elevation, "
+                L"neither of which is available here.\n");
+            return;
+        }
+        PackageExe executable;
+        executable.path = executablePath;
+
+        const RepairItem item = inspectLink(executable, alias, linkPath);
+
+        Assert::IsTrue(item.status == LinkStatus::Ok);
+        Assert::IsTrue(item.entryKind == LinkEntryKind::SymbolicLink);
+        Assert::IsTrue(item.existingTarget.has_value());
+        Assert::IsTrue(item.existingTarget->native() == executablePath.native());
+    }
+
+    TEST_METHOD(nonAsciiBrokenSymbolicLinkIsBroken)
+    {
+        const TempDirectory temp(L"inspect-link-non-ascii-broken");
+        const std::wstring alias = L"\u30C6\u30B9\u30C8\u30C4\u30FC\u30EB\U0001F600.exe";
+        const std::wstring stem = alias.substr(0, alias.size() - 4); // strip ".exe"
+        const std::filesystem::path staleTarget = temp.path() / (stem + L"-old.exe");
+        const std::filesystem::path linkPath = temp.path() / alias;
+        if (!createFileSymlink(staleTarget, linkPath))
+        {
+            Logger::WriteMessage(
+                L"Skipped: symbolic link creation needs Developer Mode or elevation, "
+                L"neither of which is available here.\n");
+            return;
+        }
+        PackageExe executable;
+        executable.path = temp.createFile(stem + L"-real.exe");
+
+        const RepairItem item = inspectLink(executable, alias, linkPath);
+
+        Assert::IsTrue(item.status == LinkStatus::Broken);
+        Assert::IsTrue(item.entryKind == LinkEntryKind::SymbolicLink);
+        Assert::IsFalse(item.existingTarget.has_value());
+    }
+};
+
 namespace
 {
 [[nodiscard]] RepairItem makeCollisionCandidate(std::wstring alias,

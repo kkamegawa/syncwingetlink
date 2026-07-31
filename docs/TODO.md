@@ -167,7 +167,18 @@ Build system decisions are recorded in [`adr.md`](./adr.md) (ADR-0001 … ADR-00
       text, since `cli::run()` has no `Console`-injection seam. Hosts without symlink
       privilege log and skip per ADR-0016; `Debug|Release` × `x64|ARM64` all build
       clean, `vstest.console.exe` reports 394/394 for `Debug|x64`/`Release|x64`
-- [ ] Verify display/creation with non-ASCII paths
+- [x] Verify display/creation with non-ASCII paths - issue #62. Fixture combines
+      Japanese katakana (no case distinction) with U+1F600 (non-BMP, also no case
+      distinction, sidestepping any `CompareStringOrdinal`-vs-NTFS-`$UpCase` mismatch);
+      written with `\uXXXX`/`\UXXXXXXXX` escapes only, no raw non-ASCII bytes in any
+      test source. Covers `Paths::toExtendedLengthPath`/`fromExtendedLengthPath`
+      round-tripping (both absolute and relative input), `ExecutableScanner`
+      enumeration, `LinkInspector::inspectLink` (`Ok`/`Broken`/`Mismatch`), `Console`
+      display fidelity via the `ConsoleOperations` seam, `escapeJsonString`'s
+      surrogate-pair encoding (ADR-0022), and the full `scan`→`fix`→`scan` round trip
+      via `cli::run()` (extends #61's harness). Hosts without symlink privilege log
+      and skip per ADR-0016; `Debug|Release` × `x64|ARM64` all build clean,
+      `vstest.console.exe` reports 405/405 for `Debug|x64`/`Release|x64`
 - [x] Diagnostic localization policy: **English-only** for the first release - issue
       #63, ADR-0031 (`docs/adr-phase-6.md`). Japanese is served by documentation
       (`README_ja.md`, `docs/*_ja.md`), not runtime message lookup; non-ASCII **data**

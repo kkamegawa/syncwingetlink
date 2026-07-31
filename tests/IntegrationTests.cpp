@@ -132,4 +132,55 @@ public:
         Assert::AreEqual(static_cast<int>(ExitCode::Success), secondScanExitCode);
     }
 };
+
+// #62: the same scan-fix-rescan round trip as above, but with a fixture whose directory
+// and executable names combine Japanese katakana (no case distinction) with U+1F600 (a
+// non-BMP character, also with no case distinction - sidesteps any mismatch between
+// this codebase's CompareStringOrdinal-based comparisons and NTFS's own $UpCase table;
+// see SmokeTests.cpp's matching round-trip tests for the full reasoning). Reuses this
+// file's writeEmptyRulesFile()/buildArgs() helpers - same #61 harness, same output-text/
+// VT-mode/process-global-Ctrl+C-state caveats documented at the top of this file. Written
+// with \uXXXX/\UXXXXXXXX escapes only; no raw non-ASCII bytes in this file.
+TEST_CLASS(NonAsciiScanFixRescanIntegrationTests)
+{
+public:
+    TEST_METHOD(nonAsciiDummyTreeReachesOkThroughScanFixRescan)
+    {
+        const TempDirectory temp(L"integration-scan-fix-rescan-non-ascii");
+        const std::filesystem::path packagesDir = temp.createDirectory(L"Packages");
+        const std::filesystem::path linksDir = temp.createDirectory(L"Links");
+        const std::filesystem::path rulesPath = temp.path() / L"rules.json";
+        writeEmptyRulesFile(rulesPath);
+
+        const std::wstring directoryName = L"\u30C6\u30B9\u30C8\u30D1\u30C3\u30B1\u30FC\u30B8";
+        const std::wstring fileName = L"\u30C6\u30B9\u30C8\u30C4\u30FC\u30EB\U0001F600.exe";
+        const std::filesystem::path executablePath = temp.createFile(
+            std::filesystem::path(L"Packages") / directoryName / fileName);
+        const std::filesystem::path expectedLinkPath = linksDir / fileName;
+
+        const int firstScanExitCode = run(buildArgs(L"scan", packagesDir, linksDir, rulesPath,
+                                                     /* failOnMissing */ true));
+        Assert::AreEqual(static_cast<int>(ExitCode::FixNeeded), firstScanExitCode);
+        Assert::IsFalse(std::filesystem::exists(expectedLinkPath));
+
+        const int fixExitCode =
+            run(buildArgs(L"fix", packagesDir, linksDir, rulesPath, /* failOnMissing */ false,
+                         /* assumeYes */ true));
+
+        if (fixExitCode == static_cast<int>(ExitCode::InsufficientPermission))
+        {
+            Logger::WriteMessage(
+                L"Skipped: fix needs Developer Mode or elevation, neither of which is "
+                L"available here.\n");
+            return;
+        }
+        Assert::AreEqual(static_cast<int>(ExitCode::Success), fixExitCode);
+        Assert::IsTrue(std::filesystem::exists(expectedLinkPath));
+        Assert::IsTrue(isReparsePoint(expectedLinkPath));
+
+        const int secondScanExitCode = run(buildArgs(L"scan", packagesDir, linksDir, rulesPath,
+                                                      /* failOnMissing */ true));
+        Assert::AreEqual(static_cast<int>(ExitCode::Success), secondScanExitCode);
+    }
+};
 } // namespace syncwingetlink::tests

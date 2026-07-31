@@ -99,6 +99,45 @@ public:
             paths::fromExtendedLengthPath(paths::toExtendedLengthPath(original)) == original);
     }
 
+    // #62: non-ASCII round-trip coverage. The fixture name combines Japanese katakana
+    // (no case distinction at all) with U+1F600 GRINNING FACE, a non-BMP character
+    // chosen specifically because it also has no case distinction - sidestepping any
+    // mismatch between Console.cpp's CompareStringOrdinal-based comparisons and NTFS's
+    // own $UpCase case-folding table, which are not guaranteed to agree for a
+    // case-sensitive script. Written with \uXXXX/\UXXXXXXXX escapes only, per this
+    // project's rule that test sources carry no raw non-ASCII bytes; \U (8-digit) is
+    // used for the non-BMP character specifically because a pair of \u (4-digit)
+    // escapes naming individual surrogate code points is ill-formed - see this file's
+    // own doc comment in docs/task.md's issue #62 entry for the full reasoning.
+    TEST_METHOD(extendedLengthPrefixRoundTripsNonAsciiAbsolutePath)
+    {
+        // Already absolute, so this exercises toExtendedLengthPath's pure-lexical
+        // branch (lexically_normal()+make_preferred(), no GetFullPathNameW call) -
+        // src/core/Paths.cpp's is_absolute() ? path : std::filesystem::absolute(path).
+        const std::filesystem::path original =
+            LR"(C:\tools\)" L"\u30C6\u30B9\u30C8\u30D1\u30C3\u30B1\u30FC\u30B8\U0001F600.exe";
+
+        Assert::IsTrue(
+            paths::fromExtendedLengthPath(paths::toExtendedLengthPath(original)) == original);
+    }
+
+    TEST_METHOD(extendedLengthPrefixRoundTripsNonAsciiRelativePath)
+    {
+        // Same fixture name, passed as relative input this time - exercises the other
+        // branch of toExtendedLengthPath (std::filesystem::absolute(), a real
+        // GetFullPathNameW call), which the already-absolute test above cannot reach.
+        const std::filesystem::path relative =
+            L"\u30C6\u30B9\u30C8\u30D1\u30C3\u30B1\u30FC\u30B8\U0001F600.exe";
+
+        std::filesystem::path expectedAbsolute =
+            std::filesystem::absolute(relative).lexically_normal();
+        expectedAbsolute.make_preferred();
+
+        const std::filesystem::path extended = paths::toExtendedLengthPath(relative);
+        Assert::IsTrue(extended == std::filesystem::path(LR"(\\?\)" + expectedAbsolute.native()));
+        Assert::IsTrue(paths::fromExtendedLengthPath(extended) == expectedAbsolute);
+    }
+
     TEST_METHOD(relativeLongPathUnderExtendedCurrentDirectoryStaysExtended)
     {
         const auto originalCurrentPath = std::filesystem::current_path();
