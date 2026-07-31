@@ -164,6 +164,13 @@ Build system decisions are recorded in [`adr.md`](./adr.md) (ADR-0001 … ADR-00
 - [ ] Verify display/creation with non-ASCII paths
 - [ ] Decide the localization policy for error messages (English/Japanese)
 - [ ] README (install, usage, permission requirements, examples)
+- [x] Harden the release binary: `/guard:cf`, `/guard:ehcont`, `/CETCOMPAT`, `/Gy` -
+      issue #106, ADR-0029 (`docs/adr-phase-6.md`). `/guard:ehcont`/`/CETCOMPAT` are
+      x64-only per Microsoft's own reference; `Debug|Release` × `x64|ARM64` all build
+      clean, `vstest.console.exe` is green for `Debug|x64`/`Release|x64`, and
+      `dumpbin /headers /loadconfig` confirms CF Guard on both platforms and the EH
+      Continuation table plus CET compatibility on `x64` only (including with
+      `-p:StaticRuntime=true`)
 - [ ] Release: attach an unsigned single exe (static link) to GitHub Releases
       (build with `-p:StaticRuntime=true`; depends on ADR-0003 being resolved)
 

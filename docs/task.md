@@ -2161,3 +2161,114 @@ matching the M4/M5/M6 delivery pattern. `docs/TODO.md`, `docs/PLAN.md`,
 `docs/adr-phase-6.md` (ADR-0026 through ADR-0028), and the Wiki plan agree. Merging is
 left to the repository maintainer, per session agreement; #9 itself remains open until
 all three sub-issues are merged and closed.
+
+## 2026-07-31 — M8 pre-implementation review: issue/Wiki corrections (issues #10, #61, #62, #63, #64, #65, #106, #113; new issue #118)
+
+**Trigger**: asked to review issue #10 (M8: Quality, polish, and release) and its Wiki
+plan against current Win32/Windows behavior and this project's past technical
+decisions before starting implementation, and to fix the issue tracker and Wiki
+accordingly before writing any code.
+
+### Findings
+
+Issue #10 and the Wiki page `plan/syncwingetlink/m8-quality-polish-and-release` were
+written while M7 (#9, #58-#60) was still unmerged. M7 has since merged and closed in
+full - `src/tui/` exists, and `docs/PLAN.md` §11's `--tui` line is already checked,
+backed by ADR-0026/0027/0028 (`docs/adr-phase-6.md`). Re-reading the M8 issues against
+that reality, and checking #106 against current MSVC documentation, surfaced:
+
+1. #10's "M7 is not a blocker"/"`src/tui/` does not exist" framing, and #65's
+   `--tui`-missing pre-release rationale, were both obsolete.
+2. #64's instruction to remove `src/tui/` from `AGENTS.md` §3 would have made the
+   documentation wrong in the opposite direction - that path is real.
+3. M7's three sub-issues already hold ADR-0026/0027/0028; #63 (ADR-0027) and #65
+   (ADR-0028) both collided with that reservation.
+4. `--tui`'s real, implemented behavior (parse-time conflicts with
+   `scan`/`test-rule`/`--json`/`--yes`, exit 3; silent fallback when the terminal
+   lacks capability) is undocumented in `--help`/`docs/PLAN.md` §8/`README.md` - a gap
+   no sub-issue owned.
+5. #106 named only `/guard:cf`/`/CETCOMPAT`. Microsoft's own `/guard:ehcont` reference
+   documents that `/CETCOMPAT` alone does not protect the SEH-unwind path CET is meant
+   to protect, and that `/guard:ehcont` requires `/Gy` or the linker fails hard on code
+   using C++ exceptions - neither was in #106's acceptance criteria.
+6. #62's `\uXXXX`-escape instruction is ill-formed for the non-BMP literal it asks for;
+   a surrogate-range universal-character-name is invalid C++. `\UXXXXXXXX` (8-digit) is
+   the correct form.
+7. #62 did not address that `CompareStringOrdinal`'s case folding and NTFS's own
+   `$UpCase` table are not guaranteed identical, or that `Paths::toExtendedLengthPath`
+   has two different code paths (already-absolute vs. relative) that both need
+   round-trip coverage.
+8. #113's "wire `logLevel` into `Console`" had no concrete design: `Console::writeLine`
+   has no importance concept, `AutoPackageSource::resolvedSource()` is unreachable from
+   `createPackageSource()`'s return type, and Verbose's output stream/`--verbose
+   --quiet` precedence were both unstated.
+9. The shipped executable has no `VS_VERSION_INFO` resource; `kVersion`/
+   `app.manifest`/the release tag are three hand-synchronized literals with nothing to
+   catch drift - a gap no existing sub-issue owned.
+
+### Completed
+
+- Issues #10, #106, #113, #63, #61, #62, #64, #65 edited in place with revision notes
+  and corrected acceptance criteria per finding above.
+- New issue #118 ("M8: Add a `VS_VERSION_INFO` resource and a single version source")
+  created and linked as a sub-issue of #10, prerequisite of #65.
+- ADR numbering corrected across all M8 issues: #106 -> ADR-0029, #113 -> ADR-0030,
+  #63 -> ADR-0031, #118 -> ADR-0032, #65 -> ADR-0033 (M7 retains ADR-0026-0028).
+- Wiki page `plan/syncwingetlink/m8-quality-polish-and-release` rewritten to match:
+  M7-complete framing, the corrected ADR table, `#106` reordered first in the delivery
+  sequence (independent, and #65's stated prerequisite), `--tui` documentation gap
+  assigned to #64, and #118 added to the sequence and stack.
+- The eight sub-issues (#106, #113, #63, #61, #62, #118, #64, #65) planned as one
+  linear `gh stack` of PRs, `#106` first.
+
+### Verified
+
+- No code was changed in this entry - documentation and issue-tracker corrections
+  only, verified by re-reading each edited issue and the pushed Wiki page.
+
+## 2026-07-31 — M8: harden the release binary (issue #106)
+
+**Trigger**: first implementation layer of the corrected M8 stack (see the
+pre-implementation review above). Bottom of the stack: independent of every other M8
+sub-issue and the prerequisite #65 itself names.
+
+### Completed
+
+- `props/syncwingetlink.common.props`: added `ControlFlowGuard=Guard` and
+  `FunctionLevelLinking=true` for every configuration/platform;
+  `GuardEHContMetadata=true` and `CETCompat=true` scoped to `'$(Platform)' == 'x64'`
+  only, per Microsoft's own architecture restriction for both flags.
+- Found by an actual build, not assumed: `/guard:cf` and the implicit Debug-config
+  default `/ZI` (Edit and Continue) are mutually exclusive (`cl` error D8016).
+  `DebugInformationFormat` is now pinned to `ProgramDatabase` for every configuration.
+- `docs/adr-phase-6.md` gains **ADR-0029**, recording all of the above plus why
+  `/CETCOMPAT` alone would not have protected the SEH-unwind path CET is meant to
+  protect (the reason `/guard:ehcont` is a required criterion, not optional polish).
+- `docs/TODO.md` M8 gains a checked hardening line pointing at #106/ADR-0029.
+
+### Deliberately not done
+
+- The shared-props risk #106 anticipated (breaking `syncwingetlink.tests`'s link
+  against CppUnitTestFramework) did not materialize - all three projects, in every
+  configuration, linked cleanly with every flag applied project-wide. No fallback to
+  executable-only scoping was needed.
+- `docs/PLAN.md`/`README.md`/`AGENTS.md` were not touched - this is build
+  configuration, not CLI-observable behavior or documented layout, and is #64's scope
+  if anything there needs to change.
+
+### Verified
+
+- `Debug|x64`, `Release|x64`, `Debug|ARM64`, `Release|ARM64`: all four build clean at
+  `/W4 /WX`, no new warnings, including `syncwingetlink.tests.vcxproj`.
+- `vstest.console.exe /Platform:x64`: 386/386 passed in both `Debug|x64` and
+  `Release|x64` (unchanged from before this issue - no test behavior changed).
+- `dumpbin /headers /loadconfig`, read directly rather than inferred from a clean
+  build alone:
+  - `Debug|x64`, `Release|x64`: Guard CF instrumented, EH Continuation table present,
+    CET compatible - all three.
+  - `Release|x64 -p:StaticRuntime=true`: same three flags present, and
+    `dumpbin /dependents` confirms no `MSVCP140.dll`/`VCRUNTIME140.dll` dependency.
+  - `Debug|ARM64`, `Release|ARM64` (cross-built, not run, per `docs/adr.md` open
+    item 3): Guard CF instrumented; EH Continuation table and CET compatibility
+    correctly **absent**, matching the x64-only scoping above.
+- No dependency added. No `*_ja.md` file was read or changed.

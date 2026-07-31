@@ -397,3 +397,104 @@ section, which a single shared "ADR-0026 covers all of M7" plan would have cause
   checked off, pointing at #58/#59/#60 and ADR-0026 through ADR-0028 - the only M7-
   related Definition-of-Done line this session claims, per the Wiki plan's own
   instruction that #60 alone marks it.
+
+---
+
+## ADR-0029 — Release-binary hardening flags, and why `/CETCOMPAT` alone is not enough
+
+- **Date**: 2026-07-31
+- **Affected**: `props/syncwingetlink.common.props`, `docs/TODO.md` M8, the Wiki page
+  `plan/syncwingetlink/m8-quality-polish-and-release`
+- **Status**: Accepted
+
+### Decision
+
+1. **`ControlFlowGuard=Guard` (`/guard:cf`) and `FunctionLevelLinking=true` (`/Gy`) apply
+   to every configuration and platform** (`Debug`/`Release` × `x64`/`ARM64`) in
+   `props/syncwingetlink.common.props`'s shared `ClCompile` `ItemDefinitionGroup`. Neither
+   flag has a known compatibility issue for this codebase (pure Win32/C++/WinRT, no
+   inline assembly, no third-party binaries), and both apply uniformly to
+   `syncwingetlink.core`, `syncwingetlink`, and `syncwingetlink.tests` - the shared props
+   did **not** need to be narrowed to the executable project alone (see point 3 below for
+   the one flag that is scoped).
+
+2. **`GuardEHContMetadata=true` (`/guard:ehcont`) and `CETCompat=true` (`/CETCOMPAT`) are
+   both scoped to `'$(Platform)' == 'x64'` only**, never `ARM64`. Microsoft's own
+   reference for each option documents this restriction independently: `/guard:ehcont`
+   is supported for 64-bit processes on a 64-bit OS, and `/CETCOMPAT` is "currently only
+   applicable to the x64 architecture." Applying either unconditionally would not be a
+   silent no-op on `ARM64` - it risks build breakage or, worse, an image flag with no
+   corresponding runtime behavior on that platform.
+
+3. **`/CETCOMPAT` alone does not protect what CET shadow stacks exist to protect** on the
+   SEH-unwind path, and shipping it without `/guard:ehcont` would have been misleading.
+   `/CETCOMPAT` only marks the image as CET Shadow Stack-compatible; the actual defense
+   against an attacker corrupting the instruction pointer inside a `CONTEXT` structure
+   passed to `NtContinue`/`RtlRestoreContext`/`SetThreadContext` - the documented reason
+   CET-aware binaries need this at all - comes from the EH Continuation (EHCONT) table
+   `/guard:ehcont` generates. A binary with no EHCONT data is treated by `NtContinue` as
+   legacy-compatible and allows *any* address inside it as a valid continuation target,
+   which defeats the purpose of claiming CET compatibility in the first place. This issue
+   (#106) originally proposed `/CETCOMPAT` alone; the pre-implementation review that
+   produced this ADR corrected that before implementation, not after.
+
+4. **`/guard:ehcont` requires `/Gy` (function-level linking / COMDATs) to link at all.**
+   Enabling `GuardEHContMetadata` without `FunctionLevelLinking` on code that uses C++
+   exceptions produces a hard linker failure (`LNK2046`/`LNK2047`: "module contains C++ EH
+   or complex EH metadata but was not compiled with /guard:ehcont"). `/Gy` is therefore
+   not optional polish alongside `/guard:ehcont` - it is a hard prerequisite, and is set
+   project-wide (point 1) rather than only on `x64`, since it has no known downside on
+   `ARM64` either.
+
+5. **`ControlFlowGuard` cannot be combined with `/ZI` (Edit and Continue), and this
+   codebase's Debug configuration used `/ZI` implicitly.** Enabling `/guard:cf` produced
+   an immediate, verified build failure: `cl : command line error D8016: '/ZI' and
+   '/guard:cf' command-line options are incompatible`. Neither project file nor the
+   shared props previously set `DebugInformationFormat` explicitly, so MSBuild's own
+   default for a `Debug` configuration (`EditAndContinue`, `/ZI`) was silently in effect.
+   `DebugInformationFormat` is now pinned to `ProgramDatabase` (`/Zi`) for every
+   configuration in the shared props, trading away in-IDE Edit and Continue for `Debug`
+   builds. This project has no CI (`#21` is open) and does not otherwise depend on Edit
+   and Continue; `/Zi`'s `.pdb` is what `vstest.console.exe` and `dumpbin` already
+   consume. This was found by actually building with the new flags, not by reading
+   documentation in isolation - the incompatibility is not mentioned on either flag's own
+   MS Learn reference page.
+
+6. **The shared `props/syncwingetlink.common.props` did not need to be narrowed to the
+   executable project.** #106's own text anticipated a risk that enabling
+   `/guard:ehcont`/`/Gy` project-wide might break `syncwingetlink.tests` (the MSTest DLL,
+   which links the prebuilt CppUnitTestFramework static library) with `LNK2046`/
+   `LNK2047`/`LNK4291`. In practice, all four configurations - including
+   `syncwingetlink.tests` - built and linked cleanly with every flag applied uniformly;
+   no fallback to executable-only scoping was necessary.
+
+### Verification
+
+Confirmed by an actual build and `dumpbin /headers /loadconfig` reading on this session's
+machine (`ADR-0001`'s verified environment: Visual Studio 18 Enterprise, toolset `v145`,
+MSVC 14.51.36231, Windows SDK 10.0.26100.0), not assumed from the flags' documentation
+alone:
+
+| Configuration | Guard CF instrumented | EH Continuation table present | CET compatible |
+|---|---|---|---|
+| `Debug\|x64` | yes | yes | yes |
+| `Release\|x64` | yes | yes | yes |
+| `Release\|x64` (`-p:StaticRuntime=true`) | yes | yes | yes, and `dumpbin /dependents` confirms no `MSVCP140.dll`/`VCRUNTIME140.dll` dependency |
+| `Debug\|ARM64` (cross-built, not run) | yes | no (x64-only, as designed) | no (x64-only, as designed) |
+| `Release\|ARM64` (cross-built, not run) | yes | no (x64-only, as designed) | no (x64-only, as designed) |
+
+`Debug|x64` and `Release|x64` each ran their full `vstest.console.exe` suite (386 tests)
+green after the change. `ARM64` was cross-built only, per `docs/adr.md` open item 3 - not
+executed on this x64 host.
+
+### Consequences
+
+- `props/syncwingetlink.common.props` gains `ControlFlowGuard`, `FunctionLevelLinking`,
+  `GuardEHContMetadata` (x64-only), `CETCompat` (x64-only), and an explicit
+  `DebugInformationFormat=ProgramDatabase` for every configuration.
+- Edit and Continue is no longer available for `Debug` builds in Visual Studio, in
+  exchange for `/guard:cf` working at all. Not expected to matter given this project's
+  build/test workflow (`msbuild` + `vstest.console.exe`, no CI yet).
+- `docs/TODO.md` M8 gains a checked hardening line pointing at #106 and this ADR.
+- #65 (the M8 pre-release) can cite this ADR and the table above as its hardening
+  evidence, rather than re-deriving it.
