@@ -62,7 +62,10 @@ $expected = (Select-String -Path SHA256SUMS.txt -Pattern "syncwingetlink-<versio
 $actual = (Get-FileHash syncwingetlink.exe -Algorithm SHA256).Hash
 if ($actual -ne $expected) { throw "Checksum mismatch - do not run this file." }
 
-# Move it somewhere on PATH, e.g.:
+# Move it somewhere on PATH, e.g. the Links folder winget itself uses (create it
+# first - an absent Links directory is a normal, common state, since it's the exact
+# condition this tool's own `fix` command exists to correct):
+New-Item -ItemType Directory -Force "$env:LOCALAPPDATA\Microsoft\WinGet\Links" | Out-Null
 Move-Item syncwingetlink.exe "$env:LOCALAPPDATA\Microsoft\WinGet\Links\"
 ```
 
@@ -116,10 +119,10 @@ confirm-per-item flow. Its real behavior, not just its intent:
   rejected at parse time with exit code 3, before anything is enumerated. `--tui` is only
   meaningful for an interactive `fix`; the other three all imply an unattended or
   non-interactive invocation.
-- **It falls back silently to the line-oriented CLI confirmation flow** - no TUI escape
-  sequence is ever emitted - when stdin and stdout aren't both a real, interactive
-  console, or when virtual-terminal processing isn't available (e.g. output is
-  redirected/piped). A warning is printed to stderr when this happens.
+- **It falls back to the line-oriented CLI confirmation flow** - no TUI escape sequence
+  is ever emitted, and a warning is printed to stderr - when stdin and stdout aren't
+  both a real, interactive console, or when virtual-terminal processing isn't available
+  (e.g. output is redirected/piped).
 - `--dry-run` and `--no-color` both remain compatible with `--tui`.
 
 ### Main options

@@ -2618,9 +2618,10 @@ documents; precedes #65, whose release notes point at this README.
     `runTestRule()`'s possible shapes (matched rule, unmatched-but-valid raw name,
     unmatched-and-invalid raw name).
   - New `--tui` subsection: its real parse-time conflicts (`scan`/`test-rule`/
-    `--json`/`--yes` → exit 3) and its silent fallback to the line-oriented
-    confirmation flow when the terminal lacks the required capability - documented
-    as implemented behavior, not a caveat that it's missing.
+    `--json`/`--yes` → exit 3) and its fallback to the line-oriented confirmation
+    flow (with a stderr warning, no TUI escape sequence emitted) when the
+    terminal lacks the required capability - documented as implemented
+    behavior, not a caveat that it's missing.
   - Option table: added the six missing options (`--packages-dir`, `--links-dir`,
     `--include`, `--exclude`, `--fail-on-missing`, `--no-color`) plus `--verbose`/
     `--quiet` (from #113), so it now lists everything `ArgParser` accepts, matching
@@ -2646,6 +2647,19 @@ documents; precedes #65, whose release notes point at this README.
   #63's resolved English-only decision when that issue's own PR landed - nothing
   further needed here.
 - No `*_ja.md` file was read or changed.
+
+### Fixes from PR review (GitHub Copilot, PR #126)
+
+- README.md/docs/PLAN.md/this file's `--tui` fallback wording said "falls back
+  silently" in the same sentence (or adjacent sentence) as "a warning is printed
+  to stderr" - an internal contradiction. Reworded in all three to say the
+  fallback prints a warning and emits no TUI escape sequence, without the word
+  "silently" doing double duty for two different, non-synonymous claims.
+- README.md's install example moved the downloaded executable straight into
+  `%LOCALAPPDATA%\Microsoft\WinGet\Links`, which may not exist (an absent Links
+  directory is the normal, common state `fix` itself exists to correct) - `Move-Item`
+  would fail on a fresh machine. Added `New-Item -ItemType Directory -Force` before
+  it, making the instructions copy/paste-safe.
 
 ### Verified
 

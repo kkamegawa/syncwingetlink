@@ -304,8 +304,8 @@ behavior - documented here rather than left as "run in interactive TUI mode", pe
   non-interactive invocation.
 - **Non-interactive fallback, no TUI escape sequence emitted**: if `console.stdinInteractive()`,
   `console.stdoutInteractive()`, or `console.vtEnabled()` is false, or the terminal
-  session otherwise fails to start, `cli::Dispatch` falls back silently to the existing
-  line-oriented confirmation flow, after printing one warning line to stderr.
+  session otherwise fails to start, `cli::Dispatch` prints one warning line to stderr
+  and falls back to the existing line-oriented confirmation flow.
 - `--dry-run` and `--no-color` both remain compatible with `--tui`.
 
 ### `--verbose` / `--quiet` (log level)
