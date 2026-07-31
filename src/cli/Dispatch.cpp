@@ -201,15 +201,31 @@ void reportVerboseDiagnostics(const AppOptions& options, Console& console,
         return;
     }
 
-    const std::filesystem::path packagesDirectory =
-        paths::getPackagesDirectory(options.packagesDirectory);
-
     console.writeLine(std::format(L"verbose: effective Links directory: {}",
                                   sanitizeForDisplay(linksDirectory.native())),
                       ConsoleStream::Error, MessageImportance::Diagnostic);
-    console.writeLine(std::format(L"verbose: effective Packages directory: {}",
-                                  sanitizeForDisplay(packagesDirectory.native())),
-                      ConsoleStream::Error, MessageImportance::Diagnostic);
+
+    // Unlike linksDirectory above (already resolved unconditionally by the caller for
+    // every command, verbose or not), resolving the Packages directory here is new work
+    // this function alone introduces: --source com never otherwise calls
+    // paths::getPackagesDirectory(), so a bare, unguarded call would add a failure mode
+    // (SHGetKnownFolderPath, inside getLocalAppDataDirectory()) that only exists when
+    // --verbose happens to be on. Diagnostics must be best-effort and must never turn an
+    // otherwise-successful scan/fix into a failure, so this is caught and reported
+    // rather than left to propagate.
+    try
+    {
+        const std::filesystem::path packagesDirectory =
+            paths::getPackagesDirectory(options.packagesDirectory);
+        console.writeLine(std::format(L"verbose: effective Packages directory: {}",
+                                      sanitizeForDisplay(packagesDirectory.native())),
+                          ConsoleStream::Error, MessageImportance::Diagnostic);
+    }
+    catch (const std::exception&)
+    {
+        console.writeLine(L"verbose: effective Packages directory: could not be determined",
+                          ConsoleStream::Error, MessageImportance::Diagnostic);
+    }
 
     std::wstring sourceReport;
     switch (options.source)
@@ -234,6 +250,13 @@ void reportVerboseDiagnostics(const AppOptions& options, Console& console,
     // without modifying selectRuleSet()'s interface to expose which tier it picked - the
     // same "build the report from information already available, not a new API surface"
     // approach design decision 2 uses for the package source above.
+    //
+    // paths::getUserRulesFilePath() (via getLocalAppDataDirectory()/SHGetKnownFolderPath)
+    // can throw; the caller (buildRepairCandidates()) currently only reaches this "no
+    // --rules" branch after selectRuleSet() has already called the same function without
+    // throwing, but this function must not rely on that ordering to stay safe - a
+    // best-effort diagnostic must never turn an otherwise-successful scan/fix into a
+    // failure, regardless of what else does or doesn't call the same path first.
     std::wstring ruleSourceReport;
     if (options.rulesPath.has_value())
     {
@@ -241,11 +264,18 @@ void reportVerboseDiagnostics(const AppOptions& options, Console& console,
     }
     else
     {
-        std::error_code existsError;
-        const bool userFileExists =
-            std::filesystem::exists(paths::getUserRulesFilePath(), existsError);
-        ruleSourceReport =
-            (!existsError && userFileExists) ? L"user rules file" : L"embedded defaults";
+        try
+        {
+            std::error_code existsError;
+            const bool userFileExists =
+                std::filesystem::exists(paths::getUserRulesFilePath(), existsError);
+            ruleSourceReport =
+                (!existsError && userFileExists) ? L"user rules file" : L"embedded defaults";
+        }
+        catch (const std::exception&)
+        {
+            ruleSourceReport = L"could not be determined";
+        }
     }
     console.writeLine(std::format(L"verbose: rule source - {}", ruleSourceReport),
                       ConsoleStream::Error, MessageImportance::Diagnostic);

@@ -561,6 +561,22 @@ executed on this x64 host.
    `ArgParser::handleOption()` already assigns `options.logLevel` directly on each
    occurrence, so a later flag naturally overwrites an earlier one - the same behavior
    every other repeatable option (`--source`) already has. Tests cover both orders.
+7. **`reportVerboseDiagnostics()`'s two Win32-backed lookups are individually
+   try/catch-guarded, not left to propagate.** `paths::getPackagesDirectory()` (via
+   `getLocalAppDataDirectory()`/`SHGetKnownFolderPath`) and, in the "no `--rules`"
+   branch, `paths::getUserRulesFilePath()` (same underlying call) can both throw. Found
+   during review: `--source com` never otherwise calls `getPackagesDirectory()` - only
+   the filesystem source's own construction does, and `createPackageSource()` skips that
+   entirely for `--source com` - so an unguarded call here would have added a failure
+   mode that only exists because `--verbose` happened to be on, turning an
+   otherwise-successful `--source com --verbose` run into a failure. Diagnostics must be
+   best-effort; each lookup is now its own `try`/`catch (const std::exception&)`,
+   reporting "could not be determined" on failure rather than aborting the whole report
+   (or worse, the whole command). The rule-source lookup is guarded for the same reason
+   even though the current call order in `buildRepairCandidates()` (which calls
+   `selectRuleSet()`, itself calling the same function, before `reportVerboseDiagnostics()`)
+   happens to make it unreachable today - relying on that ordering elsewhere in the file
+   to keep this function safe was judged too fragile to leave as the only safeguard.
 
 ### Verification
 

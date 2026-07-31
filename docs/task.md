@@ -2319,6 +2319,20 @@ advertised, but never read by anything - `docs/task.md`'s M8 review entry above)
 - `README.md`/`--help` were not touched - `--verbose`/`--quiet` were already
   advertised there with correct summary text; #64 owns any further wording pass.
 
+### A bug found and fixed by PR review (GitHub Copilot, PR #120)
+
+`reportVerboseDiagnostics()`'s original implementation called
+`paths::getPackagesDirectory()` (and, in the "no `--rules`" branch,
+`paths::getUserRulesFilePath()`) unguarded - both can throw via
+`getLocalAppDataDirectory()`/`SHGetKnownFolderPath`. `--source com` never otherwise
+touches the Packages directory at all, so an unguarded call here added a failure mode
+that existed only because `--verbose` happened to be on - a `--verbose --source com`
+invocation could fail where the identical invocation without `--verbose` would have
+succeeded. Fixed by wrapping each lookup in its own `try`/`catch (const std::exception&)`,
+reporting "could not be determined" on failure instead of letting it propagate.
+Diagnostics must be best-effort and must never turn an otherwise-successful `scan`/`fix`
+into a failure - see the added point 7 in ADR-0030 (`docs/adr-phase-6.md`).
+
 ### Verified
 
 - `Debug|x64`, `Release|x64`, `Debug|ARM64`, `Release|ARM64`: all four build clean at
