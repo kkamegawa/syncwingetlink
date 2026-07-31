@@ -409,6 +409,19 @@ RepairItem inspectLink(PackageExe executable, std::wstring alias,
                            std::move(executable), std::move(alias), linkPath);
     }
 
+    if ((attributes & FILE_ATTRIBUTE_DIRECTORY) != 0)
+    {
+        // A directory reparse point - a junction or a *directory* symbolic link - can
+        // never be the file symbolic link this tool manages, so it is classified
+        // without decoding its target. Decoding a directory symlink would report
+        // SymbolicLink and, with a missing target, Broken - and repairing Broken
+        // deletes with DeleteFileW, which cannot remove a directory entry (it needs
+        // RemoveDirectoryW) and would surface as a misleading access-denied failure.
+        return classifyLink(LinkObservation{LinkEntryKind::OtherReparsePoint, std::nullopt,
+                                            TargetRelation::NotApplicable},
+                           std::move(executable), std::move(alias), linkPath);
+    }
+
     const std::optional<std::filesystem::path> decodedTarget =
         readSymbolicLinkTarget(linkPath);
     if (!decodedTarget.has_value())
