@@ -16,14 +16,47 @@
       <TreatAngleIncludeAsExternal>true</TreatAngleIncludeAsExternal>
       <ExternalWarningLevel>TurnOffAllWarnings</ExternalWarningLevel>
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
-      <PreprocessorDefinitions>UNICODE;_UNICODE;WIN32_LEAN_AND_MEAN;NOMINMAX;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <!-- SYNCWINGETLINK_VER_MAJOR/MINOR/PATCH (issue #118, docs/adr-phase-6.md
+           ADR-0032): the single source src/cli/Version.h's kVersion derives from,
+           via Directory.Build.props's ProductVersion property. Defined project-wide
+           (core/exe/tests all include Version.h), not just on the executable. -->
+      <PreprocessorDefinitions>UNICODE;_UNICODE;WIN32_LEAN_AND_MEAN;NOMINMAX;SYNCWINGETLINK_VER_MAJOR=$(ProductVersionMajor);SYNCWINGETLINK_VER_MINOR=$(ProductVersionMinor);SYNCWINGETLINK_VER_PATCH=$(ProductVersionPatch);%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <RuntimeLibrary Condition="'$(StaticRuntime)' == 'true' and '$(Configuration)' == 'Debug'">MultiThreadedDebug</RuntimeLibrary>
       <RuntimeLibrary Condition="'$(StaticRuntime)' == 'true' and '$(Configuration)' == 'Release'">MultiThreaded</RuntimeLibrary>
       <RuntimeLibrary Condition="'$(StaticRuntime)' != 'true' and '$(Configuration)' == 'Debug'">MultiThreadedDebugDLL</RuntimeLibrary>
       <RuntimeLibrary Condition="'$(StaticRuntime)' != 'true' and '$(Configuration)' == 'Release'">MultiThreadedDLL</RuntimeLibrary>
+      <!-- Release-binary hardening (issue #106, docs/adr-phase-6.md ADR-0029):
+           - ControlFlowGuard/FunctionLevelLinking apply to every configuration and
+             platform (x64 and ARM64) - both are free of known compatibility issues for
+             this pure Win32/C++/WinRT codebase.
+           - GuardEHContMetadata (/guard:ehcont) is 64-bit-process-only per Microsoft's
+             own reference and must not reach ARM64. It requires FunctionLevelLinking
+             (/Gy) so the compiler can attribute SEH sections to COMDATs; without /Gy the
+             linker fails hard (LNK2046/LNK2047) the moment a binary using C++ exceptions
+             is linked with /guard:ehcont.
+           - /guard:cf and /ZI (Edit and Continue) cannot be combined (cl : error
+             D8016 when both are on the command line) - confirmed by an actual build,
+             not assumed. MSBuild's implicit default DebugInformationFormat for a Debug
+             configuration is EditAndContinue (/ZI). DebugInformationFormat is pinned to
+             ProgramDatabase (/Zi) below for every configuration so /guard:cf can be
+             enabled uniformly; this trades away in-IDE Edit and Continue for Debug
+             builds, which this repo does not otherwise rely on (there is no CI, and
+             /Zi's .pdb is what vstest.console.exe / dumpbin already need). -->
+      <ControlFlowGuard>Guard</ControlFlowGuard>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <GuardEHContMetadata Condition="'$(Platform)' == 'x64'">true</GuardEHContMetadata>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
     </ClCompile>
     <Link>
       <GenerateDebugInformation>true</GenerateDebugInformation>
+      <!-- /CETCOMPAT (CET shadow-stack compatible) is an x64-only linker flag per
+           Microsoft's reference and must not reach ARM64. It only sets the image's
+           CET-compatible bit; the EH Continuation table GuardEHContMetadata above
+           generates is what actually lets NtContinue/RtlRestoreContext validate an
+           instruction pointer supplied for SEH unwinding once a shadow stack is
+           active - shipping CETCompat alone, without GuardEHContMetadata, would mark
+           the binary CET-compatible while leaving that unwind path unguarded. -->
+      <CETCompat Condition="'$(Platform)' == 'x64'">true</CETCompat>
     </Link>
   </ItemDefinitionGroup>
 </Project>

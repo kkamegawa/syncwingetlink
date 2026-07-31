@@ -2161,3 +2161,563 @@ matching the M4/M5/M6 delivery pattern. `docs/TODO.md`, `docs/PLAN.md`,
 `docs/adr-phase-6.md` (ADR-0026 through ADR-0028), and the Wiki plan agree. Merging is
 left to the repository maintainer, per session agreement; #9 itself remains open until
 all three sub-issues are merged and closed.
+
+## 2026-07-31 — M8 pre-implementation review: issue/Wiki corrections (issues #10, #61, #62, #63, #64, #65, #106, #113; new issue #118)
+
+**Trigger**: asked to review issue #10 (M8: Quality, polish, and release) and its Wiki
+plan against current Win32/Windows behavior and this project's past technical
+decisions before starting implementation, and to fix the issue tracker and Wiki
+accordingly before writing any code.
+
+### Findings
+
+Issue #10 and the Wiki page `plan/syncwingetlink/m8-quality-polish-and-release` were
+written while M7 (#9, #58-#60) was still unmerged. M7 has since merged and closed in
+full - `src/tui/` exists, and `docs/PLAN.md` §11's `--tui` line is already checked,
+backed by ADR-0026/0027/0028 (`docs/adr-phase-6.md`). Re-reading the M8 issues against
+that reality, and checking #106 against current MSVC documentation, surfaced:
+
+1. #10's "M7 is not a blocker"/"`src/tui/` does not exist" framing, and #65's
+   `--tui`-missing pre-release rationale, were both obsolete.
+2. #64's instruction to remove `src/tui/` from `AGENTS.md` §3 would have made the
+   documentation wrong in the opposite direction - that path is real.
+3. M7's three sub-issues already hold ADR-0026/0027/0028; #63 (ADR-0027) and #65
+   (ADR-0028) both collided with that reservation.
+4. `--tui`'s real, implemented behavior (parse-time conflicts with
+   `scan`/`test-rule`/`--json`/`--yes`, exit 3; silent fallback when the terminal
+   lacks capability) is undocumented in `--help`/`docs/PLAN.md` §8/`README.md` - a gap
+   no sub-issue owned.
+5. #106 named only `/guard:cf`/`/CETCOMPAT`. Microsoft's own `/guard:ehcont` reference
+   documents that `/CETCOMPAT` alone does not protect the SEH-unwind path CET is meant
+   to protect, and that `/guard:ehcont` requires `/Gy` or the linker fails hard on code
+   using C++ exceptions - neither was in #106's acceptance criteria.
+6. #62's `\uXXXX`-escape instruction is ill-formed for the non-BMP literal it asks for;
+   a surrogate-range universal-character-name is invalid C++. `\UXXXXXXXX` (8-digit) is
+   the correct form.
+7. #62 did not address that `CompareStringOrdinal`'s case folding and NTFS's own
+   `$UpCase` table are not guaranteed identical, or that `Paths::toExtendedLengthPath`
+   has two different code paths (already-absolute vs. relative) that both need
+   round-trip coverage.
+8. #113's "wire `logLevel` into `Console`" had no concrete design: `Console::writeLine`
+   has no importance concept, `AutoPackageSource::resolvedSource()` is unreachable from
+   `createPackageSource()`'s return type, and Verbose's output stream/`--verbose
+   --quiet` precedence were both unstated.
+9. The shipped executable has no `VS_VERSION_INFO` resource; `kVersion`/
+   `app.manifest`/the release tag are three hand-synchronized literals with nothing to
+   catch drift - a gap no existing sub-issue owned.
+
+### Completed
+
+- Issues #10, #106, #113, #63, #61, #62, #64, #65 edited in place with revision notes
+  and corrected acceptance criteria per finding above.
+- New issue #118 ("M8: Add a `VS_VERSION_INFO` resource and a single version source")
+  created and linked as a sub-issue of #10, prerequisite of #65.
+- ADR numbering corrected across all M8 issues: #106 -> ADR-0029, #113 -> ADR-0030,
+  #63 -> ADR-0031, #118 -> ADR-0032, #65 -> ADR-0033 (M7 retains ADR-0026-0028).
+- Wiki page `plan/syncwingetlink/m8-quality-polish-and-release` rewritten to match:
+  M7-complete framing, the corrected ADR table, `#106` reordered first in the delivery
+  sequence (independent, and #65's stated prerequisite), `--tui` documentation gap
+  assigned to #64, and #118 added to the sequence and stack.
+- The eight sub-issues (#106, #113, #63, #61, #62, #118, #64, #65) planned as one
+  linear `gh stack` of PRs, `#106` first.
+
+### Verified
+
+- No code was changed in this entry - documentation and issue-tracker corrections
+  only, verified by re-reading each edited issue and the pushed Wiki page.
+
+## 2026-07-31 — M8: harden the release binary (issue #106)
+
+**Trigger**: first implementation layer of the corrected M8 stack (see the
+pre-implementation review above). Bottom of the stack: independent of every other M8
+sub-issue and the prerequisite #65 itself names.
+
+### Completed
+
+- `props/syncwingetlink.common.props`: added `ControlFlowGuard=Guard` and
+  `FunctionLevelLinking=true` for every configuration/platform;
+  `GuardEHContMetadata=true` and `CETCompat=true` scoped to `'$(Platform)' == 'x64'`
+  only, per Microsoft's own architecture restriction for both flags.
+- Found by an actual build, not assumed: `/guard:cf` and the implicit Debug-config
+  default `/ZI` (Edit and Continue) are mutually exclusive (`cl` error D8016).
+  `DebugInformationFormat` is now pinned to `ProgramDatabase` for every configuration.
+- `docs/adr-phase-6.md` gains **ADR-0029**, recording all of the above plus why
+  `/CETCOMPAT` alone would not have protected the SEH-unwind path CET is meant to
+  protect (the reason `/guard:ehcont` is a required criterion, not optional polish).
+- `docs/TODO.md` M8 gains a checked hardening line pointing at #106/ADR-0029.
+
+### Deliberately not done
+
+- The shared-props risk #106 anticipated (breaking `syncwingetlink.tests`'s link
+  against CppUnitTestFramework) did not materialize - all three projects, in every
+  configuration, linked cleanly with every flag applied project-wide. No fallback to
+  executable-only scoping was needed.
+- `docs/PLAN.md`/`README.md`/`AGENTS.md` were not touched - this is build
+  configuration, not CLI-observable behavior or documented layout, and is #64's scope
+  if anything there needs to change.
+
+### Verified
+
+- `Debug|x64`, `Release|x64`, `Debug|ARM64`, `Release|ARM64`: all four build clean at
+  `/W4 /WX`, no new warnings, including `syncwingetlink.tests.vcxproj`.
+- `vstest.console.exe /Platform:x64`: 386/386 passed in both `Debug|x64` and
+  `Release|x64` (unchanged from before this issue - no test behavior changed).
+- `dumpbin /headers /loadconfig`, read directly rather than inferred from a clean
+  build alone:
+  - `Debug|x64`, `Release|x64`: Guard CF instrumented, EH Continuation table present,
+    CET compatible - all three.
+  - `Release|x64 -p:StaticRuntime=true`: same three flags present, and
+    `dumpbin /dependents` confirms no `MSVCP140.dll`/`VCRUNTIME140.dll` dependency.
+  - `Debug|ARM64`, `Release|ARM64` (cross-built, not run, per `docs/adr.md` open
+    item 3): Guard CF instrumented; EH Continuation table and CET compatibility
+    correctly **absent**, matching the x64-only scoping above.
+- No dependency added. No `*_ja.md` file was read or changed.
+
+## 2026-07-31 — M8: wire up --verbose/--quiet (issue #113)
+
+**Trigger**: second layer of the M8 stack, on top of #106's branch. Resolves the
+`--verbose`/`--quiet` divergence the M8 pre-implementation review recorded (parsed and
+advertised, but never read by anything - `docs/task.md`'s M8 review entry above).
+
+### Completed
+
+- `src/cli/Console.h`/`.cpp`: added `MessageImportance { Supplementary, Normal,
+  Diagnostic }`; `Console` now holds the active `LogLevel` and `writeLine()` takes a
+  defaulted `importance` parameter, gating emission via a new private `shouldEmit()`.
+  Both constructors gained a trailing defaulted `LogLevel logLevel = LogLevel::Normal`
+  parameter - no existing call site needed to change.
+- `src/cli/Dispatch.cpp`: `Console` is now constructed with `options.logLevel`.
+  `printScanItem()` marks `LinkStatus::Ok` lines `Supplementary` (Missing/Broken/Mismatch
+  stay `Normal` - always shown). `printBatchSummary()`'s three lines and `fix`'s
+  per-item progress line are `Supplementary`. A new `reportVerboseDiagnostics()`,
+  called once from `buildRepairCandidates()`, emits three `Diagnostic`-importance
+  stderr lines when `--verbose` is active: the resolved effective Links/Packages
+  directories, the package source actually used (requested vs. used, including a
+  COM→FS `auto` degrade - built from `options.source` plus a flag the existing
+  `onDegrade` callback now also sets, not a downcast on `AutoPackageSource`), and which
+  rule tier was selected (mirrors `RuleSetSelector.cpp`'s own priority via a local
+  `std::filesystem::exists()` check rather than changing `selectRuleSet()`'s interface).
+- `docs/adr-phase-6.md` gains **ADR-0030**, including the decision to make the three
+  log levels a monotonic chain (`Quiet` ⊂ `Normal` ⊂ `Verbose`) rather than treating
+  `Diagnostic` as independently gated from `Supplementary` - unobservable in production
+  either way, since `Diagnostic` lines are only ever produced while `Verbose` is active.
+- `docs/PLAN.md` §8 gains a `--verbose`/`--quiet` subsection: the log-level table, what
+  `Supplementary`/`Diagnostic` cover, and the last-wins rule for repeating the flags.
+- `docs/TODO.md` M8 gains a checked `--verbose`/`--quiet` line pointing at #113/ADR-0030.
+- Tests: `tests/ConsoleTests.cpp` gained `MessageImportanceTests` (all nine
+  `(LogLevel, MessageImportance)` combinations, the pre-#113 constructor's Normal
+  default, and quiet-never-suppresses-Error-stream-Normal-lines).
+  `tests/ArgParserTests.cpp` gained `verboseThenQuietIsLastWins`/
+  `quietThenVerboseIsLastWins`.
+
+### Deliberately not done
+
+- `cli::Dispatch`'s own helpers (`buildRepairCandidates`, `reportVerboseDiagnostics`,
+  `printScanItem`, `printBatchSummary`) are file-local and not unit-tested directly -
+  consistent with `DispatchTests.cpp`'s existing header comment on why `cli::run()`
+  itself is verified by hand, not mocked.
+- `README.md`/`--help` were not touched - `--verbose`/`--quiet` were already
+  advertised there with correct summary text; #64 owns any further wording pass.
+
+### A bug found and fixed by PR review (GitHub Copilot, PR #120)
+
+`reportVerboseDiagnostics()`'s original implementation called
+`paths::getPackagesDirectory()` (and, in the "no `--rules`" branch,
+`paths::getUserRulesFilePath()`) unguarded - both can throw via
+`getLocalAppDataDirectory()`/`SHGetKnownFolderPath`. `--source com` never otherwise
+touches the Packages directory at all, so an unguarded call here added a failure mode
+that existed only because `--verbose` happened to be on - a `--verbose --source com`
+invocation could fail where the identical invocation without `--verbose` would have
+succeeded. Fixed by wrapping each lookup in its own `try`/`catch (const std::exception&)`,
+reporting "could not be determined" on failure instead of letting it propagate.
+Diagnostics must be best-effort and must never turn an otherwise-successful `scan`/`fix`
+into a failure - see the added point 7 in ADR-0030 (`docs/adr-phase-6.md`).
+
+### Verified
+
+- `Debug|x64`, `Release|x64`, `Debug|ARM64`, `Release|ARM64`: all four build clean at
+  `/W4 /WX`, no new warnings.
+- `vstest.console.exe /Platform:x64`: 393/393 passed in both `Debug|x64` and
+  `Release|x64` (up from 386 - 7 new tests added by this issue).
+- No dependency added. No `*_ja.md` file was read or changed.
+
+## 2026-07-31 — M8: decide the diagnostic localization policy (issue #63)
+
+**Trigger**: third layer of the M8 stack, on top of #113's branch. No code change - a
+documentation/decision record only, per the issue's own acceptance criteria.
+
+### Completed
+
+- `docs/adr-phase-6.md` gains **ADR-0031**: diagnostics (warnings, errors, `--help`
+  text) are English-only for the first release; Japanese is served by documentation
+  (`README_ja.md`, `docs/*_ja.md`) rather than a runtime message lookup. Records why
+  this is consistent with the existing codebase (every diagnostic string in `src/` is
+  already English, no message table/resource/MUI exists) rather than a new
+  restriction, the reasoning (scripts key off exit codes/`--json`, not message text;
+  no localization infrastructure exists; a half-translated set is worse than a
+  consistent one), and what would have to change to revisit it (a message-table/MUI
+  layer plus a language-selection mechanism, not scattered translated literals).
+  Explicitly carves out non-ASCII **data** (paths, file names) as unaffected and out
+  of this ADR's scope - that is #62's job.
+- `AGENTS.md` §5 gains a one-sentence diagnostic-language rule citing ADR-0031.
+- `README.md` gains a one-sentence note next to the existing `README_ja.md` pointer.
+- `docs/TODO.md` M8's diagnostic-localization line is rewritten from "decide
+  English/Japanese" to the resolved English-only decision, pointing at #63/ADR-0031.
+
+### Deliberately not done
+
+- No source file was touched - this issue is a policy decision, not an
+  implementation. `docs/PLAN.md` was not changed either; the CLI's option semantics
+  are unaffected by this decision.
+
+### Verified
+
+- No build/test run needed - no code changed. `docs/TODO.md`'s M8 checklist,
+  `AGENTS.md`, and `README.md` were read back to confirm they agree with the recorded
+  decision.
+- No dependency added. No `*_ja.md` file was read or changed.
+
+## 2026-07-31 — M8: scan-fix-rescan integration coverage (issue #61)
+
+**Trigger**: fourth layer of the M8 stack, on top of #63's branch. Proves end to end
+that a dummy `Packages`/`Links` tree reaches `Ok` by driving the real dispatch path,
+rather than re-implementing scan/fix's logic in the test.
+
+### Completed
+
+- New `tests/IntegrationTests.cpp`, registered in both
+  `tests/syncwingetlink.tests.vcxproj` and its `.vcxproj.filters`. Builds a dummy
+  `Packages\SyncTestTool_test\synctesttool.exe` tree with the existing
+  `tests::TempDirectory` helpers (no new temp-tree utility introduced) and an
+  empty-ruleset `--rules` fixture (`{"version": 1, "rules": []}`), so alias resolution
+  always falls through to the raw file name - independent of both the embedded
+  defaults and whatever real user `rules.json` happens to exist on the host running
+  the test.
+- Drives `cli::run()` three times with `--source fs` and explicit
+  `--packages-dir`/`--links-dir`, never touching real COM or the real `%LOCALAPPDATA%`:
+  `scan --fail-on-missing` (expects `ExitCode::FixNeeded`), `fix --yes` (expects
+  `ExitCode::Success`, or logs-and-skips on `ExitCode::InsufficientPermission` per
+  ADR-0016), then the same `scan --fail-on-missing` again (expects
+  `ExitCode::Success`). Also asserts on filesystem state directly: the link is absent
+  before `fix`, then present and a real reparse point (`isReparsePoint()`) after.
+- `docs/TODO.md` M8 gains a checked integration-test line pointing at #61.
+
+### Deliberately not done
+
+- **Output text is not asserted.** `cli::run()` (`src/cli/Dispatch.h`) constructs its
+  own production `Console` with no way to inject `ConsoleOperations`, so this test
+  reads exit codes and filesystem state only. Changing `run()`'s signature to make
+  output assertable would be a design change needing its own ADR; output-level
+  assertions belong at the `Console` level, where `tests/ConsoleTests.cpp` already has
+  that seam.
+- **VT-mode and process-global Ctrl+C state are not asserted or worked around.** The
+  production `Console` still probes/toggles stdout's VT mode for whatever real console
+  this test process is attached to (harmless and unobserved under
+  `vstest.console.exe`), and `runFix()` still registers a process-wide Ctrl+C handler
+  and mutates a process-wide `std::atomic<bool>` for the duration of each `fix` call.
+  In practice this test ran host-side without any parallelism issue, but it is not
+  provably safe to run concurrently, in the same process, against another
+  `fix`-invoking test - noted here rather than solved, per the issue's own guidance.
+- This host lacks Developer Mode/elevation (consistent with every other symlink-backed
+  test in this suite), so the `fix` step exercised the log-and-skip path, not real
+  symlink creation - noted rather than hidden.
+
+### Verified
+
+- `Debug|x64`, `Release|x64`, `Debug|ARM64`, `Release|ARM64`: all four build clean at
+  `/W4 /WX`, no new warnings.
+- `vstest.console.exe /Platform:x64`: 394/394 passed in both `Debug|x64` and
+  `Release|x64` (up from 393 - one new test class added by this issue).
+- No dependency added. No `*_ja.md` file was read or changed.
+
+## 2026-07-31 — M8: verify non-ASCII path handling (issue #62)
+
+**Trigger**: fifth layer of the M8 stack, on top of #61's branch, extending its
+integration harness. Current coverage was zero - no wide string literal anywhere
+under `tests/` contained a non-ASCII character before this issue.
+
+### Completed
+
+- A shared fixture, used across every file this issue touches: Japanese katakana
+  (`テストツール`, no case distinction at all) combined with
+  U+1F600 GRINNING FACE (`\U0001F600`, non-BMP, also no case distinction -
+  deliberately chosen to sidestep any mismatch between
+  `Dispatch.cpp`'s `CompareStringOrdinal`-based comparisons and NTFS's own `$UpCase`
+  case-folding table, which are not guaranteed to agree for a case-sensitive
+  script). Every test source uses `\uXXXX`/`\UXXXXXXXX` escapes exclusively - no raw
+  non-ASCII bytes in any file, verified with a byte-level check (`grep`'s own
+  Unicode-aware output was not trustworthy for this - a byte-range check catches
+  what it can silently normalize away).
+- `tests/SmokeTests.cpp`: two new `Paths` round-trip tests -
+  `extendedLengthPrefixRoundTripsNonAsciiAbsolutePath` (the pure-lexical branch) and
+  `...NonAsciiRelativePath` (the `std::filesystem::absolute()`/`GetFullPathNameW`
+  branch) - covering both code paths `toExtendedLengthPath` can take, per the
+  issue's own finding that a round-trip test exercising only one branch does not
+  prove the other preserves non-ASCII characters.
+- `tests/ExecutableScannerTests.cpp`: `nonAsciiNestedExecutableIsCollected` - the
+  fixture nested under a non-ASCII directory is enumerated and its path preserved
+  exactly.
+- `tests/LinkInspectorTests.cpp`: new `NonAsciiInspectLinkTests` class -
+  `nonAsciiRegularFileIsMismatch` (unconditional), `nonAsciiHealthySymbolicLinkIsOk`
+  and `nonAsciiBrokenSymbolicLinkIsBroken` (real symlink creation, log-and-skip per
+  ADR-0016 where privilege is unavailable) - through the real, filesystem-backed
+  `inspectLink()`.
+- `tests/ConsoleTests.cpp`: new `NonAsciiDisplayTests` class. `Console::writeLine()`
+  computes `sanitizeForDisplay(text) + L"\n"` once and hands it to
+  `ConsoleOperations::write` - the `WriteConsoleW`-vs-`WriteFile`(UTF-8) branch (the
+  "real console" vs "redirected" distinction the issue asks to cover) lives entirely
+  inside the production `makeProductionConsoleOperations()` implementation, which is
+  not part of the mockable seam. Two tests prove what the seam *can* prove - Console
+  hands the identical, uncorrupted wide fixture text through regardless of whether
+  `isConsole` reports true or false; a third test calls
+  `WideCharToMultiByte(CP_UTF8, ...)` directly on the same fixture and asserts the
+  exact UTF-8 byte sequence, since that is the actual Win32 API the redirected
+  path's private `toUtf8()` also calls.
+- `tests/JsonTests.cpp`: `nonBmpFixtureNameEncodesPerAdr0022SurrogatePolicy` -
+  exercises the same U+1F600 policy the pre-existing
+  `validSurrogatePairEncodesAsOneCodepoint` test already covered (built with a
+  manually-constructed surrogate pair), but spelled with the compiler-generated
+  `\U0001F600` escape and combined with the Japanese fixture text, catching a
+  different bug class (a compiler mis-encoding the escape into the wide literal).
+- `tests/IntegrationTests.cpp`: new `NonAsciiScanFixRescanIntegrationTests` class,
+  reusing `ScanFixRescanIntegrationTests`' `writeEmptyRulesFile()`/`buildArgs()`
+  helpers - the same `scan`→`fix`→`scan` round trip as #61, but with the non-ASCII
+  fixture tree, through the real `cli::run()` dispatch path. Same output-text/
+  VT-mode/process-global-Ctrl+C-state caveats as #61 apply.
+- `docs/TODO.md` M8 gains a checked non-ASCII line pointing at #62.
+
+### A bug found and fixed during this issue's own verification
+
+The first draft of `NonAsciiScanFixRescanIntegrationTests` built its dummy
+executable at `temp.path() / directoryName / fileName`, omitting the `Packages\`
+prefix the harness's `--packages-dir` actually points at (unlike the ASCII
+`ScanFixRescanIntegrationTests`, which used `LR"(Packages\SyncTestTool_test\...)"`
+literally). The scan step silently found zero packages and returned `Success`
+instead of the expected `FixNeeded`, caught by running the test rather than assumed
+correct from a clean build. Fixed by building the path as
+`std::filesystem::path(L"Packages") / directoryName / fileName`.
+
+### Deliberately not done
+
+- Display is not verified against a genuine attached console (`WriteConsoleW`) or an
+  actually-redirected process stdout (`WriteFile`) - only against the
+  `ConsoleOperations` mock seam plus a direct, isolated `WideCharToMultiByte` call on
+  the fixture text. `Console.cpp`'s `toUtf8()`/`writeConsoleChunked()`/
+  `writeFileChunked()` are file-local and not directly testable without either
+  changing `Console`'s public interface (out of scope for this issue) or running
+  under a real, unpredictable terminal/pipe setup vstest.console.exe does not
+  guarantee. Documented here rather than silently assumed equivalent.
+- `JsonTests.cpp`'s pre-existing surrogate tests already covered the U+1F600
+  encoding policy; this issue's new test adds the escape-literal-form and
+  fixture-name coverage rather than duplicating what already existed.
+
+### Verified
+
+- `Debug|x64`, `Release|x64`, `Debug|ARM64`, `Release|ARM64`: all four build clean at
+  `/W4 /WX`, no new warnings.
+- `vstest.console.exe /Platform:x64`: 405/405 passed in both `Debug|x64` and
+  `Release|x64` (up from 394 - 11 new tests added by this issue).
+- No dependency added. No `*_ja.md` file was read or changed.
+
+## 2026-08-01 — M8: VS_VERSION_INFO resource and a single version source (issue #118)
+
+**Trigger**: sixth layer of the M8 stack, on top of #62's branch. Independent of
+#106/#113/#63/#61/#62; prerequisite of #65, whose manual tag/`kVersion`/manifest
+checklist step this backs up with a mechanical check.
+
+### Completed
+
+- `Directory.Build.props`: new `ProductVersion` property (`"0.1.0"`, following the
+  `StaticRuntime` Condition-defaulted precedent) plus three derived properties
+  (`ProductVersionMajor`/`Minor`/`Patch`, via `$(ProductVersion.Split('.')[N])`).
+- `props/syncwingetlink.common.props`: `SYNCWINGETLINK_VER_MAJOR`/`MINOR`/`PATCH`
+  added to the shared, project-wide `ClCompile` preprocessor definitions (`core`,
+  the executable, and `tests` all compile `Version.h`).
+- `src/cli/Version.h`: `kVersion` is now generated from those three macros via a
+  stringize-and-widen chain (`#undef`-ed at the end of the header), not a
+  hand-written literal. Value unchanged (`"0.1.0"`) - `DispatchTests.cpp`'s
+  pre-existing `VersionTests` needed no change.
+- New `src/syncwingetlink.rc` (executable project only, registered in
+  `syncwingetlink.vcxproj`/`.filters`): a `1 VERSIONINFO` resource with
+  `FILEVERSION`/`PRODUCTVERSION` from the same three macros (fed via a
+  `ResourceCompile` `PreprocessorDefinitions` entry sourced from the same
+  properties), `FileDescription`/`ProductName`/`LegalCopyright`/`OriginalFilename`
+  populated, and the version string built with the same stringize trick rather
+  than a second literal.
+- `syncwingetlink.vcxproj`: new `VerifyManifestVersionMatchesProductVersion`
+  target (`BeforeTargets="Build"`) - reads `app.manifest`'s text, extracts its
+  `assemblyIdentity` version via a regex anchored to start after the literal
+  `assemblyIdentity`, and fails the build with `<Error>` if it does not equal
+  `$(ProductVersion).0`.
+- `docs/adr-phase-6.md` gains **ADR-0032**, including why a build-time MSBuild
+  target was chosen over an MSTest case (a test would need fragile runtime
+  relative-path reasoning to locate `app.manifest`; a build-time check needs none
+  and fails earlier).
+- `docs/TODO.md` M8 gains a checked version-resource line pointing at #118/ADR-0032.
+
+### A bug found and fixed during this issue's own verification
+
+The manifest-check regex's first draft, `version=&quot;([\d\.]+)&quot;` with no
+anchor, matched the **wrong** attribute: `app.manifest`'s root `<assembly
+manifestVersion="1.0" ...>` element's `manifestVersion` attribute, extracting
+`"1.0"` instead of the `assemblyIdentity` element's actual `"0.1.0.0"`. Caught
+immediately by the very first build attempt (the check fired, but with the wrong
+captured value) - fixed by anchoring the pattern to
+`assemblyIdentity[\s\S]*?version=&quot;([\d\.]+)&quot;`, which only starts
+searching after the literal `assemblyIdentity` text.
+
+### A second bug found and fixed by PR review (GitHub Copilot, PR #125)
+
+`ProductVersionMajor`/`Minor`/`Patch` originally indexed
+`$(ProductVersion.Split('.')[N])` directly - which throws an MSBuild evaluation
+error (`MSB4184`) and aborts the *entire project load* if `ProductVersion` (which
+ADR-0032 explicitly allows overriding via `-p:ProductVersion=...`) doesn't have
+exactly three dot-separated parts. Fixed by computing a part count via `.Length`
+first (which never throws) and gating each property's indexing behind a
+`Condition` on that count being `3`, with a `"0"` fallback and a new
+`VerifyProductVersionFormat` target that reports a clear `<Error>` instead of a
+raw `MSB4184`. Separately, `src/cli/Version.h`'s `#ifndef` fallback for
+`SYNCWINGETLINK_VER_MINOR` was corrected from a hardcoded `1` (which would have
+drifted after the next version bump) to the same neutral `0` sentinel the other
+two fallbacks already used. Recorded as point 6 in ADR-0032.
+
+### Verified
+
+- Deliberately drifted `app.manifest`'s version to `0.2.0.0` and rebuilt: the
+  build failed with `app.manifest's assemblyIdentity version ('0.2.0.0') does not
+  match ProductVersion ('0.1.0', expected manifest value '0.1.0.0')` - confirming
+  the gate actually fires, not just that it compiles. Reverted before committing.
+- Rebuilt with `-p:ProductVersion=0.1` (two parts): the build failed with the new,
+  clear `VerifyProductVersionFormat` error message, not a raw `MSB4184`.
+- `(Get-Item .\syncwingetlink.exe).VersionInfo` on the built `Release|x64`
+  executable: `FileVersion`/`ProductVersion` `0.1.0` (`0.1.0.0` raw),
+  `FileDescription`, `CompanyName`, `LegalCopyright` all populated correctly.
+- The same `VersionInfo` check was repeated on the cross-built `ARM64` executable
+  (populated identically - reading a resource needs no execution).
+- `Debug|x64`, `Release|x64`, `Debug|ARM64`, `Release|ARM64`: all four build clean
+  at `/W4 /WX`, no new warnings.
+- `vstest.console.exe /Platform:x64`: 405/405 passed in both `Debug|x64` and
+  `Release|x64` (unchanged from before this issue - no test behavior changed).
+- No dependency added. No `*_ja.md` file was read or changed.
+
+## 2026-08-01 — M8: complete installation and usage documentation (issue #64)
+
+**Trigger**: seventh layer of the M8 stack, on top of #118's branch. Depends on #113
+(option behavior) and #63 (diagnostic-language decision) having settled what this
+documents; precedes #65, whose release notes point at this README.
+
+### Completed
+
+- `README.md`:
+  - Installation section rewritten: no installer/winget package exists - a single
+    unsigned executable is attached to a GitHub release. Replaced the
+    `winget install <publisher>.syncwingetlink` example with a download → SHA-256
+    verification (against `SHA256SUMS.txt`) → `PATH`-placement sequence, in both
+    PowerShell and bash, with the unsigned/SmartScreen caveat stated plainly.
+  - `test-rule`'s example now shows real output and documents all three of
+    `runTestRule()`'s possible shapes (matched rule, unmatched-but-valid raw name,
+    unmatched-and-invalid raw name).
+  - New `--tui` subsection: its real parse-time conflicts (`scan`/`test-rule`/
+    `--json`/`--yes` → exit 3) and its fallback to the line-oriented confirmation
+    flow (with a stderr warning, no TUI escape sequence emitted) when the
+    terminal lacks the required capability - documented as implemented
+    behavior, not a caveat that it's missing.
+  - Option table: added the six missing options (`--packages-dir`, `--links-dir`,
+    `--include`, `--exclude`, `--fail-on-missing`, `--no-color`) plus `--verbose`/
+    `--quiet` (from #113), so it now lists everything `ArgParser` accepts, matching
+    `docs/PLAN.md` §8.
+  - Exit-code table re-verified against `cli::ExitCode` (`src/cli/Dispatch.h`)
+    rather than restated from memory - unchanged in substance, but the wording
+    now matches the enum's own doc comments exactly.
+- `docs/PLAN.md` §8: new `--tui` subsection (mirroring README's), inserted ahead of
+  #113's `--verbose`/`--quiet` subsection, in option-introduction order.
+- `AGENTS.md` §3: repository layout reconciled with the actual tree. Added
+  `src/cli/Dispatch.*`, `src/cli/Json.*`, `src/cli/Version.h`,
+  `src/rules/RuleSetSelector.*`, `src/rules/DefaultRules.*`, `src/tui/*`'s three
+  actual file pairs, `src/syncwingetlink.rc` (new from #118), and
+  `docs/adr-phase-2.md` through `adr-phase-6.md`. **`src/tui/` was kept, not
+  removed** - the original issue text (written pre-M7-merge) said to remove it;
+  M7 has since merged and it is real.
+- `docs/TODO.md` M3's `test-rule` checkbox ticked, citing #40 (which closed on this
+  exact evidence) and #56 (`runTestRule()`'s implementation).
+
+### Deliberately not done
+
+- `docs/TODO.md` M8's diagnostic-localization line was already updated to reflect
+  #63's resolved English-only decision when that issue's own PR landed - nothing
+  further needed here.
+- No `*_ja.md` file was read or changed.
+
+### Fixes from PR review (GitHub Copilot, PR #126)
+
+- README.md/docs/PLAN.md/this file's `--tui` fallback wording said "falls back
+  silently" in the same sentence (or adjacent sentence) as "a warning is printed
+  to stderr" - an internal contradiction. Reworded in all three to say the
+  fallback prints a warning and emits no TUI escape sequence, without the word
+  "silently" doing double duty for two different, non-synonymous claims.
+- README.md's install example moved the downloaded executable straight into
+  `%LOCALAPPDATA%\Microsoft\WinGet\Links`, which may not exist (an absent Links
+  directory is the normal, common state `fix` itself exists to correct) - `Move-Item`
+  would fail on a fresh machine. Added `New-Item -ItemType Directory -Force` before
+  it, making the instructions copy/paste-safe.
+
+### Verified
+
+- No build/test run needed - no source file changed, only documentation. Read back
+  `README.md`, `docs/PLAN.md` §8, `AGENTS.md` §3, and `docs/TODO.md` to confirm they
+  agree with each other and with the actual implemented behavior in `src/`.
+- No dependency added. No `*_ja.md` file was read or changed.
+
+## 2026-08-01 — M8: publish the unsigned single-exe pre-release, closing M8 (issue #65)
+
+**Trigger**: eighth and final layer of the M8 stack, on top of #64's branch. Depends on
+#106 (hardening flags), #64 (the README the release notes point at), and #118
+(`VS_VERSION_INFO`/version source) - all landed earlier in this same stack.
+
+### Completed
+
+- Built the release artifacts per `docs/adr.md` ADR-0003:
+  `msbuild syncwingetlink.sln -p:Configuration=Release -p:Platform=x64
+  -p:StaticRuntime=true -t:syncwingetlink` and the same for `ARM64`.
+- Verified `#106`'s hardening is present in both shipped binaries via
+  `dumpbin /headers /loadconfig`: Guard CF instrumented on both; EH Continuation
+  table present and CET compatible on `x64` only, correctly absent on `ARM64` -
+  matching the x64-only scoping ADR-0029 records.
+- Verified the static CRT via `dumpbin /dependents` on both: neither lists
+  `MSVCP140.dll` nor `VCRUNTIME140.dll`.
+- Verified `#118`'s single version source: `(Get-Item ...).VersionInfo` on both
+  built executables reports `FileVersion`/`ProductVersion` `0.1.0`, matching
+  `cli::kVersion` and the first three components of `app.manifest`'s
+  `assemblyIdentity` version (`0.1.0.0`).
+- Staged `syncwingetlink-0.1.0-x64.exe`, `syncwingetlink-0.1.0-arm64.exe`, and a
+  generated `SHA256SUMS.txt`; verified the checksums against the files in a fresh
+  `sha256sum -c` check.
+- `docs/adr-phase-6.md` gains **ADR-0033**: the pre-release rationale (unsigned,
+  no CI, ARM64 cross-built-not-run, manual dependency gate - explicitly not a
+  missing `--tui`, corrected from the issue's original pre-M7-merge wording),
+  the verification evidence above, and what would need to change to drop the
+  pre-release designation in a future version.
+- `docs/PLAN.md` §11 and `docs/TODO.md` M8 gain checked lines pointing at #65 and
+  ADR-0033.
+
+### Deliberately not done in this commit
+
+- **The GitHub release itself was not published from this session.** Creating a
+  public release (even pre-release, even on a private repository) is a
+  publish/post action this project's operating rules require explicit user
+  confirmation for before it happens - a decision distinct from preparing the
+  artifacts and writing the ADR that describes them. The built executables,
+  `SHA256SUMS.txt`, and the exact `gh release create` invocation (tag, title,
+  honesty-contract release notes satisfying all five rules in the issue) are
+  staged and ready; publishing is the user's call.
+
+### Verified
+
+- `Debug|x64`, `Release|x64`, `Debug|ARM64`, `Release|ARM64` (the normal,
+  non-`StaticRuntime` configurations already used by every earlier layer of this
+  stack) remain green - this issue changed no source file, only produced release
+  artifacts and documentation, so no new test run was needed beyond what #118's
+  entry above already recorded (405/405).
+- `Release|x64 -p:StaticRuntime=true` and `Release|ARM64 -p:StaticRuntime=true`:
+  both build clean; `dumpbin` and `VersionInfo` evidence as described above.
+- No dependency added. No `*_ja.md` file was read or changed.

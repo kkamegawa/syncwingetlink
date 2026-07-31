@@ -78,7 +78,9 @@ Build system decisions are recorded in [`adr.md`](./adr.md) (ADR-0001 … ADR-00
       such field, and the now-removed `PackageExe::metadataAlias` field it would have used
       confirmed there was no writer anywhere in the codebase. See `docs/adr-phase-2.md`
       ADR-0009 and ADR-0012.
-- [ ] `test-rule` subcommand: show file name → matched rule name → alias
+- [x] `test-rule` subcommand: show file name → matched rule name → alias - implemented
+      by `runTestRule()` (`src/cli/Dispatch.cpp`), issue #56; confirmed already done and
+      closed as such by issue #40 (M8's #64 review folds this stale checkbox in)
 - [x] Unit tests: cover cases including `codex-x86_64-pc-windows-msvc.exe → codex.exe`.
       `tests/AliasPipelineTests.cpp` adds cross-component coverage: `RuleSetSelector` →
       `AliasResolver` end to end for representative real file names, and the regression
@@ -160,12 +162,64 @@ Build system decisions are recorded in [`adr.md`](./adr.md) (ADR-0001 … ADR-00
 - [x] Progress / result summary display - issue #60, ADR-0028 (`docs/adr-phase-6.md`)
 
 ## M8. Quality / polish
-- [ ] Integration test: with a dummy Packages/Links tree, scan→fix→re-scan becomes Ok
-- [ ] Verify display/creation with non-ASCII paths
-- [ ] Decide the localization policy for error messages (English/Japanese)
+- [x] Integration test: with a dummy Packages/Links tree, scan→fix→re-scan becomes Ok -
+      issue #61 (`tests/IntegrationTests.cpp`). Drives the real `cli::run()` dispatch
+      path (`--source fs`, explicit `--packages-dir`/`--links-dir`/`--rules`, never the
+      real `%LOCALAPPDATA%`) and asserts exit codes plus filesystem state - not output
+      text, since `cli::run()` has no `Console`-injection seam. Hosts without symlink
+      privilege log and skip per ADR-0016; `Debug|Release` × `x64|ARM64` all build
+      clean, `vstest.console.exe` reports 394/394 for `Debug|x64`/`Release|x64`
+- [x] Verify display/creation with non-ASCII paths - issue #62. Fixture combines
+      Japanese katakana (no case distinction) with U+1F600 (non-BMP, also no case
+      distinction, sidestepping any `CompareStringOrdinal`-vs-NTFS-`$UpCase` mismatch);
+      written with `\uXXXX`/`\UXXXXXXXX` escapes only, no raw non-ASCII bytes in any
+      test source. Covers `Paths::toExtendedLengthPath`/`fromExtendedLengthPath`
+      round-tripping (both absolute and relative input), `ExecutableScanner`
+      enumeration, `LinkInspector::inspectLink` (`Ok`/`Broken`/`Mismatch`), `Console`
+      display fidelity via the `ConsoleOperations` seam, `escapeJsonString`'s
+      surrogate-pair encoding (ADR-0022), and the full `scan`→`fix`→`scan` round trip
+      via `cli::run()` (extends #61's harness). Hosts without symlink privilege log
+      and skip per ADR-0016; `Debug|Release` × `x64|ARM64` all build clean,
+      `vstest.console.exe` reports 405/405 for `Debug|x64`/`Release|x64`
+- [x] Diagnostic localization policy: **English-only** for the first release - issue
+      #63, ADR-0031 (`docs/adr-phase-6.md`). Japanese is served by documentation
+      (`README_ja.md`, `docs/*_ja.md`), not runtime message lookup; non-ASCII **data**
+      (paths, file names) is unaffected and remains #62's scope
+- [x] `VS_VERSION_INFO` resource and a single version source - issue #118, ADR-0032
+      (`docs/adr-phase-6.md`). One new `Directory.Build.props` property
+      (`ProductVersion`) is what `src/syncwingetlink.rc` (new, executable project
+      only) and `src/cli/Version.h`'s generated `kVersion` both derive from;
+      `app.manifest`'s version stays hand-maintained (ADR-0025) but a new
+      `VerifyManifestVersionMatchesProductVersion` MSBuild target fails the build
+      if it drifts (verified by deliberately drifting it and confirming the
+      build fails, then reverting). `(Get-Item .\syncwingetlink.exe).VersionInfo`
+      on the built `Release|x64` and cross-built `ARM64` executables shows
+      populated `FileVersion`/`ProductVersion`/`FileDescription`/`LegalCopyright`;
+      `Debug|Release` × `x64|ARM64` all build clean, `vstest.console.exe` reports
+      405/405 for `Debug|x64`/`Release|x64`
 - [ ] README (install, usage, permission requirements, examples)
-- [ ] Release: attach an unsigned single exe (static link) to GitHub Releases
-      (build with `-p:StaticRuntime=true`; depends on ADR-0003 being resolved)
+- [x] Harden the release binary: `/guard:cf`, `/guard:ehcont`, `/CETCOMPAT`, `/Gy` -
+      issue #106, ADR-0029 (`docs/adr-phase-6.md`). `/guard:ehcont`/`/CETCOMPAT` are
+      x64-only per Microsoft's own reference; `Debug|Release` × `x64|ARM64` all build
+      clean, `vstest.console.exe` is green for `Debug|x64`/`Release|x64`, and
+      `dumpbin /headers /loadconfig` confirms CF Guard on both platforms and the EH
+      Continuation table plus CET compatibility on `x64` only (including with
+      `-p:StaticRuntime=true`)
+- [x] Wire up `--verbose`/`--quiet` - issue #113, ADR-0030 (`docs/adr-phase-6.md`).
+      `Console::MessageImportance` (`Supplementary`/`Normal`/`Diagnostic`) gates every
+      line against `AppOptions::logLevel`; `--verbose` additionally reports effective
+      paths, package source, and rule source on stderr; `--verbose --quiet` is
+      last-wins in either order; `Debug|Release` × `x64|ARM64` all build clean,
+      `vstest.console.exe` reports 393/393 for `Debug|x64`/`Release|x64`
+- [x] Release: attach an unsigned single exe (static link) to GitHub Releases -
+      issue #65, ADR-0033 (`docs/adr-phase-6.md`). `v0.1.0` published as a GitHub
+      **pre-release** (unsigned, no CI, ARM64 cross-built-not-run, manual
+      dependency gate - not a missing `--tui`, which is implemented);
+      `syncwingetlink-0.1.0-x64.exe`/`-arm64.exe` built with
+      `-p:StaticRuntime=true`, `SHA256SUMS.txt` attached and verified,
+      `dumpbin` confirms #106's hardening and no dynamic CRT dependency, and
+      `VersionInfo` confirms the tag/`kVersion`/`app.manifest` version agree
+      (#118/ADR-0032)
 
 ## M9. Documentation (COM API)
 - [ ] `docs/com-api.md`: COM activation steps, required capabilities,

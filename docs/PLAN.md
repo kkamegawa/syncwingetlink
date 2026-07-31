@@ -291,6 +291,48 @@ a `\\.\` device path; they are **not** required to already exist. An absent Pack
 directory is a normal, tolerated state (ADR-0010), and an absent Links directory is the
 exact condition `fix` exists to correct. See `docs/adr-phase-5.md` ADR-0020.
 
+### `--tui`
+
+`fix --tui` runs the M7 interactive checklist instead of the line-oriented
+confirm-per-item flow (`docs/adr-phase-6.md` ADR-0026-0028). Its real, implemented
+behavior - documented here rather than left as "run in interactive TUI mode", per issue
+#64:
+
+- **Parse-time conflicts, exit code 3**: `--tui` combined with `scan`, `test-rule`,
+  `--json`, or `--yes` is rejected by `ArgParser` before anything is enumerated. `--tui`
+  is meaningful only for an interactive `fix`; the other three all imply an unattended or
+  non-interactive invocation.
+- **Non-interactive fallback, no TUI escape sequence emitted**: if `console.stdinInteractive()`,
+  `console.stdoutInteractive()`, or `console.vtEnabled()` is false, or the terminal
+  session otherwise fails to start, `cli::Dispatch` prints one warning line to stderr
+  and falls back to the existing line-oriented confirmation flow.
+- `--dry-run` and `--no-color` both remain compatible with `--tui`.
+
+### `--verbose` / `--quiet` (log level)
+
+`--verbose` and `--quiet` set `AppOptions::logLevel` to `Verbose`/`Quiet`; the default is
+`Normal`. Repeating either flag, in either order, is last-wins - `--verbose --quiet`
+leaves `Quiet` in effect, `--quiet --verbose` leaves `Verbose` in effect - matching every
+other repeatable `ArgParser` option (e.g. `--source`). `cli::Console` gates every line on
+a `MessageImportance` (`Supplementary`/`Normal`/`Diagnostic`) against the active log
+level; the three levels form a strict chain, each a superset of the one before:
+
+| Log level | Emits |
+|---|---|
+| `Quiet` | `Normal`-importance lines only (warnings, errors, the `--json` document) |
+| `Normal` (default) | `Supplementary` + `Normal` |
+| `Verbose` | `Supplementary` + `Normal` + `Diagnostic` |
+
+`Supplementary` covers routine, skippable-under-`--quiet` output: per-item `Ok` lines in
+`scan`, `fix`'s per-item progress lines, and the batch summary headings. Anything a user
+must act on - `Missing`/`Broken`/`Mismatch` scan lines, warnings, errors - is `Normal`
+importance and is never suppressed by `--quiet`. `Diagnostic` is exclusively
+`--verbose`'s additional stderr-only reporting (never stdout, regardless of `--json` -
+ADR-0022's stdout-purity rule is unaffected by log level): the resolved effective
+`Links`/`Packages` directories, the package source actually used (including a COM→FS
+`auto` degrade), and which rule tier was selected (`--rules`, the user rules file, or the
+embedded defaults). See `docs/adr-phase-6.md` ADR-0030.
+
 ### Exit codes
 - `0`: success (nothing to fix or fixed)
 - `1`: fix needed but not performed (e.g. missing detected in scan with `--fail-on-missing`)
@@ -419,3 +461,10 @@ than invalid UTF-8 or a hard failure.
       not sufficient evidence.
 - [ ] **No dependency has a known vulnerability**; every dependency is MIT-compatible and
       justified in the PR that introduced it.
+- [x] `0.1.0` published as an unsigned GitHub **pre-release** (issue #65,
+      `docs/adr-phase-6.md` ADR-0033) - statically linked x64/ARM64 executables with
+      `SHA256SUMS.txt`, release notes stating the build was local (no CI, #21 is open),
+      ARM64 was cross-built and not executed, the dependency-vulnerability gate is
+      manual (zero third-party dependencies), and the executable is unsigned. The
+      pre-release designation is **not** about missing functionality - `--tui` (M7) is
+      implemented; see ADR-0033 for the four reasons that are.

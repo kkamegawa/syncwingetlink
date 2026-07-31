@@ -45,6 +45,7 @@
     <ClCompile Include="DispatchTests.cpp" />
     <ClCompile Include="ExecutableScannerTests.cpp" />
     <ClCompile Include="FsScanSourceTests.cpp" />
+    <ClCompile Include="IntegrationTests.cpp" />
     <ClCompile Include="JsonTests.cpp" />
     <ClCompile Include="LinkInspectorTests.cpp" />
     <ClCompile Include="PackageFilterTests.cpp" />

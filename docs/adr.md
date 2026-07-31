@@ -9,8 +9,17 @@ one; if it does, get explicit approval first.
 
 > Split this file per phase once it exceeds 200 lines.
 
-Records added after the initial planning phase are kept in
-[`adr-phase-2.md`](./adr-phase-2.md).
+Records added after the initial planning phase (ADR-0001 through ADR-0007, in this
+file) are kept in a sequence of per-phase files, split each time the previous one
+approached that limit - check the latest one first for the most recent decisions:
+
+| File | ADRs |
+|---|---|
+| [`adr-phase-2.md`](./adr-phase-2.md) | ADR-0008 – ADR-0013 |
+| [`adr-phase-3.md`](./adr-phase-3.md) | ADR-0014 – ADR-0017 |
+| [`adr-phase-4.md`](./adr-phase-4.md) | ADR-0018 – ADR-0019 |
+| [`adr-phase-5.md`](./adr-phase-5.md) | ADR-0020 – ADR-0025 |
+| [`adr-phase-6.md`](./adr-phase-6.md) | ADR-0026 – ADR-0033 |
 
 ---
 

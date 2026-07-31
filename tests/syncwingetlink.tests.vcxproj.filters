@@ -33,6 +33,9 @@
     <ClCompile Include="FsScanSourceTests.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
+    <ClCompile Include="IntegrationTests.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
     <ClCompile Include="JsonTests.cpp">
       <Filter>Tests</Filter>
     </ClCompile>

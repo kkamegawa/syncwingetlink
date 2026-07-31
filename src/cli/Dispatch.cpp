@@ -184,16 +184,118 @@ struct RepairCandidateSet
     std::vector<RepairItem> nonCollisionItems;
 };
 
+// #113 (ADR-0030): --verbose's additional reporting - the resolved effective
+// Links/Packages paths, the package source actually used (built from options.source
+// plus whether onDegrade fired below, never a downcast on IPackageSource), and which
+// rule tier was selected. Always stderr, never stdout, regardless of --json (ADR-0022's
+// stdout-purity rule). The logLevel check here is only an optimization - Diagnostic
+// lines are dropped by Console::writeLine()/shouldEmit() at any other level regardless -
+// so a future logLevel check removed here would still behave correctly, just do
+// slightly more work for a line nobody sees.
+void reportVerboseDiagnostics(const AppOptions& options, Console& console,
+                              const std::filesystem::path& linksDirectory,
+                              bool sourceDegradedToFileSystem, const std::wstring& degradeReason)
+{
+    if (options.logLevel != LogLevel::Verbose)
+    {
+        return;
+    }
+
+    console.writeLine(std::format(L"verbose: effective Links directory: {}",
+                                  sanitizeForDisplay(linksDirectory.native())),
+                      ConsoleStream::Error, MessageImportance::Diagnostic);
+
+    // Unlike linksDirectory above (already resolved unconditionally by the caller for
+    // every command, verbose or not), resolving the Packages directory here is new work
+    // this function alone introduces: --source com never otherwise calls
+    // paths::getPackagesDirectory(), so a bare, unguarded call would add a failure mode
+    // (SHGetKnownFolderPath, inside getLocalAppDataDirectory()) that only exists when
+    // --verbose happens to be on. Diagnostics must be best-effort and must never turn an
+    // otherwise-successful scan/fix into a failure, so this is caught and reported
+    // rather than left to propagate.
+    try
+    {
+        const std::filesystem::path packagesDirectory =
+            paths::getPackagesDirectory(options.packagesDirectory);
+        console.writeLine(std::format(L"verbose: effective Packages directory: {}",
+                                      sanitizeForDisplay(packagesDirectory.native())),
+                          ConsoleStream::Error, MessageImportance::Diagnostic);
+    }
+    catch (const std::exception&)
+    {
+        console.writeLine(L"verbose: effective Packages directory: could not be determined",
+                          ConsoleStream::Error, MessageImportance::Diagnostic);
+    }
+
+    std::wstring sourceReport;
+    switch (options.source)
+    {
+    case PackageSource::Com:
+        sourceReport = L"requested: com, used: com";
+        break;
+    case PackageSource::FileSystem:
+        sourceReport = L"requested: fs, used: fs";
+        break;
+    case PackageSource::Auto:
+        sourceReport = sourceDegradedToFileSystem
+                           ? std::format(L"requested: auto, used: filesystem (degraded: {})",
+                                        sanitizeForDisplay(degradeReason))
+                           : L"requested: auto, used: com";
+        break;
+    }
+    console.writeLine(std::format(L"verbose: package source - {}", sourceReport),
+                      ConsoleStream::Error, MessageImportance::Diagnostic);
+
+    // Mirrors RuleSetSelector.cpp's own explicit/user-file/defaults priority (docs/rules.md)
+    // without modifying selectRuleSet()'s interface to expose which tier it picked - the
+    // same "build the report from information already available, not a new API surface"
+    // approach design decision 2 uses for the package source above.
+    //
+    // paths::getUserRulesFilePath() (via getLocalAppDataDirectory()/SHGetKnownFolderPath)
+    // can throw; the caller (buildRepairCandidates()) currently only reaches this "no
+    // --rules" branch after selectRuleSet() has already called the same function without
+    // throwing, but this function must not rely on that ordering to stay safe - a
+    // best-effort diagnostic must never turn an otherwise-successful scan/fix into a
+    // failure, regardless of what else does or doesn't call the same path first.
+    std::wstring ruleSourceReport;
+    if (options.rulesPath.has_value())
+    {
+        ruleSourceReport = L"explicit (--rules)";
+    }
+    else
+    {
+        try
+        {
+            std::error_code existsError;
+            const bool userFileExists =
+                std::filesystem::exists(paths::getUserRulesFilePath(), existsError);
+            ruleSourceReport =
+                (!existsError && userFileExists) ? L"user rules file" : L"embedded defaults";
+        }
+        catch (const std::exception&)
+        {
+            ruleSourceReport = L"could not be determined";
+        }
+    }
+    console.writeLine(std::format(L"verbose: rule source - {}", ruleSourceReport),
+                      ConsoleStream::Error, MessageImportance::Diagnostic);
+}
+
 // Enumerates, filters, resolves aliases, and inspects every executable's link state.
 // Shared by scan and fix - both need the same inventory, differing only in what they do
 // with it afterward.
 [[nodiscard]] RepairCandidateSet buildRepairCandidates(const AppOptions& options,
                                                         Console& console)
 {
-    const auto onDegrade = [&console](const PackageSourceError& error) {
+    bool sourceDegradedToFileSystem = false;
+    std::wstring degradeReason;
+    const auto onDegrade = [&console, &sourceDegradedToFileSystem,
+                            &degradeReason](const PackageSourceError& error) {
+        sourceDegradedToFileSystem = true;
+        degradeReason = utf8ToWide(error.what());
         console.writeLine(std::format(L"warning: --source auto fell back to a filesystem "
                                       L"scan: {}",
-                                      utf8ToWide(error.what())),
+                                      degradeReason),
                           ConsoleStream::Error);
     };
 
@@ -205,6 +307,9 @@ struct RepairCandidateSet
 
     const RuleSet rules = selectRuleSet(options.rulesPath, defaultUserRulesPathProvider);
     const std::filesystem::path linksDirectory = paths::getLinksDirectory(options.linksDirectory);
+
+    reportVerboseDiagnostics(options, console, linksDirectory, sourceDegradedToFileSystem,
+                             degradeReason);
 
     RepairCandidateSet candidates;
     for (const InstalledPackage& package : packages)
@@ -243,9 +348,16 @@ struct RepairCandidateSet
 
 void printScanItem(Console& console, const RepairItem& item)
 {
+    // An Ok item is routine confirmation that nothing needs attention - suppressible
+    // under --quiet. Missing/Broken/Mismatch are actionable and always shown, matching
+    // #113's "Quiet suppresses per-item Ok lines" acceptance criterion.
+    const MessageImportance importance = item.status == LinkStatus::Ok
+                                             ? MessageImportance::Supplementary
+                                             : MessageImportance::Normal;
     console.writeLine(std::format(L"{}: {} -> {}", linkStatusDisplayName(item.status),
                                   sanitizeForDisplay(item.alias),
-                                  sanitizeForDisplay(item.executable.path.native())));
+                                  sanitizeForDisplay(item.executable.path.native())),
+                      ConsoleStream::Output, importance);
 }
 
 void printCollisions(Console& console, const std::vector<AliasCollision>& collisions)
@@ -410,14 +522,19 @@ struct TuiRunResult
 // per-item progress lines already use.
 void printBatchSummary(Console& console, const RepairBatchSummary& summary)
 {
+    // A summary heading is skippable noise under --quiet - the per-item error/created
+    // lines and the exit code already carry the load-bearing information.
     console.writeLine(std::format(L"Summary: {} selected, {} processed, {} remaining",
-                                  summary.selected, summary.processed, summary.remaining));
+                                  summary.selected, summary.processed, summary.remaining),
+                      ConsoleStream::Output, MessageImportance::Supplementary);
     console.writeLine(std::format(
-        L"  created: {}  replaced: {}  planned: {}  declined: {}  skipped: {}  "
-        L"refused (mismatch): {}  failed: {}",
-        summary.created, summary.replaced, summary.planned, summary.declined,
-        summary.skippedOk, summary.refusedMismatch, summary.failed));
-    console.writeLine(std::format(L"  interrupted: {}", summary.interrupted ? L"yes" : L"no"));
+                          L"  created: {}  replaced: {}  planned: {}  declined: {}  skipped: {}  "
+                          L"refused (mismatch): {}  failed: {}",
+                          summary.created, summary.replaced, summary.planned, summary.declined,
+                          summary.skippedOk, summary.refusedMismatch, summary.failed),
+                      ConsoleStream::Output, MessageImportance::Supplementary);
+    console.writeLine(std::format(L"  interrupted: {}", summary.interrupted ? L"yes" : L"no"),
+                      ConsoleStream::Output, MessageImportance::Supplementary);
 }
 
 // The one place a core::RepairBatchExitCode becomes a cli::ExitCode - total, so a
@@ -522,7 +639,8 @@ void printBatchSummary(Console& console, const RepairBatchSummary& summary)
         {
             console.writeLine(std::format(L"[{}/{}] {}: {}", current, total,
                                           sanitizeForDisplay(item.candidate.alias),
-                                          repairDispositionDisplayName(item.disposition)));
+                                          repairDispositionDisplayName(item.disposition)),
+                              ConsoleStream::Output, MessageImportance::Supplementary);
         }
     };
 
@@ -715,7 +833,7 @@ int run(const std::vector<std::wstring>& args)
         return static_cast<int>(ExitCode::ArgumentError);
     }
 
-    Console console(options.noColor);
+    Console console(options.noColor, options.logLevel);
 
     if (options.command == AppCommand::Help)
     {

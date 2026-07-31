@@ -6,4 +6,7 @@
   <ItemGroup>
     <ClCompile Include="main.cpp" />
   </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="syncwingetlink.rc" />
+  </ItemGroup>
 </Project>
