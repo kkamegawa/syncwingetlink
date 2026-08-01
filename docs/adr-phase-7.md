@@ -215,8 +215,9 @@ immediately before the call fixes the misclassification.
 
 ### Verification
 
-`Debug|x64` and `Release|x64` build clean at `/W4 /WX`; `vstest.console.exe` reports all
-tests passing for both (unchanged pass/fail counts from before this fix - this change
-does not add or remove test cases). `Release|ARM64` cross-builds clean (cross-built, not
+`Debug|x64` and `Release|x64` build clean at `/W4 /WX`; `vstest.console.exe` reports
+406/407 passing for both — the same pre-existing, unrelated
+`nonAsciiBrokenSymbolicLinkIsBroken` failure and count as ADR-0035, unchanged by this fix
+since it adds no test cases. `Release|ARM64` cross-builds clean (cross-built, not
 run). The empirical `GetLastError()`-priming verification above was performed separately,
 outside the test suite.

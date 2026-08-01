@@ -2826,8 +2826,8 @@ audit, "Issue 2". Second layer of the 3-PR stack (PR #134), based on PR #133's b
 ## 2026-08-01 — Issue #132: Console primes GetLastError() before the NO_COLOR probe
 
 **Trigger**: issue #132 (sub-issue of #129), split out of draft PR #128's Win32 API
-audit, "Issue 3". Third and final layer of the 3-PR stack, based on #131's branch
-(`fix/131-symlinkservice-toctou`).
+audit, "Issue 3". Third and final layer of the 3-PR stack (PR #135), based on PR #134's
+branch (`fix/131-symlinkservice-toctou`).
 
 - `readNoColorEnvironmentVariable()` in `src/cli/Console.cpp` now calls
   `::SetLastError(ERROR_SUCCESS)` immediately before its
