@@ -509,6 +509,35 @@ public:
         Assert::AreEqual(linkPath.native(), item.linkPath.native());
     }
 
+    TEST_METHOD(directorySymbolicLinkIsMismatchEvenWithAMissingTarget)
+    {
+        const TempDirectory temp(L"inspect-link-dir-symlink");
+        // A missing target is the dangerous shape: decoding it as a symbolic link
+        // would classify Broken, and repairing Broken deletes with DeleteFileW - which
+        // cannot remove a directory entry.
+        const std::filesystem::path missingTarget = temp.path() / L"gone-dir";
+        const std::filesystem::path linkPath = temp.path() / L"codex.exe";
+        if (!createDirectorySymlink(missingTarget, linkPath))
+        {
+            // CppUnitTestFramework (native C++ MSTest) has no Assert::Inconclusive -
+            // logging and returning is the closest equivalent: the test stays green
+            // here and exercises this branch for real wherever symlink privilege is
+            // available.
+            Logger::WriteMessage(
+                L"Skipped: symbolic link creation needs Developer Mode or elevation, "
+                L"neither of which is available here.\n");
+            return;
+        }
+        PackageExe executable;
+        executable.path = temp.createFile(L"codex-real.exe");
+
+        const RepairItem item = inspectLink(executable, std::wstring(kAlias), linkPath);
+
+        Assert::IsTrue(item.status == LinkStatus::Mismatch);
+        Assert::IsTrue(item.entryKind == LinkEntryKind::OtherReparsePoint);
+        Assert::IsFalse(item.existingTarget.has_value());
+    }
+
     TEST_METHOD(healthySymbolicLinkIsOk)
     {
         const TempDirectory temp(L"inspect-link-ok");

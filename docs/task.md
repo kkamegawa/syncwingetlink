@@ -2721,3 +2721,153 @@ documents; precedes #65, whose release notes point at this README.
 - `Release|x64 -p:StaticRuntime=true` and `Release|ARM64 -p:StaticRuntime=true`:
   both build clean; `dumpbin` and `VersionInfo` evidence as described above.
 - No dependency added. No `*_ja.md` file was read or changed.
+
+## 2026-08-01 — Issue #130: LinkInspector directory reparse points classified Mismatch
+
+**Trigger**: issue #130 (sub-issue of #129), split out of draft PR #128's Win32 API
+audit, "Issue 1". First layer of a 3-PR stack, one PR per issue: PR #133 (#130) →
+PR #134 (#131) → PR #135 (#132).
+
+- `inspectLink()` in `src/core/LinkInspector.cpp` now checks
+  `FILE_ATTRIBUTE_DIRECTORY` immediately after confirming the entry is a reparse
+  point, and before attempting to decode it as a symbolic link. A directory
+  reparse point (a junction or a *directory* symbolic link) is classified
+  `LinkEntryKind::OtherReparsePoint` -> `LinkStatus::Mismatch` without ever being
+  decoded, so it is never touched by `SymlinkService::repairLink()`.
+- Restored via `git cherry-pick` of `0bb0999` from the
+  `copilot/extract-windows-api-issues` branch (the fix PR #128 itself reverted
+  while deferring implementation); the cherry-pick applied cleanly with no
+  conflicts.
+- `src/core/LinkInspector.h`'s `inspectLink()` contract comment gains a bullet
+  documenting the directory-reparse-point case and pointing at ADR-0034.
+- `tests/TempDirectory.h` gains `createDirectorySymlink()`, mirroring
+  `createFileSymlink()`'s Developer-Mode-or-elevation skip convention.
+- `tests/LinkInspectorTests.cpp` gains
+  `directorySymbolicLinkIsMismatchEvenWithAMissingTarget`, covering the
+  specific dangerous shape (a directory symlink with a missing target) that
+  would otherwise have decoded to `Broken`.
+- New `docs/adr-phase-7.md` (**ADR-0034**) records the decision and rationale;
+  `docs/adr.md`'s index table gains a row for the new file.
+
+### Verified
+
+- `Debug|x64`: builds clean at `/W4 /WX`; `vstest.console.exe` reports 405/406
+  passing. The one failure, `nonAsciiBrokenSymbolicLinkIsBroken`, is
+  **pre-existing and unrelated** - confirmed by building and running the same
+  test in an unmodified `main` worktree on this machine, where it fails
+  identically (`Assert::IsFalse(item.existingTarget.has_value())`, a
+  non-directory file-symlink case this change does not touch). Not
+  investigated further as out of scope for this issue; worth its own issue.
+- `Release|x64`: builds clean; `vstest.console.exe` reports the same 405/406
+  (same pre-existing failure, nothing new).
+- `Release|ARM64`: cross-built, not run (per `docs/adr.md` open item 3 and this
+  project's ARM64-tests-only-run-on-ARM64-host convention).
+- `syncwingetlink.core.vcxproj` and `syncwingetlink.vcxproj` needed no project
+  file changes (no files added/removed). `syncwingetlink.tests.vcxproj`
+  likewise unchanged - the new test lives in the existing
+  `LinkInspectorTests.cpp`.
+- No dependency added. No `*_ja.md` file was read or changed.
+
+## 2026-08-01 — Issue #131: SymlinkService deletes by handle, closing the TOCTOU race
+
+**Trigger**: issue #131 (sub-issue of #129), split out of draft PR #128's Win32 API
+audit, "Issue 2". Second layer of the 3-PR stack (PR #134), based on PR #133's branch
+(`fix/130-linkinspector-directory-reparse`).
+
+- `makeProductionOperations().deleteEntry` in `src/core/SymlinkService.cpp` no
+  longer deletes by name with a single `DeleteFileW(linkPath)` call. It now
+  opens the entry once via `CreateFileW(..., DELETE, ...,
+  FILE_FLAG_OPEN_REPARSE_POINT, ...)`, re-verifies on that handle via
+  `GetFileInformationByHandleEx(FileAttributeTagInfo)` that the entry is still
+  a file symbolic link (returning `ERROR_INVALID_DATA` without deleting if
+  not), and deletes by handle via
+  `SetFileInformationByHandle(FileDispositionInfo)`.
+- `SymlinkServiceError::operation()` now reports `"deleteEntry"` for a delete
+  failure instead of the literal `"DeleteFileW"`, since the failing operation
+  is no longer that single call. This is a documented, breaking change to a
+  public error-contract string.
+- `src/core/SymlinkService.h` contract comments updated throughout
+  (`SymlinkServiceErrorKind`, `SymlinkServiceError::operation()`,
+  `SymlinkServiceOperations::deleteEntry`, `repairLink()`'s `Throws` doc) to
+  describe the handle-based delete and point at ADR-0035.
+- `tests/SymlinkServiceTests.cpp`:
+  `deleteFailurePreventsCreationAndReportsDeleteFailed` updated for the new
+  `"deleteEntry"` label; new test
+  `deleteReVerificationFailureIsReportedAsDeleteFailedWithoutCreation` covers
+  the `ERROR_INVALID_DATA` re-verification-failure branch via
+  `FakeOperations`. The real handle-based delete path itself is already
+  exercised end-to-end by the pre-existing `productionRepairLinkReplacesARealBrokenLink`
+  (drives the real `kProductionOperations` through the two-argument
+  `repairLink()` overload) - no new production-facing integration test was
+  needed. A test reproducing the actual race (a second thread/process
+  mutating the entry between `inspectLink()` and `deleteEntry`) was not
+  attempted: it would be inherently timing-dependent and isn't needed to
+  verify the fix's logic, which is deterministic given any observed
+  mismatch - noted as a deliberate scope limit, not an oversight.
+- `docs/adr-phase-7.md` gains **ADR-0035** recording the decision, rationale,
+  and the breaking-change note above; `docs/adr.md`'s index range for the
+  file is extended to ADR-0035.
+
+### Verified
+
+- `Debug|x64`: builds clean at `/W4 /WX`; `vstest.console.exe` reports 406/407
+  passing (407 total, one more than #130's entry above because this layer
+  adds one new test). The one failure is the same pre-existing, unrelated
+  `nonAsciiBrokenSymbolicLinkIsBroken` documented in #130's entry -
+  re-confirmed unaffected by this change (it exercises a *file* symlink path,
+  not `deleteEntry`). `productionRepairLinkReplacesARealBrokenLink`, which
+  exercises the new handle-based delete against a real broken symlink on this
+  host, passed.
+- `Release|x64`: builds clean; `vstest.console.exe` reports the same 406/407.
+- `Release|ARM64`: cross-built, not run.
+- No project file changes needed (no files added/removed). No dependency
+  added. No `*_ja.md` file was read or changed.
+
+## 2026-08-01 — Issue #132: Console primes GetLastError() before the NO_COLOR probe
+
+**Trigger**: issue #132 (sub-issue of #129), split out of draft PR #128's Win32 API
+audit, "Issue 3". Third and final layer of the 3-PR stack (PR #135), based on PR #134's
+branch (`fix/131-symlinkservice-toctou`).
+
+- `readNoColorEnvironmentVariable()` in `src/cli/Console.cpp` now calls
+  `::SetLastError(ERROR_SUCCESS)` immediately before its
+  `GetEnvironmentVariableW(L"NO_COLOR", ...)` call, so the subsequent
+  `GetLastError() == ERROR_ENVVAR_NOT_FOUND` check reflects only this call's
+  own outcome rather than a possibly-stale value left by an earlier,
+  unrelated Win32 call.
+- **Empirically verified the bug and the fix** with a standalone, throwaway
+  harness (not committed) built and run on this session's machine: set
+  `NO_COLOR=` (present, empty - the dangerous case), poisoned the last-error
+  slot with an unrelated failing `GetEnvironmentVariableW` call, then probed
+  `NO_COLOR` unprimed and primed. Unprimed: result 0, `GetLastError()` stayed
+  `203` (stale) -> misclassified "not set". Primed: result 0, `GetLastError()`
+  became `0` -> correctly classified "set". Confirms both halves of the bug
+  on the real target toolset (VS 18 Enterprise, `v145`): a successful
+  `GetEnvironmentVariableW` does not clear a stale last error, and priming
+  fixes the misclassification.
+- **No automated unit test was added** - `readNoColorEnvironmentVariable()` is
+  a private free function in `Console.cpp`'s anonymous namespace with no
+  injection seam, and the existing test-facing surface
+  (`Console`'s `noColorEnvValueOverride` constructor parameter) tests
+  `noColorEnvSet()`'s downstream logic given an already-resolved
+  `std::optional`, not this probe's own `GetEnvironmentVariableW`/
+  `GetLastError()` interaction. Introducing a seam solely for this one
+  three-line probe was judged heavier than the fix and inconsistent with
+  `Console`'s existing design (other small production-only helpers are not
+  exposed for injection either). This is a deliberate scope decision, not an
+  oversight - recorded in ADR-0036 along with the empirical verification
+  above.
+- `docs/adr-phase-7.md` gains **ADR-0036**; `docs/adr.md`'s index range for
+  the file is extended to ADR-0036.
+
+### Verified
+
+- `Debug|x64`: builds clean at `/W4 /WX`; `vstest.console.exe` reports
+  406/407 passing - the same pre-existing, unrelated
+  `nonAsciiBrokenSymbolicLinkIsBroken` failure documented in #130's and
+  #131's entries above, unaffected by this change. No test count changed
+  (this issue adds no new test cases, per the note above).
+- `Release|x64`: builds clean; `vstest.console.exe` reports the same 406/407.
+- `Release|ARM64`: cross-built, not run.
+- No project file changes needed (no files added/removed). No dependency
+  added. No `*_ja.md` file was read or changed.

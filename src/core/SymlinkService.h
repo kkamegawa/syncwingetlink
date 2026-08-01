@@ -67,22 +67,22 @@ enum class ElevationState
 
 enum class SymlinkServiceErrorKind
 {
-    // DeleteFileW or CreateSymbolicLinkW failed with ERROR_ACCESS_DENIED or
-    // ERROR_PRIVILEGE_NOT_HELD; developerModeState()/elevationState() carry the queried
-    // states.
+    // The handle-based delete (see SymlinkServiceOperations::deleteEntry) or
+    // CreateSymbolicLinkW failed with ERROR_ACCESS_DENIED or ERROR_PRIVILEGE_NOT_HELD;
+    // developerModeState()/elevationState() carry the queried states.
     InsufficientPermission,
     DeleteFailed,
     CreateFailed,
     VerificationFailed,
 };
 
-// A failure repairLink() encountered while repairing a link: an unrecoverable
-// DeleteFileW/CreateSymbolicLinkW failure, or a successful creation whose immediate
-// post-create re-inspection did not report Ok. Distinct from std::invalid_argument, which
-// repairLink() throws instead for a programming-contract violation (an empty candidate
-// field, or a fresh Broken status paired with a non-symbolic-link entry kind) - no Win32
-// operation is attempted in that case, matching LinkInspector.h's classifyLink() split
-// (docs/adr-phase-3.md ADR-0014).
+// A failure repairLink() encountered while repairing a link: an unrecoverable delete
+// (see SymlinkServiceOperations::deleteEntry) or CreateSymbolicLinkW failure, or a
+// successful creation whose immediate post-create re-inspection did not report Ok.
+// Distinct from std::invalid_argument, which repairLink() throws instead for a
+// programming-contract violation (an empty candidate field, or a fresh Broken status
+// paired with a non-symbolic-link entry kind) - no Win32 operation is attempted in that
+// case, matching LinkInspector.h's classifyLink() split (docs/adr-phase-3.md ADR-0014).
 class SymlinkServiceError : public std::runtime_error
 {
 public:
@@ -96,8 +96,10 @@ public:
         return m_kind;
     }
 
-    // The Win32 operation that failed, e.g. "DeleteFileW" or "CreateSymbolicLinkW".
-    // "inspectLink" for VerificationFailed, which is not itself a failed Win32 call.
+    // The operation that failed: "deleteEntry" (the handle-based delete;
+    // docs/adr-phase-7.md ADR-0035 - no longer literally "DeleteFileW", since the delete
+    // is no longer a single by-name Win32 call) or "CreateSymbolicLinkW". "inspectLink"
+    // for VerificationFailed, which is not itself a failed Win32 call.
     [[nodiscard]] const std::string& operation() const noexcept
     {
         return m_operation;
@@ -152,8 +154,14 @@ struct SymlinkServiceOperations
                              const std::filesystem::path& linkPath)>
         inspect;
 
-    // Deletes the entry at linkPath. Returns 0 on success, otherwise the failed
-    // DeleteFileW call's GetLastError() value.
+    // Deletes the entry at linkPath. The production implementation opens linkPath once by
+    // name, re-verifies on that handle that the entry is still a file symbolic link (not
+    // a directory, not some other reparse tag), and deletes by handle rather than a
+    // second by-name call - closing the TOCTOU window between repairLink()'s fresh
+    // inspection and the delete itself (docs/adr-phase-7.md ADR-0035). Returns 0 on
+    // success; otherwise either the failed Win32 call's GetLastError() value, or
+    // ERROR_INVALID_DATA if the re-verification found the entry no longer matches what
+    // was inspected (no Win32 call itself failed in that case).
     std::function<std::uint32_t(const std::filesystem::path& linkPath)> deleteEntry;
 
     // Creates a file symbolic link at linkPath targeting target, with the exact flags
@@ -199,9 +207,9 @@ struct SymlinkServiceOperations
 // entry kind other than SymbolicLink - both are programming-contract violations, not
 // operational failures (see SymlinkServiceError's documentation).
 //
-// Throws SymlinkServiceError for a DeleteFileW/CreateSymbolicLinkW failure, or a failed
-// post-create verification. Neither delete, create, nor verification is ever invoked in
-// DryRun mode.
+// Throws SymlinkServiceError for a delete (SymlinkServiceOperations::deleteEntry) or
+// CreateSymbolicLinkW failure, or a failed post-create verification. Neither delete,
+// create, nor verification is ever invoked in DryRun mode.
 [[nodiscard]] SymlinkRepairResult repairLink(const RepairItem& candidate, RepairMode mode);
 
 // Same contract as above, driven entirely through operations rather than the real Win32

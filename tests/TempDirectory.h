@@ -119,6 +119,17 @@ struct MountPointReparseBuffer
                                  SYMBOLIC_LINK_FLAG_ALLOW_UNPRIVILEGED_CREATE) != 0;
 }
 
+// Creates linkPath as a *directory* symbolic link targeting target - the entry kind the
+// product itself never creates but must classify safely when found under Links. Same
+// privilege caveat and Inconclusive-style skip convention as createFileSymlink() above.
+[[nodiscard]] inline bool createDirectorySymlink(const std::filesystem::path& target,
+                                                 const std::filesystem::path& linkPath)
+{
+    return ::CreateSymbolicLinkW(linkPath.c_str(), target.c_str(),
+                                 SYMBOLIC_LINK_FLAG_DIRECTORY |
+                                     SYMBOLIC_LINK_FLAG_ALLOW_UNPRIVILEGED_CREATE) != 0;
+}
+
 // Creates a unique directory under the system temp folder and removes it (and everything
 // below it) on destruction, so a failing assertion cannot leave test data behind.
 class TempDirectory

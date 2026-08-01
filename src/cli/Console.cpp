@@ -422,6 +422,14 @@ struct ProductionOutputModeState
     // WIN32_LEAN_AND_MEAN configuration, so the numeric value is used directly.
     constexpr DWORD kErrorEnvironmentVariableNotFound = 203L;
 
+    // GetEnvironmentVariableW returns 0 for two different outcomes - "not defined" and
+    // "defined but empty" (NO_COLOR=) - distinguished only by GetLastError(). A successful
+    // call does not reliably clear the thread's last-error value, so without priming it
+    // here, a prior unrelated Win32 call that happened to leave
+    // ERROR_ENVVAR_NOT_FOUND (203) in the last-error slot could make this call's own
+    // outcome misread, even though GetEnvironmentVariableW itself did not fail
+    // (docs/adr-phase-7.md ADR-0036).
+    ::SetLastError(ERROR_SUCCESS);
     wchar_t probe[8]{};
     const DWORD result =
         ::GetEnvironmentVariableW(L"NO_COLOR", probe, static_cast<DWORD>(std::size(probe)));
