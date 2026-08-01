@@ -2822,3 +2822,52 @@ audit, "Issue 2". Second layer of the 3-PR stack (PR #134), based on PR #133's b
 - `Release|ARM64`: cross-built, not run.
 - No project file changes needed (no files added/removed). No dependency
   added. No `*_ja.md` file was read or changed.
+
+## 2026-08-01 — Issue #132: Console primes GetLastError() before the NO_COLOR probe
+
+**Trigger**: issue #132 (sub-issue of #129), split out of draft PR #128's Win32 API
+audit, "Issue 3". Third and final layer of the 3-PR stack, based on #131's branch
+(`fix/131-symlinkservice-toctou`).
+
+- `readNoColorEnvironmentVariable()` in `src/cli/Console.cpp` now calls
+  `::SetLastError(ERROR_SUCCESS)` immediately before its
+  `GetEnvironmentVariableW(L"NO_COLOR", ...)` call, so the subsequent
+  `GetLastError() == ERROR_ENVVAR_NOT_FOUND` check reflects only this call's
+  own outcome rather than a possibly-stale value left by an earlier,
+  unrelated Win32 call.
+- **Empirically verified the bug and the fix** with a standalone, throwaway
+  harness (not committed) built and run on this session's machine: set
+  `NO_COLOR=` (present, empty - the dangerous case), poisoned the last-error
+  slot with an unrelated failing `GetEnvironmentVariableW` call, then probed
+  `NO_COLOR` unprimed and primed. Unprimed: result 0, `GetLastError()` stayed
+  `203` (stale) -> misclassified "not set". Primed: result 0, `GetLastError()`
+  became `0` -> correctly classified "set". Confirms both halves of the bug
+  on the real target toolset (VS 18 Enterprise, `v145`): a successful
+  `GetEnvironmentVariableW` does not clear a stale last error, and priming
+  fixes the misclassification.
+- **No automated unit test was added** - `readNoColorEnvironmentVariable()` is
+  a private free function in `Console.cpp`'s anonymous namespace with no
+  injection seam, and the existing test-facing surface
+  (`Console`'s `noColorEnvValueOverride` constructor parameter) tests
+  `noColorEnvSet()`'s downstream logic given an already-resolved
+  `std::optional`, not this probe's own `GetEnvironmentVariableW`/
+  `GetLastError()` interaction. Introducing a seam solely for this one
+  three-line probe was judged heavier than the fix and inconsistent with
+  `Console`'s existing design (other small production-only helpers are not
+  exposed for injection either). This is a deliberate scope decision, not an
+  oversight - recorded in ADR-0036 along with the empirical verification
+  above.
+- `docs/adr-phase-7.md` gains **ADR-0036**; `docs/adr.md`'s index range for
+  the file is extended to ADR-0036.
+
+### Verified
+
+- `Debug|x64`: builds clean at `/W4 /WX`; `vstest.console.exe` reports
+  406/407 passing - the same pre-existing, unrelated
+  `nonAsciiBrokenSymbolicLinkIsBroken` failure documented in #130's and
+  #131's entries above, unaffected by this change. No test count changed
+  (this issue adds no new test cases, per the note above).
+- `Release|x64`: builds clean; `vstest.console.exe` reports the same 406/407.
+- `Release|ARM64`: cross-built, not run.
+- No project file changes needed (no files added/removed). No dependency
+  added. No `*_ja.md` file was read or changed.

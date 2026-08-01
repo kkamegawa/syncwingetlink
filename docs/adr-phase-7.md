@@ -153,3 +153,70 @@ adds one new test — with the same pre-existing, unrelated `nonAsciiBrokenSymbo
 failure and no others. `productionRepairLinkReplacesARealBrokenLink` — which exercises
 the new handle-based delete against a real broken symlink — passed on this host (symlink
 privilege was available). `Release|ARM64` cross-builds clean (cross-built, not run).
+
+---
+
+## ADR-0036 — `Console`'s `NO_COLOR` probe primes `GetLastError()` before the call
+
+- **Date**: 2026-08-01
+- **Affected**: `src/cli/Console.cpp`, issue #132
+- **Status**: Accepted
+
+### Decision
+
+`readNoColorEnvironmentVariable()` calls `::SetLastError(ERROR_SUCCESS)` immediately
+before its `GetEnvironmentVariableW(L"NO_COLOR", ...)` call, so the post-call check of
+`GetLastError() == ERROR_ENVVAR_NOT_FOUND` reflects only this call's own outcome.
+
+### Rationale
+
+`GetEnvironmentVariableW` returns 0 for two different outcomes that must be told apart —
+"not defined" and "defined but empty" (`NO_COLOR=`) — distinguished only by
+`GetLastError()`. A successful Win32 call is not guaranteed to clear the thread's
+last-error value, so without priming, a prior unrelated call that happened to leave
+`ERROR_ENVVAR_NOT_FOUND` (203) in the last-error slot could make this call's own outcome
+misread as "not defined" even though `GetEnvironmentVariableW` itself did not fail.
+
+This was verified empirically on this project's build environment (Visual Studio 18
+Enterprise, MSVC toolset `v145`), not assumed from documentation: a small standalone
+harness set `NO_COLOR=` (present, empty — the dangerous case), poisoned the last-error
+slot with an unrelated failing `GetEnvironmentVariableW` call (leaving
+`ERROR_ENVVAR_NOT_FOUND`), then probed `NO_COLOR` both without and with the priming fix.
+
+| | `GetEnvironmentVariableW` result | `GetLastError()` after | Classified as |
+|---|---|---|---|
+| Unprimed (before this fix) | 0 | 203 (`ERROR_ENVVAR_NOT_FOUND`, stale) | not set — **wrong** |
+| Primed (this fix) | 0 | 0 (`ERROR_SUCCESS`) | set — correct |
+
+This confirms both halves of the bug on the real target platform: `GetEnvironmentVariableW`
+does not clear a stale last-error value on success, and priming with `SetLastError`
+immediately before the call fixes the misclassification.
+
+### Consequences
+
+- `src/cli/Console.cpp`'s `readNoColorEnvironmentVariable()` gains the priming call and an
+  explanatory comment.
+- **No automated unit test was added.** `readNoColorEnvironmentVariable()` is a private,
+  free function in `Console.cpp`'s anonymous namespace with no injection seam; the
+  existing test-facing surface (`Console`'s `noColorEnvValueOverride` constructor
+  parameter, exercised by `tests/ConsoleTests.cpp`'s existing
+  `colorIsDisabledByNoColorEnvironmentVariable` and siblings) tests `noColorEnvSet()`'s
+  downstream logic given an already-resolved `std::optional<std::wstring>`, not this
+  probe's own `GetEnvironmentVariableW`/`GetLastError()` interaction. Introducing an
+  injection seam solely to unit-test this one three-line probe was judged heavier than
+  the fix itself and inconsistent with `Console`'s existing design, which does not expose
+  its other small production-only helpers (e.g. `equalsOrdinalIgnoreCase`) for injection
+  either. Verified instead via the standalone empirical harness described above (not
+  committed to the repository - a throwaway diagnostic, per this project's "confirm by
+  actually running it" convention already used for ADR-0029's `/ZI`/`/guard:cf`
+  incompatibility finding) and, separately, the project's full test suite continuing to
+  pass with the change in place.
+- No change to `noColorEnvSet()`, the `Console` constructors, or any public API.
+
+### Verification
+
+`Debug|x64` and `Release|x64` build clean at `/W4 /WX`; `vstest.console.exe` reports all
+tests passing for both (unchanged pass/fail counts from before this fix - this change
+does not add or remove test cases). `Release|ARM64` cross-builds clean (cross-built, not
+run). The empirical `GetLastError()`-priming verification above was performed separately,
+outside the test suite.
