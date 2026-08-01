@@ -54,8 +54,11 @@ of whether its target exists.
 
 ### Verification
 
-`Debug|x64` and `Release|x64` build clean at `/W4 /WX`; `vstest.console.exe` reports all
-tests passing for both, including the new test (executed for real where Developer Mode
+`Debug|x64` and `Release|x64` build clean at `/W4 /WX`; `vstest.console.exe` reports
+405/406 passing for both, including the new test (executed for real where Developer Mode
 or elevation is available in the environment; otherwise it logs and returns per the
-project's existing `Inconclusive`-style skip convention — see the test itself).
-`Release|ARM64` cross-builds clean (cross-built, not run).
+project's existing `Inconclusive`-style skip convention — see the test itself). The one
+failure, `nonAsciiBrokenSymbolicLinkIsBroken`, is pre-existing and unrelated — confirmed
+by running the same test against an unmodified `main` worktree, where it fails
+identically (see `docs/task.md`'s entry for this issue). `Release|ARM64` cross-builds
+clean (cross-built, not run).

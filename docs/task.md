@@ -2725,7 +2725,8 @@ documents; precedes #65, whose release notes point at this README.
 ## 2026-08-01 — Issue #130: LinkInspector directory reparse points classified Mismatch
 
 **Trigger**: issue #130 (sub-issue of #129), split out of draft PR #128's Win32 API
-audit, "Issue 1". First layer of a 3-PR stack (#130 → #131 → #132).
+audit, "Issue 1". First layer of a 3-PR stack, one PR per issue: PR #133 (#130) →
+PR #134 (#131) → PR #135 (#132).
 
 - `inspectLink()` in `src/core/LinkInspector.cpp` now checks
   `FILE_ATTRIBUTE_DIRECTORY` immediately after confirming the entry is a reparse
