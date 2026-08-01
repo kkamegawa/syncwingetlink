@@ -172,11 +172,19 @@ constexpr wchar_t kDeveloperModeValueName[] = L"AllowDevelopmentWithoutDevLicens
         // Opened by path exactly once, then every further check and the delete itself
         // operate on this one handle - closing the inspect-to-delete TOCTOU window a
         // second DeleteFileW(linkPath) by name would reopen (ADR-0035). OPEN_REPARSE_POINT
-        // is required to open the link itself rather than following it.
+        // is required to open the link itself rather than following it. FILE_READ_ATTRIBUTES
+        // is required for the GetFileInformationByHandleEx call below to succeed - without
+        // it, that call could itself fail with ERROR_ACCESS_DENIED and be misdiagnosed by
+        // buildError() as InsufficientPermission, when the real cause would be these access
+        // flags rather than Developer Mode/elevation. FILE_FLAG_BACKUP_SEMANTICS is required
+        // to open a directory at all via CreateFileW; without it, a raced replacement of
+        // linkPath by a plain directory would fail the open itself (with a non-deterministic
+        // error) rather than being caught deterministically by the re-verification below.
         const HANDLE rawHandle =
-            ::CreateFileW(extendedPath.c_str(), DELETE,
+            ::CreateFileW(extendedPath.c_str(), DELETE | FILE_READ_ATTRIBUTES,
                          FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
-                         OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
+                         OPEN_EXISTING,
+                         FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS, nullptr);
         if (rawHandle == INVALID_HANDLE_VALUE)
         {
             return ::GetLastError();

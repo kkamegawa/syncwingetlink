@@ -77,8 +77,17 @@ The production `SymlinkServiceOperations::deleteEntry` (built by
 `makeProductionOperations()`) no longer deletes by name with a single `DeleteFileW(
 linkPath)` call. It now:
 
-1. Opens `linkPath` once via `CreateFileW(..., DELETE, ..., FILE_FLAG_OPEN_REPARSE_POINT,
-   ...)`.
+1. Opens `linkPath` once via `CreateFileW(..., DELETE | FILE_READ_ATTRIBUTES, ...,
+   FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS, ...)`. `FILE_READ_ATTRIBUTES`
+   is required for step 2's `GetFileInformationByHandleEx` call to succeed - without it,
+   that call could itself fail with `ERROR_ACCESS_DENIED` and be misdiagnosed as
+   `InsufficientPermission` by `buildError()`, blaming Developer Mode/elevation for what
+   would actually be an access-rights gap in this open call.
+   `FILE_FLAG_BACKUP_SEMANTICS` is required to open a directory at all via `CreateFileW`;
+   without it, a raced replacement of `linkPath` by a plain directory would fail the open
+   itself with a non-deterministic error rather than being caught deterministically by
+   step 2's re-verification (caught during Copilot review of the PR implementing this
+   ADR).
 2. Re-verifies, via `GetFileInformationByHandleEx(FileAttributeTagInfo)` on that same
    handle, that the entry is still a file symbolic link (`IO_REPARSE_TAG_SYMLINK`, not
    `FILE_ATTRIBUTE_DIRECTORY`). A mismatch returns `ERROR_INVALID_DATA` without deleting
