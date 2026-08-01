@@ -161,6 +161,12 @@ readSymbolicLinkTarget(const std::filesystem::path& linkPath);
 //   Only a clean ERROR_FILE_NOT_FOUND/ERROR_PATH_NOT_FOUND result is
 //   LinkEntryKind::None; any other GetFileAttributesW failure throws
 //   LinkInspectionError - it is never mislabeled Missing.
+// - A reparse point carrying FILE_ATTRIBUTE_DIRECTORY (a junction or a *directory*
+//   symbolic link) is classified LinkEntryKind::OtherReparsePoint without ever being
+//   decoded as a symbolic link: Links\<alias>.exe is only ever expected to hold a *file*
+//   symbolic link, and decoding a directory symlink with a missing target would
+//   otherwise report Broken - whose repair path deletes with DeleteFileW, which cannot
+//   remove a directory entry (docs/adr-phase-7.md ADR-0034).
 // - A reparse point that readSymbolicLinkTarget() reports is not a symbolic link becomes
 //   LinkEntryKind::OtherReparsePoint (classifyLink then reports Mismatch); it is never
 //   treated as a healthy link.

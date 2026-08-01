@@ -2721,3 +2721,48 @@ documents; precedes #65, whose release notes point at this README.
 - `Release|x64 -p:StaticRuntime=true` and `Release|ARM64 -p:StaticRuntime=true`:
   both build clean; `dumpbin` and `VersionInfo` evidence as described above.
 - No dependency added. No `*_ja.md` file was read or changed.
+
+## 2026-08-01 — Issue #130: LinkInspector directory reparse points classified Mismatch
+
+**Trigger**: issue #130 (sub-issue of #129), split out of draft PR #128's Win32 API
+audit, "Issue 1". First layer of a 3-PR stack (#130 → #131 → #132).
+
+- `inspectLink()` in `src/core/LinkInspector.cpp` now checks
+  `FILE_ATTRIBUTE_DIRECTORY` immediately after confirming the entry is a reparse
+  point, and before attempting to decode it as a symbolic link. A directory
+  reparse point (a junction or a *directory* symbolic link) is classified
+  `LinkEntryKind::OtherReparsePoint` -> `LinkStatus::Mismatch` without ever being
+  decoded, so it is never touched by `SymlinkService::repairLink()`.
+- Restored via `git cherry-pick` of `0bb0999` from the
+  `copilot/extract-windows-api-issues` branch (the fix PR #128 itself reverted
+  while deferring implementation); the cherry-pick applied cleanly with no
+  conflicts.
+- `src/core/LinkInspector.h`'s `inspectLink()` contract comment gains a bullet
+  documenting the directory-reparse-point case and pointing at ADR-0034.
+- `tests/TempDirectory.h` gains `createDirectorySymlink()`, mirroring
+  `createFileSymlink()`'s Developer-Mode-or-elevation skip convention.
+- `tests/LinkInspectorTests.cpp` gains
+  `directorySymbolicLinkIsMismatchEvenWithAMissingTarget`, covering the
+  specific dangerous shape (a directory symlink with a missing target) that
+  would otherwise have decoded to `Broken`.
+- New `docs/adr-phase-7.md` (**ADR-0034**) records the decision and rationale;
+  `docs/adr.md`'s index table gains a row for the new file.
+
+### Verified
+
+- `Debug|x64`: builds clean at `/W4 /WX`; `vstest.console.exe` reports 405/406
+  passing. The one failure, `nonAsciiBrokenSymbolicLinkIsBroken`, is
+  **pre-existing and unrelated** - confirmed by building and running the same
+  test in an unmodified `main` worktree on this machine, where it fails
+  identically (`Assert::IsFalse(item.existingTarget.has_value())`, a
+  non-directory file-symlink case this change does not touch). Not
+  investigated further as out of scope for this issue; worth its own issue.
+- `Release|x64`: builds clean; `vstest.console.exe` reports the same 405/406
+  (same pre-existing failure, nothing new).
+- `Release|ARM64`: cross-built, not run (per `docs/adr.md` open item 3 and this
+  project's ARM64-tests-only-run-on-ARM64-host convention).
+- `syncwingetlink.core.vcxproj` and `syncwingetlink.vcxproj` needed no project
+  file changes (no files added/removed). `syncwingetlink.tests.vcxproj`
+  likewise unchanged - the new test lives in the existing
+  `LinkInspectorTests.cpp`.
+- No dependency added. No `*_ja.md` file was read or changed.
