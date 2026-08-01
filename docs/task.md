@@ -2767,3 +2767,58 @@ PR #134 (#131) → PR #135 (#132).
   likewise unchanged - the new test lives in the existing
   `LinkInspectorTests.cpp`.
 - No dependency added. No `*_ja.md` file was read or changed.
+
+## 2026-08-01 — Issue #131: SymlinkService deletes by handle, closing the TOCTOU race
+
+**Trigger**: issue #131 (sub-issue of #129), split out of draft PR #128's Win32 API
+audit, "Issue 2". Second layer of the 3-PR stack (PR #134), based on PR #133's branch
+(`fix/130-linkinspector-directory-reparse`).
+
+- `makeProductionOperations().deleteEntry` in `src/core/SymlinkService.cpp` no
+  longer deletes by name with a single `DeleteFileW(linkPath)` call. It now
+  opens the entry once via `CreateFileW(..., DELETE, ...,
+  FILE_FLAG_OPEN_REPARSE_POINT, ...)`, re-verifies on that handle via
+  `GetFileInformationByHandleEx(FileAttributeTagInfo)` that the entry is still
+  a file symbolic link (returning `ERROR_INVALID_DATA` without deleting if
+  not), and deletes by handle via
+  `SetFileInformationByHandle(FileDispositionInfo)`.
+- `SymlinkServiceError::operation()` now reports `"deleteEntry"` for a delete
+  failure instead of the literal `"DeleteFileW"`, since the failing operation
+  is no longer that single call. This is a documented, breaking change to a
+  public error-contract string.
+- `src/core/SymlinkService.h` contract comments updated throughout
+  (`SymlinkServiceErrorKind`, `SymlinkServiceError::operation()`,
+  `SymlinkServiceOperations::deleteEntry`, `repairLink()`'s `Throws` doc) to
+  describe the handle-based delete and point at ADR-0035.
+- `tests/SymlinkServiceTests.cpp`:
+  `deleteFailurePreventsCreationAndReportsDeleteFailed` updated for the new
+  `"deleteEntry"` label; new test
+  `deleteReVerificationFailureIsReportedAsDeleteFailedWithoutCreation` covers
+  the `ERROR_INVALID_DATA` re-verification-failure branch via
+  `FakeOperations`. The real handle-based delete path itself is already
+  exercised end-to-end by the pre-existing `productionRepairLinkReplacesARealBrokenLink`
+  (drives the real `kProductionOperations` through the two-argument
+  `repairLink()` overload) - no new production-facing integration test was
+  needed. A test reproducing the actual race (a second thread/process
+  mutating the entry between `inspectLink()` and `deleteEntry`) was not
+  attempted: it would be inherently timing-dependent and isn't needed to
+  verify the fix's logic, which is deterministic given any observed
+  mismatch - noted as a deliberate scope limit, not an oversight.
+- `docs/adr-phase-7.md` gains **ADR-0035** recording the decision, rationale,
+  and the breaking-change note above; `docs/adr.md`'s index range for the
+  file is extended to ADR-0035.
+
+### Verified
+
+- `Debug|x64`: builds clean at `/W4 /WX`; `vstest.console.exe` reports 406/407
+  passing (407 total, one more than #130's entry above because this layer
+  adds one new test). The one failure is the same pre-existing, unrelated
+  `nonAsciiBrokenSymbolicLinkIsBroken` documented in #130's entry -
+  re-confirmed unaffected by this change (it exercises a *file* symlink path,
+  not `deleteEntry`). `productionRepairLinkReplacesARealBrokenLink`, which
+  exercises the new handle-based delete against a real broken symlink on this
+  host, passed.
+- `Release|x64`: builds clean; `vstest.console.exe` reports the same 406/407.
+- `Release|ARM64`: cross-built, not run.
+- No project file changes needed (no files added/removed). No dependency
+  added. No `*_ja.md` file was read or changed.

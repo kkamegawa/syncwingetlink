@@ -318,10 +318,43 @@ public:
         catch (const SymlinkServiceError& error)
         {
             Assert::IsTrue(error.kind() == SymlinkServiceErrorKind::DeleteFailed);
-            Assert::AreEqual(std::string("DeleteFileW"), error.operation());
+            // "deleteEntry", not "DeleteFileW": the production delete is no longer a
+            // single by-name Win32 call (docs/adr-phase-7.md ADR-0035).
+            Assert::AreEqual(std::string("deleteEntry"), error.operation());
         }
         Assert::AreEqual(0, fake.createCalls);
         Assert::AreEqual(1, fake.inspectCalls);
+    }
+
+    TEST_METHOD(deleteReVerificationFailureIsReportedAsDeleteFailedWithoutCreation)
+    {
+        // Models the production deleteEntry's re-verification step (ADR-0035) rejecting
+        // an entry that no longer matches what repairLink()'s fresh inspection saw - the
+        // race the handle-based delete exists to close. FakeOperations cannot reproduce
+        // the real race itself (that needs a second thread/process mutating the
+        // filesystem between inspect and delete), but it can and does verify repairLink()
+        // handles this outcome exactly like any other delete failure: DeleteFailed,
+        // no create attempted. ERROR_INVALID_DATA is the code the production deleteEntry
+        // returns for this case, matching LinkInspector.cpp's existing convention for "the
+        // reparse point isn't the shape we expected."
+        const RepairItem candidate = makeCandidate(LinkStatus::Broken);
+        FakeOperations fake;
+        fake.inspectResults = {makeCandidate(LinkStatus::Broken, LinkEntryKind::SymbolicLink)};
+        fake.deleteResults = {ERROR_INVALID_DATA};
+
+        try
+        {
+            (void)repairLink(candidate, RepairMode::Execute, fake.toOperations());
+            Assert::Fail(L"Expected SymlinkServiceError");
+        }
+        catch (const SymlinkServiceError& error)
+        {
+            Assert::IsTrue(error.kind() == SymlinkServiceErrorKind::DeleteFailed);
+            Assert::AreEqual(std::string("deleteEntry"), error.operation());
+            Assert::AreEqual(static_cast<std::uint32_t>(ERROR_INVALID_DATA),
+                             error.win32ErrorCode());
+        }
+        Assert::AreEqual(0, fake.createCalls);
     }
 
     // --- Ok / Mismatch: no mutation, either mode ---

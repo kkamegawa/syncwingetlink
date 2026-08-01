@@ -168,11 +168,50 @@ constexpr wchar_t kDeveloperModeValueName[] = L"AllowDevelopmentWithoutDevLicens
     };
     operations.deleteEntry = [](const std::filesystem::path& linkPath) -> std::uint32_t {
         const std::filesystem::path extendedPath = paths::toExtendedLengthPath(linkPath);
-        if (::DeleteFileW(extendedPath.c_str()))
+
+        // Opened by path exactly once, then every further check and the delete itself
+        // operate on this one handle - closing the inspect-to-delete TOCTOU window a
+        // second DeleteFileW(linkPath) by name would reopen (ADR-0035). OPEN_REPARSE_POINT
+        // is required to open the link itself rather than following it.
+        const HANDLE rawHandle =
+            ::CreateFileW(extendedPath.c_str(), DELETE,
+                         FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+                         OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
+        if (rawHandle == INVALID_HANDLE_VALUE)
         {
-            return 0;
+            return ::GetLastError();
         }
-        return ::GetLastError();
+        const std::unique_ptr<void, decltype(&::CloseHandle)> handle(rawHandle, &::CloseHandle);
+
+        // Re-verifies, on the handle just opened, that this is still exactly the file
+        // symbolic link repairLink() decided to delete - never a directory, never any
+        // other reparse tag. repairLink() only reaches here for a fresh Broken status
+        // paired with LinkEntryKind::SymbolicLink (enforced by its own invariant check),
+        // so a mismatch here means the filesystem entry changed between inspection and
+        // this call, not a programming error. Reported as ERROR_INVALID_DATA, the same
+        // code LinkInspector.cpp already uses for "the reparse point isn't the shape we
+        // expected" - no Win32 call actually failed, so there is no GetLastError() of its
+        // own to return.
+        FILE_ATTRIBUTE_TAG_INFO tagInfo{};
+        if (!::GetFileInformationByHandleEx(handle.get(), FileAttributeTagInfo, &tagInfo,
+                                            sizeof(tagInfo)))
+        {
+            return ::GetLastError();
+        }
+        if ((tagInfo.FileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0 ||
+            tagInfo.ReparseTag != IO_REPARSE_TAG_SYMLINK)
+        {
+            return ERROR_INVALID_DATA;
+        }
+
+        FILE_DISPOSITION_INFO dispositionInfo{};
+        dispositionInfo.DeleteFile = TRUE;
+        if (!::SetFileInformationByHandle(handle.get(), FileDispositionInfo, &dispositionInfo,
+                                          sizeof(dispositionInfo)))
+        {
+            return ::GetLastError();
+        }
+        return 0;
     };
     operations.create = [](const std::filesystem::path& target,
                            const std::filesystem::path& linkPath,
@@ -257,7 +296,7 @@ SymlinkRepairResult repairLink(const RepairItem& candidate, RepairMode mode,
         const std::uint32_t deleteError = operations.deleteEntry(fresh.linkPath);
         if (deleteError != 0)
         {
-            throw buildError(SymlinkServiceErrorKind::DeleteFailed, "DeleteFileW",
+            throw buildError(SymlinkServiceErrorKind::DeleteFailed, "deleteEntry",
                              fresh.linkPath, deleteError, operations);
         }
     }
