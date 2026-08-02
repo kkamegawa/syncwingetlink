@@ -283,19 +283,25 @@ The essentials:
 
 ## 10. Definition of Done (excerpt)
 
-- [ ] Builds and runs on Windows 11 24H2 (x64/arm64)
-- [ ] Enumerates portable packages via the COM API, with automatic FS fallback when COM
+This excerpt mirrors `docs/PLAN.md` §11, which carries the full evidence for each line;
+see it for issue/ADR citations.
+
+- [ ] Builds and runs on Windows 11 24H2 (x64/arm64) - x64 verified repeatedly; ARM64 is
+      cross-built, not run (`docs/adr.md` open item 3)
+- [x] Enumerates portable packages via the COM API, with automatic FS fallback when COM
       is unavailable
-- [ ] `scan` classifies missing/broken/ok read-only
-- [ ] `fix` creates symlinks via a confirmation prompt; `--dry-run` has no side effects
-- [ ] Regex rules derive `codex-x86_64-pc-windows-msvc.exe → codex.exe`
-- [ ] `--tui` allows interactive selection and batch creation
-- [ ] On Developer Mode off, permission error is stated and exit code 2 is returned
-- [ ] `AliasResolver` / `RuleSet` / `LinkInspector` have MSTest unit tests
-- [ ] **All unit tests pass** (`vstest.console.exe` reports green — a successful build is
-      not sufficient evidence)
-- [ ] **No dependency has a known vulnerability**, and every dependency is MIT-compatible
-      and justified
+- [x] `scan` classifies missing/broken/ok read-only
+- [x] `fix` creates symlinks via a confirmation prompt; `--dry-run` has no side effects
+- [x] Regex rules derive `codex-x86_64-pc-windows-msvc.exe → codex.exe`
+- [x] `--tui` allows interactive selection and batch creation
+- [x] On Developer Mode off, permission error is stated and exit code 2 is returned
+- [x] `AliasResolver` / `RuleSet` / `LinkInspector` have MSTest unit tests
+- [x] **All unit tests pass** (`vstest.console.exe` reports green — a successful build is
+      not sufficient evidence) - 407/407 for `Debug|x64`/`Release|x64` as of M9; see
+      `docs/PLAN.md` §11 for the full evidence and the issue #144 caveat
+- [x] **No dependency has a known vulnerability**, and every dependency is MIT-compatible
+      and justified - zero third-party dependencies exist today; the automated gate for
+      if that changes remains open (issue #22)
 
 Per-change completion criteria are in the `cpp-msbuild` skill, section 1.
 

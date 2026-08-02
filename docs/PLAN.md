@@ -43,7 +43,9 @@ sqlite `PortableIndex` directly**.
 
 ### Rationale
 - The COM API is a **stable, versioned public interface** separate from the CLI, usable
-  from Win32 desktop apps via C++/WinRT (both out-of-proc and in-proc).
+  from Win32 desktop apps via C++/WinRT. This project activates it out-of-proc only
+  (`CLSCTX_LOCAL_SERVER`); see `docs/com-api.md` "Out-of-proc vs in-proc" for what that
+  choice implies and why no in-proc fallback exists.
 - The sqlite schema is internal and may change; depending on it directly is fragile.
 - Going through the winget service means permissions and integrity checks are handled
   appropriately.
@@ -51,8 +53,10 @@ sqlite `PortableIndex` directly**.
 ### COM API flow
 1. Create a `PackageManager` (via a factory-based COM activation).
 2. `GetLocalPackageCatalog(LocalPackageCatalog.InstalledPackages)` to get the local
-   (installed) catalog reference. Optionally compose with
-   `CreateCompositePackageCatalog` + `CompositeSearchBehavior.LocalCatalogs`.
+   (installed) catalog reference. (`CreateCompositePackageCatalog` +
+   `CompositeSearchBehavior.LocalCatalogs` was considered here but is **not used** by the
+   shipped implementation — only `GetLocalPackageCatalog` is called; see
+   `docs/com-api.md` "Enumeration".)
 3. `PackageCatalogReference.Connect()` → `PackageCatalog`.
 4. `FindPackages(FindPackagesOptions)` to enumerate `CatalogPackage` items.
 5. From `CatalogPackage.InstalledVersion` (`PackageVersionInfo`), get the identifier
@@ -73,12 +77,22 @@ sqlite `PortableIndex` directly**.
   the filesystem": resolve install location via COM, then scan under it (§6) and compare.
 
 ### Implementation options
-- Use **C++/WinRT** to project and consume `Microsoft.Management.Deployment` (recommended).
-- Default to the out-of-proc COM server (`WindowsPackageManagerServer.exe`) via a
-  `CoCreateInstance`-equivalent factory activation.
-- Note that COM calls require the `packageQuery` capability (or Medium+ integrity level).
-- If COM is unavailable (App Installer not installed, policy disabled, etc.), switch to
-  the **FS-scan fallback** in §9 (controlled by the `--source` option).
+- Use **C++/WinRT** to project and consume `Microsoft.Management.Deployment` (recommended,
+  and what is implemented).
+- Activate the out-of-proc COM server (`WindowsPackageManagerServer.exe`) via
+  `winrt::create_instance<T>(clsid, CLSCTX_LOCAL_SERVER)` with the fixed CLSIDs recorded
+  in `docs/com-api.md` — there is no in-process fallback.
+- The capability/permission requirements for calling this API from an unpackaged process
+  were not established as a documented, citable fact (no first-party Microsoft
+  documentation states one, and `src/app.manifest` declares no AppX capability because it
+  is a plain unpackaged manifest); treat COM availability as something to verify on the
+  target environment (`scan --source com --verbose`) rather than assume. See
+  `docs/com-api.md` "Capabilities / permissions" and `docs/adr-phase-8.md` ADR-0037 for a
+  concrete, environment-specific failure this verification reproduced.
+- If COM is unavailable (App Installer not installed, policy disabled, activation fails
+  for any other reason, etc.), switch to the **FS-scan fallback** in §9 (controlled by the
+  `--source` option). Under `--source auto` this degrade is unconditional on the kind of
+  failure — see `docs/com-api.md` "Failure and fallback".
 
 ## 3b. Non-goals (out of scope for the first release)
 
@@ -422,13 +436,20 @@ than invalid UTF-8 or a hard failure.
 
 ## 10. Technical risks / notes
 
-- **COM API availability / capability**: COM calls require the `packageQuery` capability
-  (or Medium+ integrity level). Activation fails when App Installer is not installed or the
-  policy is disabled, so degrade to FS with `--source auto`.
-- **Gap between COM and alias info**: if the COM API does not return per-file alias
-  mapping, supplement with regex rules (§3, §7). Do not depend on COM alone.
-- **C++/WinRT init**: call `winrt::init_apartment()` appropriately and handle exceptions
-  when out-of-proc server activation fails.
+- **COM API availability**: activation can fail for several reasons — App Installer not
+  installed, policy disabled, or (confirmed by live verification,
+  `docs/adr-phase-8.md` ADR-0037) activation of the typed WinRT interface failing on a
+  given machine/App Installer version even though the winget CLI itself works. No
+  documented capability requirement could be confirmed as fact; degrade to FS with
+  `--source auto`, which is unconditional on the failure kind. See `docs/com-api.md`
+  "Capabilities / permissions" and "Failure and fallback".
+- **The COM API has no per-file alias mapping at all** (not merely a gap that might be
+  filled) — regex rules (§3, §7) are the only source. Do not depend on COM alone.
+- **C++/WinRT init**: `winrt::init_apartment()` is deliberately **not** used anywhere in
+  this codebase — it throws on `RPC_E_CHANGED_MODE`, which a static library must
+  tolerate. `CoInitializeEx(nullptr, COINIT_MULTITHREADED)` is called directly instead,
+  once, process-wide, by `main.cpp`. See `docs/com-api.md` "Activation" and
+  `docs/adr-phase-2.md` ADR-0009.
 - **Developer Mode / permission**: symlink creation is permission-dependent. Pass
   `SYMBOLIC_LINK_FLAG_ALLOW_UNPRIVILEGED_CREATE` to `CreateSymbolicLinkW`; on failure,
   distinguish the cause (permission vs. Developer Mode off) and advise.
@@ -445,22 +466,50 @@ than invalid UTF-8 or a hard failure.
 
 ## 11. Definition of Done
 
-- [ ] Builds and runs on Windows 11 24H2 (x64/arm64).
-- [ ] Enumerates installed portable packages via the COM API.
-- [ ] Automatically falls back to FS scanning when COM is unavailable (`--source auto`).
-- [ ] `scan` correctly classifies and lists missing/broken/ok.
-- [ ] `fix` can create missing symlinks via a confirmation prompt.
-- [ ] `--dry-run` outputs the plan with no side effects.
-- [ ] Regex rules derive `codex-x86_64-pc-windows-msvc.exe → codex.exe`.
+- [ ] Builds and runs on Windows 11 24H2 (x64/arm64) - `Debug`/`Release` × `x64`/`ARM64`
+      all build clean as of every milestone through M9; x64 has been run repeatedly
+      (most recently for `docs/adr-phase-8.md` ADR-0037). ARM64 remains cross-built, not
+      run, per `docs/adr.md` open item 3 - left unchecked until it is actually executed
+      on an ARM64 host.
+- [x] Enumerates installed portable packages via the COM API - `WingetComSource` (M2,
+      issues #27-#31); see `docs/com-api.md` for the full activation/enumeration
+      contract.
+- [x] Automatically falls back to FS scanning when COM is unavailable (`--source auto`) -
+      `PackageSourceFactory`'s `AutoPackageSource` (M2, issue #34), exercised by M8's
+      `--source fs` integration coverage (#61) and by a live `--source auto` run
+      recorded in `docs/adr-phase-8.md` ADR-0037.
+- [x] `scan` correctly classifies and lists missing/broken/ok - `LinkInspector` (M4,
+      issues #44-#48), dispatched by `cli::run()`'s `scan` command (M6, issue #56).
+- [x] `fix` can create missing symlinks via a confirmation prompt - `SymlinkService` (M5,
+      issues #49-#50) plus `Console`'s confirmation prompt / `--yes` (M6, issue #54).
+- [x] `--dry-run` outputs the plan with no side effects - issue #52, proven with zero
+      delete/create/permission-query callbacks invoked across every state.
+- [x] Regex rules derive `codex-x86_64-pc-windows-msvc.exe → codex.exe` - `AliasResolver`
+      + embedded `DefaultRules` (M3, issues #38-#42), covered by
+      `tests/AliasResolverTests.cpp`/`AliasPipelineTests.cpp`.
 - [x] `--tui` allows interactive checking and batch creation (issues #58, #59, #60;
       `docs/adr-phase-6.md` ADR-0026 through ADR-0028).
-- [ ] On Developer Mode off, states the permission error and returns exit code 2.
-- [ ] `AliasResolver` / `RuleSet` / `LinkInspector` / `SymlinkService` have MSTest unit
-      tests.
-- [ ] **All unit tests pass** — `vstest.console.exe` reports green. A successful build is
-      not sufficient evidence.
-- [ ] **No dependency has a known vulnerability**; every dependency is MIT-compatible and
-      justified in the PR that introduced it.
+- [x] On Developer Mode off, states the permission error and returns exit code 2 - issue
+      #51 (`SymlinkServiceError` permission/Developer-Mode distinction), mapped to
+      `ExitCode::InsufficientPermission` in `src/cli/Dispatch.cpp`.
+- [x] `AliasResolver` / `RuleSet` / `LinkInspector` / `SymlinkService` have MSTest unit
+      tests - `tests/AliasResolverTests.cpp`, `RuleSetTests.cpp`,
+      `LinkInspectorTests.cpp`, `SymlinkServiceTests.cpp` all exist and run.
+- [x] **All unit tests pass** — `vstest.console.exe` reports green. A successful build is
+      not sufficient evidence. Reconfirmed for M9 (issues #66/#137/#138):
+      `Debug|x64`/`Release|x64` both report 407/407 passing. Caveat: this build
+      environment lacks Developer Mode/elevation, so privilege-gated tests — including
+      `nonAsciiBrokenSymbolicLinkIsBroken`, which an earlier session on a
+      privilege-enabled machine reported as a genuine failure — are skipped rather than
+      exercised here, same as every other symlink-creation test in this suite. That
+      earlier finding is tracked separately as issue #144 and was not re-verified on a
+      privilege-enabled host during this M9 pass.
+- [x] **No dependency has a known vulnerability**; every dependency is MIT-compatible and
+      justified in the PR that introduced it - the project has **zero third-party
+      dependencies** (no `vcpkg.json`; C++/WinRT comes from the Windows SDK), stated as
+      such rather than as "scanned clean," consistent with every M8 entry that touched
+      this point. The *automated* gate for if that ever changes is still open
+      (`docs/adr.md` open item 6, issue #22).
 - [x] `0.1.0` published as an unsigned GitHub **pre-release** (issue #65,
       `docs/adr-phase-6.md` ADR-0033) - statically linked x64/ARM64 executables with
       `SHA256SUMS.txt`, release notes stating the build was local (no CI, #21 is open),

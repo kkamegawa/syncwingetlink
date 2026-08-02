@@ -222,6 +222,8 @@ Build system decisions are recorded in [`adr.md`](./adr.md) (ADR-0001 … ADR-00
       (#118/ADR-0032)
 
 ## M9. Documentation (COM API)
+> Tracked as three stacked sub-issues under #11 (#66, #137, #138); see the Wiki page
+> `plan/syncwingetlink/m9-com-api-documentation` and `docs/adr-phase-8.md` ADR-0037.
 - [ ] `docs/com-api.md`: COM activation steps, required capabilities,
       out-of-proc/in-proc differences, fallback behavior on failure
 

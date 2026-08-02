@@ -33,7 +33,9 @@ recreates them after user confirmation.
   `codex-x86_64-pc-windows-msvc.exe → codex.exe`
 - 🖥️ **CLI / TUI**: CLI by default, interactive checklist with `--tui`
 - ⚡ **winget COM API first**: authoritative enumeration via
-  `Microsoft.Management.Deployment`, with automatic fallback to filesystem scanning
+  `Microsoft.Management.Deployment`, with automatic fallback to filesystem scanning —
+  see [`docs/com-api.md`](./docs/com-api.md) for activation details, capabilities, and
+  the `--source` fallback contract
 
 ## Requirements
 
