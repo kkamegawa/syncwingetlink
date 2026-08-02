@@ -2871,3 +2871,86 @@ branch (`fix/131-symlinkservice-toctou`).
 - `Release|ARM64`: cross-built, not run.
 - No project file changes needed (no files added/removed). No dependency
   added. No `*_ja.md` file was read or changed.
+
+## 2026-08-02 — M9: rewrite docs/com-api.md against the implementation (issue #66)
+
+**Trigger**: first layer of the M9 stack (issue #11), branch
+`docs/66-com-api-documentation`, based on `main`. `docs/com-api.md` had not been updated
+since 2026-07-27 while `src/core/WingetComSource.cpp` changed again on 2026-07-30 (M6,
+issue #56, apartment ownership moved to `main.cpp`); parts of the original document
+(the `packageQuery` capability claim, the `CreateCompositePackageCatalog` line) were
+written from `docs/PLAN.md`'s design intent rather than from the shipped implementation.
+The M9 checklist's "out-of-proc/in-proc differences" sub-topic had never really been
+delivered.
+
+### Completed
+
+- `docs/com-api.md`: rewritten section by section against
+  `src/core/WingetComSource.{h,cpp}`, `ComApartment.{h,cpp}`, `PackageSourceError.{h,cpp}`,
+  `PackageSourceFactory.cpp`, and `props/syncwingetlink.winget-projection.targets`. New
+  sections: "Build-time projection" (winmd discovery, host-arch `cppwinrt.exe` selection,
+  SDK pinned / winmd not pinned), "Out-of-proc vs in-proc" (the previously-missing
+  checklist sub-topic — `CLSCTX_LOCAL_SERVER` only, no in-proc fallback, and the
+  consequences that follow), "What happens when" (constructor-vs-`enumeratePackages()`
+  activation split and its `--source com` vs `--source auto` consequence), and
+  "Extending this code" (pimpl/header constraints for future authors). Corrected
+  sections: "Activation" (apartment ownership now `main.cpp`'s, not `WingetComSource`'s;
+  `S_FALSE`/`RPC_E_CHANGED_MODE`/hard-failure handling spelled out), "Enumeration" (single
+  filter, no `Selectors`/`ResultLimit`, sorted by `Id`, full `InstalledLocation` contract
+  including the unvalidated non-empty case, `CreateCompositePackageCatalog` marked unused),
+  "Failure and fallback" (new HRESULT/`FindPackagesResultStatus`/`ConnectResultStatus`
+  tables, corrected `--source auto` degrade contract — every kind degrades, not just
+  activation-step failures — actual warning/verbose strings, exit-code table), and
+  "Capabilities / permissions" (removed the unsupportable `packageQuery` claim; replaced
+  with what is directly observable plus the live-run finding below).
+- `docs/adr-phase-8.md` (new file): records **ADR-0037**, since `docs/adr-phase-7.md` is
+  already 223 lines against `docs/adr.md`'s 200-line split rule (it was created after
+  this branch by the meanwhile-merged #130/#131/#132 stack, so this layer's ADR is
+  renumbered ADR-0037 in a new `adr-phase-8.md` rather than colliding with the
+  already-taken ADR-0034 there).
+- `docs/adr.md`: added the `adr-phase-8.md` row to the ADR index table.
+
+### A finding from live verification, documented rather than fixed
+
+Building `Release|x64` and running `scan --source com --verbose` against this machine's
+real, working winget installation (`winget list` succeeds; App Installer 1.30.80.0)
+reproduced `winrt::create_instance<PackageManager>` failing with
+`HRESULT_FROM_WIN32(APPMODEL_ERROR_NO_PACKAGE)` (`0x80073D54`). Two throwaway,
+non-committed probes narrowed this precisely: a bare `CoCreateInstance` of the same CLSID
+requesting only `IUnknown` succeeds; requesting the typed `IPackageManager` interface
+(the exact call this codebase makes) fails with that HRESULT. `--source auto` degraded
+cleanly to an identical, correct 21-package FS result. This is recorded in ADR-0037 and
+`docs/com-api.md` as an observed, environment/version-specific data point — M9 is scoped
+to documentation only, so no source change was made to investigate or work around it;
+whether it warrants its own bug issue is left to the project owner.
+
+### Deliberately not done
+
+- `docs/com-api_ja.md` was not read or touched, per `AGENTS.md`'s `*_ja.md` policy. It
+  has been out of sync with the English document since before this change (last touched
+  at the initial commit, predates ADR-0009) and stays that way; bringing it back in sync
+  is explicitly out of scope for this milestone.
+- No fix to `WingetComSource`'s activation logic was attempted for the
+  `APPMODEL_ERROR_NO_PACKAGE` finding above — out of scope for a documentation-only
+  milestone.
+- `docs/PLAN.md`, `AGENTS.md`, `README.md`, `docs/TODO.md`'s M9 preamble, the stale
+  `PackageSourceError.h`/`RuleSet.cpp` comments, and the `docs/adr-phase-2.md` ADR-0009
+  amendment note are deliberately left for the next two stacked layers (sub-issues #137
+  and #138), so each PR stays reviewable at one layer's diff.
+
+### Verified
+
+- `Debug`/`Release` × `x64`/`ARM64` all build clean, 0 warnings/0 errors (`msbuild
+  syncwingetlink.sln -p:Configuration=<cfg> -p:Platform=<plat> -m`); `Debug|ARM64` and
+  `Release|ARM64` are cross-built, not run.
+- `vstest.console.exe` reports 407/407 passing for both `Debug|x64` and `Release|x64`
+  after rebasing this layer onto `main` post-#130/#131/#132 (this layer itself touches no
+  source or test file, so this is the unmodified `main` baseline, not a result of this
+  change). This build environment lacks Developer Mode/elevation, so privilege-gated
+  tests are skipped rather than exercised, including `nonAsciiBrokenSymbolicLinkIsBroken`,
+  which a privilege-enabled machine reported as a genuine failure during #130's original
+  verification - tracked separately as issue #144, not re-verified on a privilege-enabled
+  host during this M9 pass.
+- Live COM verification: see the finding above and ADR-0037's Verification section for
+  full commands and output.
+- No dependency added. No `*_ja.md` file was read or changed.
