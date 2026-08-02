@@ -2954,3 +2954,48 @@ whether it warrants its own bug issue is left to the project owner.
 - Live COM verification: see the finding above and ADR-0037's Verification section for
   full commands and output.
 - No dependency added. No `*_ja.md` file was read or changed.
+
+## 2026-08-02 — M9: reconcile COM documentation across PLAN.md, AGENTS.md, README.md (issue #137)
+
+**Trigger**: second layer of the M9 stack, on top of #66's branch
+(`docs/66-com-api-documentation`). Depends on `docs/adr-phase-8.md` ADR-0037 existing.
+
+### Completed
+
+- `docs/PLAN.md` §3: de-hedged the alias-gap note to match §3's own definitive statement;
+  marked `CreateCompositePackageCatalog` as not used by the shipped implementation;
+  replaced the unsupportable `packageQuery` capability claim in "Implementation options"
+  with what is actually observable, citing ADR-0037.
+- `docs/PLAN.md` §10: corrected the `winrt::init_apartment()` risk note to the actual
+  `CoInitializeEx`/`RPC_E_CHANGED_MODE` behavior.
+- `docs/PLAN.md` §11 (Definition of Done): checked the two COM-related boxes with
+  evidence, and reviewed the remaining unchecked lines in the same pass — checked nine
+  more that M2 through M8 already demonstrably satisfy (each with its issue/evidence),
+  including "all unit tests pass" (407/407 for `Debug|x64`/`Release|x64`, reconfirmed
+  when this stack was rebased onto `main` after #130/#131/#132 merged; see the caveat
+  about issue #144 recorded there), leaving only "builds **and runs** on x64/arm64"
+  unchecked, since ARM64 has never actually been executed (`docs/adr.md` open item 3).
+- `AGENTS.md` §10: the DoD excerpt was entirely unchecked despite mirroring
+  already-satisfied `docs/PLAN.md` §11 lines (including `--tui`, which §11 already had
+  checked) - brought into agreement, citing `docs/PLAN.md` §11 for the full evidence.
+  §6 was re-read and found already accurate; no change needed there.
+- `README.md`: linked `docs/com-api.md` from the COM feature bullet.
+- `docs/TODO.md` M9: added a `>` blockquote preamble pointing at the Wiki page and
+  `docs/adr-phase-8.md`, matching the M2/M5/M6 convention.
+
+### Deliberately not done
+
+- No source file was changed in this layer - this issue is scoped to reconciling
+  documentation with ADR-0037, not to further implementation.
+- `docs/com-api_ja.md`, `README_ja.md`, `PLAN_ja.md`, `TODO_ja.md` were not read or
+  changed, per `AGENTS.md`'s `*_ja.md` policy.
+- The stale `PackageSourceError.h`/`RuleSet.cpp` source comments and the ADR-0009
+  amendment note are left for the next stacked layer (#138), so this PR's diff stays
+  doc-only.
+
+### Verified
+
+- No build/test run needed - no source file changed, only documentation. Read back
+  `docs/com-api.md`, `docs/PLAN.md` §3/§10/§11, `AGENTS.md` §6/§10, `README.md`, and
+  `docs/TODO.md` together to confirm they agree with each other and with `src/`.
+- No dependency added. No `*_ja.md` file was read or changed.
