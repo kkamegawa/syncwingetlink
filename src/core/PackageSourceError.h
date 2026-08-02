@@ -11,10 +11,13 @@
 namespace syncwingetlink
 {
 // Coarse classification of why an IPackageSource could not produce a package list.
-// Callers (eventually the M6 CLI) map this to an exit code; PolicyBlocked/AccessDenied
-// both correspond to "insufficient permission" territory, but which exit code that maps
-// to under --source com specifically (as opposed to --source auto, which just degrades
-// to FsScanSource) is an open question - see docs/adr-phase-2.md ADR-0009.
+// Callers map this to an exit code via cli::exitCodeFor() (src/cli/Dispatch.cpp): every
+// kind here - including PolicyBlocked/AccessDenied, which read like "insufficient
+// permission" - maps to ExitCode::PackageEnumerationFailed (4).
+// ExitCode::InsufficientPermission (2) is reserved for SymlinkService's
+// Developer-Mode/privilege failures, a different subsystem; a package-source error never
+// produces it, under --source com or otherwise. See docs/com-api.md "Failure and
+// fallback".
 enum class PackageSourceErrorKind
 {
     AppInstallerMissing,      // the winget COM server is not registered / not installed

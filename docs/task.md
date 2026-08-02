@@ -2999,3 +2999,61 @@ whether it warrants its own bug issue is left to the project owner.
   `docs/com-api.md`, `docs/PLAN.md` §3/§10/§11, `AGENTS.md` §6/§10, `README.md`, and
   `docs/TODO.md` together to confirm they agree with each other and with `src/`.
 - No dependency added. No `*_ja.md` file was read or changed.
+
+## 2026-08-02 — M9: retire stale COM source comments and close M9 bookkeeping (issue #138)
+
+**Trigger**: third and final layer of the M9 stack, on top of #137's branch
+(`docs/137-com-doc-consistency`). Closes out issue #11.
+
+### Completed
+
+- `src/core/PackageSourceError.h`: rewrote the comment above `PackageSourceErrorKind`
+  that called the `--source com` exit-code mapping "an open question" - #56 settled it
+  (`src/cli/Dispatch.cpp::exitCodeFor()`: every kind maps to exit `4`;
+  `AccessDenied`/`PolicyBlocked` included, exit `2` never reached from here).
+- `src/rules/RuleSet.cpp:216-222`: corrected the comment on `RuleSet::parse()`'s
+  `ComApartment apartment;` that referenced "WingetComSource's own ComApartment further
+  up the call stack" - that apartment was removed in #56; the comment now points at
+  `main.cpp`'s process-wide one and explains why `RuleSet::parse()` still needs its own
+  regardless (`--source fs`/`test-rule` never touch `WingetComSource` at all).
+- `docs/adr-phase-2.md` ADR-0009: appended a dated "Amendment (2026-08-02, M9, issue
+  #138)" subsection noting `PackageExe::metadataAlias`'s removal and the apartment-
+  ownership move to `main.cpp`, without rewriting the original decision text - matching
+  the correction-note convention from the M8 Wiki page.
+- `docs/TODO.md`: checked M9's checklist item (citing #66/#137/#138/ADR-0037) and M8's
+  stale unchecked README line (citing #64/`65008fc`, which had already delivered it).
+
+### Deliberately not done
+
+- No behavior change: every edit in this layer is a comment or documentation text; no
+  function signature, control flow, or test assertion changed.
+- `docs/adr-phase-2.md` ADR-0009's original decision text and its existing
+  "Consequences" bullets were left untouched - ADRs are a record of what was decided and
+  when, not a place to retroactively edit history.
+- `*_ja.md` files were not read or changed.
+
+### Verified
+
+- `Debug|Release` × `x64|ARM64` all build clean, 0 warnings/0 errors, after the
+  comment-only edits to `PackageSourceError.h`/`RuleSet.cpp` - a comment change can still
+  break a build (encoding, an accidentally unterminated comment) and the project's
+  Definition of Done does not exempt comment-only diffs from the full matrix. `Release|
+  ARM64` and `Debug|ARM64`: cross-built, not run.
+- `vstest.console.exe` reports 407/407 passing for both `Debug|x64` and `Release|x64`
+  (rebasing this stack onto `main` after #130/#131/#132 merged changed nothing here,
+  since this layer touches no test or production logic). This build environment lacks
+  Developer Mode/elevation, so privilege-gated tests - including
+  `nonAsciiBrokenSymbolicLinkIsBroken`, reported as a genuine failure on a
+  privilege-enabled machine during #130's original verification - are skipped rather
+  than exercised here, same as every other symlink-creation test in this suite; that
+  finding is tracked separately as issue #144 and was not re-verified on a
+  privilege-enabled host during this M9 pass. `scan --source com --verbose` and
+  `scan --source auto --verbose` were re-run against the built `Release|x64` executable
+  and reproduced the same activation-failure-then-FS-degrade behavior `docs/com-api.md`
+  documents (exit 4 for `--source com`, exit 0 with a fallback warning for
+  `--source auto`).
+- No dependency added. No `*_ja.md` file was read or changed.
+
+Issue #11 (M9) is closed by this layer: #66, #137, and #138 are all merged, satisfying
+its acceptance criteria. This does not close #1 - M0's #21 (CI) and #22 (automated
+vulnerability gate) remain open, per issue #11's own "Dependencies" note.
