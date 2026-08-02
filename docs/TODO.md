@@ -197,7 +197,9 @@ Build system decisions are recorded in [`adr.md`](./adr.md) (ADR-0001 … ADR-00
       populated `FileVersion`/`ProductVersion`/`FileDescription`/`LegalCopyright`;
       `Debug|Release` × `x64|ARM64` all build clean, `vstest.console.exe` reports
       405/405 for `Debug|x64`/`Release|x64`
-- [ ] README (install, usage, permission requirements, examples)
+- [x] README (install, usage, permission requirements, examples) - issue #64, commit
+      `65008fc`. This box was left unchecked after #64 merged; corrected during M9
+      (issue #138) bookkeeping.
 - [x] Harden the release binary: `/guard:cf`, `/guard:ehcont`, `/CETCOMPAT`, `/Gy` -
       issue #106, ADR-0029 (`docs/adr-phase-6.md`). `/guard:ehcont`/`/CETCOMPAT` are
       x64-only per Microsoft's own reference; `Debug|Release` × `x64|ARM64` all build
@@ -224,8 +226,9 @@ Build system decisions are recorded in [`adr.md`](./adr.md) (ADR-0001 … ADR-00
 ## M9. Documentation (COM API)
 > Tracked as three stacked sub-issues under #11 (#66, #137, #138); see the Wiki page
 > `plan/syncwingetlink/m9-com-api-documentation` and `docs/adr-phase-8.md` ADR-0037.
-- [ ] `docs/com-api.md`: COM activation steps, required capabilities,
-      out-of-proc/in-proc differences, fallback behavior on failure
+- [x] `docs/com-api.md`: COM activation steps, required capabilities,
+      out-of-proc/in-proc differences, fallback behavior on failure - issues #66, #137,
+      #138, `docs/adr-phase-8.md` ADR-0037
 
 ## Future enhancements (separate milestone)
 - [ ] Read winget `PortableIndex` (sqlite) read-only (last resort when COM/FS are insufficient)

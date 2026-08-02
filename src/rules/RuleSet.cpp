@@ -217,8 +217,12 @@ RuleSet RuleSet::parse(std::wstring_view jsonText)
 {
     // winrt::Windows::Data::Json requires an initialized apartment - see the class
     // comment in RuleSet.h and docs/adr-phase-2.md ADR-0011. Tolerates a thread that
-    // already has one (e.g. WingetComSource's own ComApartment further up the call
-    // stack), same as every other ComApartment use in this codebase.
+    // already has one (e.g. main.cpp's process-wide ComApartment, constructed before
+    // this ever runs - see docs/adr-phase-5.md ADR-0024), same as every other
+    // ComApartment use in this codebase. WingetComSource itself no longer constructs
+    // its own (removed in #56); this apartment is independent of it, since --source fs
+    // and test-rule invocations reach RuleSet::parse() without ever touching
+    // WingetComSource at all.
     ComApartment apartment;
 
     JsonObject root{nullptr};

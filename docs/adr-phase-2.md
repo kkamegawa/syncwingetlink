@@ -130,6 +130,27 @@ build error when either Desktop App Installer or the SDK compiler is unavailable
   unit tested as pure functions instead, and manual verification of `--source com` in a
   normal interactive session is called out as an open item once `main.cpp` exists (M6).
 
+### Amendment (2026-08-02, M9, issue #138)
+
+This decision text is left as originally recorded above; this note only corrects two
+statements that later changes made stale, per the correction-note convention established
+on the M8 Wiki page (`plan/syncwingetlink/m8-quality-polish-and-release`):
+
+- **`PackageExe::metadataAlias` no longer exists.** Point 2's "`WingetComSource` … never
+  populates `PackageExe::metadataAlias`" described a field that has since been removed
+  from `core/Model.h` entirely — `PackageExe` now has a single member, `path`. The
+  decision this text supports (tier 1 of alias resolution is unreachable) is unaffected;
+  only the field name it referenced is gone.
+- **`WingetComSource` no longer owns a `ComApartment`.** M6 (issue #56) moved apartment
+  construction to `main.cpp`, once, process-wide, before any core call
+  (`docs/adr-phase-5.md` ADR-0024) — `WingetComSource` relies on that rather than
+  constructing its own. See `docs/com-api.md` "Activation" for the current arrangement.
+
+The manual live-COM verification described in this ADR's Consequences was repeated for
+M9 on a different, non-sandboxed machine and did **not** reproduce a probe crash; it
+instead reproduced a different, precisely diagnosed activation failure
+(`APPMODEL_ERROR_NO_PACKAGE`) — see `docs/adr-phase-8.md` ADR-0037.
+
 ---
 
 ## ADR-0010 — Source selection, glob filter semantics, and the FsScanSource failure contract
