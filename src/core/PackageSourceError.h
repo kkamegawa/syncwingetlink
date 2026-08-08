@@ -29,6 +29,11 @@ enum class PackageSourceErrorKind
     ScanFailed,               // a filesystem-source failure: FsScanSource could not read the
                               // Packages directory (denied access, I/O error). A merely
                               // absent directory is an empty result, not this.
+    PackageIdentityRequired,  // HRESULT_FROM_WIN32(APPMODEL_ERROR_NO_PACKAGE): the server is
+                              // registered, but it rejected typed WinRT interface activation
+                              // from this unpackaged caller. See docs/adr-phase-9.md
+                              // ADR-0039 and issue #143 - distinct from AppInstallerMissing,
+                              // which means the server was never found at all.
     Unknown,
 };
 
@@ -61,8 +66,9 @@ private:
 
 // Classifies a COM failure HRESULT into a PackageSourceErrorKind. Pure and
 // winrt-independent so it can be unit tested with synthetic HRESULTs on any machine,
-// without winget installed. See docs/adr-phase-2.md ADR-0009 for the HRESULT table this
-// implements.
+// without winget installed. See docs/adr-phase-2.md ADR-0009 for the original HRESULT
+// table this implements, and docs/adr-phase-9.md ADR-0039 for the
+// APPMODEL_ERROR_NO_PACKAGE case and the RPC_S_SERVER_UNAVAILABLE fix added later.
 [[nodiscard]] PackageSourceErrorKind mapHresultToKind(int32_t hresult) noexcept;
 
 // True when a winget PackageVersionMetadataField::InstallerType value denotes a portable

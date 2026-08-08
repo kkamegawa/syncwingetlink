@@ -66,19 +66,27 @@ private:
 
 [[nodiscard]] PackageSourceFactoryFn makeFake(std::wstring packageId)
 {
-    return [packageId = std::move(packageId)] { return std::make_unique<FakeSource>(packageId); };
+    return [packageId = std::move(packageId)] {
+        return PackageSourceCreation{std::make_unique<FakeSource>(packageId), std::nullopt};
+    };
 }
 
+// Reports failure by returning PackageSourceCreation::error, never by throwing - this is
+// what WingetComSource::tryCreate()'s production factory does (docs/adr-phase-9.md
+// ADR-0040, issue #143): construction failure must not raise a first-chance exception,
+// since --source auto is expected to hit it on hosts where COM activation reliably fails.
 [[nodiscard]] PackageSourceFactoryFn failingToConstruct(PackageSourceErrorKind kind)
 {
-    return [kind]() -> std::unique_ptr<IPackageSource> {
-        throw PackageSourceError(kind, "activation failed");
+    return [kind] {
+        return PackageSourceCreation{nullptr, PackageSourceError(kind, "activation failed")};
     };
 }
 
 [[nodiscard]] PackageSourceFactoryFn failingToEnumerate(PackageSourceErrorKind kind)
 {
-    return [kind] { return std::make_unique<ThrowingSource>(kind); };
+    return [kind] {
+        return PackageSourceCreation{std::make_unique<ThrowingSource>(kind), std::nullopt};
+    };
 }
 
 [[nodiscard]] std::wstring onlyPackageId(const std::vector<InstalledPackage>& packages)
@@ -116,6 +124,21 @@ public:
         Assert::IsTrue(onlyPackageId(source.enumeratePackages()) == L"from-fs");
         Assert::IsTrue(source.resolvedSource() == PackageSource::FileSystem);
         Assert::IsTrue(source.degradationKind() == PackageSourceErrorKind::AppInstallerMissing);
+    }
+
+    TEST_METHOD(aFailingFactoryReportsViaReturnValueNotException)
+    {
+        // The whole point of PackageSourceCreation is that construction failure is
+        // reported without throwing (docs/adr-phase-9.md ADR-0040, issue #143). This
+        // asserts that contract directly, one level below AutoPackageSource, rather than
+        // only observing its downstream effect (degradation) the way the test above does.
+        const PackageSourceFactoryFn factory =
+            failingToConstruct(PackageSourceErrorKind::ServerUnavailable);
+        const PackageSourceCreation result = factory();
+
+        Assert::IsNull(result.source.get());
+        Assert::IsTrue(result.error.has_value());
+        Assert::IsTrue(result.error->kind() == PackageSourceErrorKind::ServerUnavailable);
     }
 
     TEST_METHOD(aComEnumerationFailureAlsoDegradesToTheFilesystem)
@@ -180,7 +203,7 @@ public:
     {
         // Only "COM is unavailable" degrades. A programming error must not be silently
         // converted into a filesystem scan.
-        AutoPackageSource source([]() -> std::unique_ptr<IPackageSource> {
+        AutoPackageSource source([]() -> PackageSourceCreation {
                                      throw std::runtime_error("not a package source error");
                                  },
                                  makeFake(L"from-fs"));
@@ -213,9 +236,10 @@ public:
             const std::unique_ptr<IPackageSource> ignored = createPackageSource(
                 PackageSource::Com,
                 failingToConstruct(PackageSourceErrorKind::AppInstallerMissing),
-                [&]() -> std::unique_ptr<IPackageSource> {
+                [&]() -> PackageSourceCreation {
                     filesystemWasBuilt = true;
-                    return std::make_unique<FakeSource>(L"from-fs");
+                    return PackageSourceCreation{std::make_unique<FakeSource>(L"from-fs"),
+                                                 std::nullopt};
                 });
         });
 
@@ -236,9 +260,10 @@ public:
 
         const std::unique_ptr<IPackageSource> source =
             createPackageSource(PackageSource::FileSystem,
-                                [&]() -> std::unique_ptr<IPackageSource> {
+                                [&]() -> PackageSourceCreation {
                                     comWasBuilt = true;
-                                    return std::make_unique<FakeSource>(L"from-com");
+                                    return PackageSourceCreation{
+                                        std::make_unique<FakeSource>(L"from-com"), std::nullopt};
                                 },
                                 makeFake(L"from-fs"));
 
@@ -251,9 +276,29 @@ public:
         Assert::ExpectException<PackageSourceError>([] {
             const std::unique_ptr<IPackageSource> ignored =
                 createPackageSource(PackageSource::Com,
-                                    [] { return std::unique_ptr<IPackageSource>{}; },
-                                    [] { return std::unique_ptr<IPackageSource>{}; });
+                                    [] { return PackageSourceCreation{}; },
+                                    [] { return PackageSourceCreation{}; });
         });
+    }
+
+    TEST_METHOD(aFactoryThatYieldsBothASourceAndAnErrorIsTreatedAsSuccess)
+    {
+        // PackageSourceCreation documents "exactly one of source/error is set" as a
+        // postcondition invokeFactory() enforces, not something every factory is trusted
+        // to have honored itself. A misbehaving factory that sets both must not surface
+        // the error - callers treat a non-null source as success elsewhere (requireSource(),
+        // AutoPackageSource::enumeratePackages()), so this asserts that a source wins here
+        // too, rather than being silently second-guessed by an error sitting next to it.
+        const std::unique_ptr<IPackageSource> source = createPackageSource(
+            PackageSource::Com,
+            [] {
+                return PackageSourceCreation{
+                    std::make_unique<FakeSource>(L"from-com"),
+                    PackageSourceError(PackageSourceErrorKind::Unknown, "should be ignored")};
+            },
+            makeFake(L"from-fs"));
+
+        Assert::IsTrue(onlyPackageId(source->enumeratePackages()) == L"from-com");
     }
 };
 } // namespace syncwingetlink::tests

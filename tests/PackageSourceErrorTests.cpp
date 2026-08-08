@@ -49,12 +49,34 @@ public:
 
     TEST_METHOD(serverUnavailableHresultsMapToServerUnavailable)
     {
-        Assert::IsTrue(mapHresultToKind(RPC_S_SERVER_UNAVAILABLE) ==
+        // RPC_S_SERVER_UNAVAILABLE is a Win32 error code (1722); a COM call surfaces it
+        // wrapped as HRESULT_FROM_WIN32(RPC_S_SERVER_UNAVAILABLE) (0x800706BA), which is
+        // the form mapHresultToKind must recognize (docs/adr-phase-9.md ADR-0039).
+        Assert::IsTrue(mapHresultToKind(HRESULT_FROM_WIN32(RPC_S_SERVER_UNAVAILABLE)) ==
                        PackageSourceErrorKind::ServerUnavailable);
         Assert::IsTrue(mapHresultToKind(RPC_E_DISCONNECTED) ==
                        PackageSourceErrorKind::ServerUnavailable);
         Assert::IsTrue(mapHresultToKind(RPC_E_SERVER_DIED) ==
                        PackageSourceErrorKind::ServerUnavailable);
+    }
+
+    TEST_METHOD(rawServerUnavailableWin32CodeDoesNotMatchAsAnHresult)
+    {
+        // Regression guard for the bug ADR-0039 fixed: the raw Win32 error code (not
+        // HRESULT_FROM_WIN32-wrapped) must not accidentally match any case and must fall
+        // through to Unknown.
+        Assert::IsTrue(mapHresultToKind(RPC_S_SERVER_UNAVAILABLE) ==
+                       PackageSourceErrorKind::Unknown);
+    }
+
+    TEST_METHOD(appmodelErrorNoPackageMapsToPackageIdentityRequired)
+    {
+        // docs/adr-phase-9.md ADR-0039 / issue #143: PackageManager activation can fail
+        // with this HRESULT even when the winget COM server is registered and winget
+        // itself works, because the typed WinRT interface activation is rejected for an
+        // unpackaged out-of-proc caller.
+        Assert::IsTrue(mapHresultToKind(HRESULT_FROM_WIN32(APPMODEL_ERROR_NO_PACKAGE)) ==
+                       PackageSourceErrorKind::PackageIdentityRequired);
     }
 
     TEST_METHOD(unrecognizedHresultMapsToUnknown)

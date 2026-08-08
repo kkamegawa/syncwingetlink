@@ -166,3 +166,284 @@ this environment).
   strips ESC via `sanitizeForDisplay()` today, so color would need a new `Console` API,
   and would still have to respect ADR-0026's "`--no-color`/`NO_COLOR` gate
   `colorEnabled()` only, never `vtEnabled()`" rule.
+
+---
+
+## ADR-0039 — `PackageIdentityRequired`: naming `APPMODEL_ERROR_NO_PACKAGE`, and the `RPC_S_SERVER_UNAVAILABLE` HRESULT-vs-Win32-code bug
+
+- **Date**: 2026-08-08
+- **Affected**: `src/core/PackageSourceError.h`/`.cpp`, `src/core/WingetComSource.cpp`
+  (`Impl::Impl()`'s `PackageManager` activation catch), `src/cli/Dispatch.cpp`
+  (`exitCodeFor(PackageSourceErrorKind)`), issue #143
+- **Status**: Accepted
+
+### Decision
+
+1. **`--source auto`'s COM→filesystem fallback was already working correctly and is
+   unchanged by this ADR.** Investigating issue #143 on the reporting machine confirmed
+   `AutoPackageSource::enumeratePackages()` (`docs/adr-phase-2.md` ADR-0010) already
+   catches the activation failure and degrades to `FsScanSource` with exit code 0; the
+   default `--source` is already `auto` (`docs/adr-phase-2.md` ADR-0010, pinned by a new
+   `ArgParserTests.cpp` test, `sourceDefaultsToAutoWhenOmitted`, since no prior test
+   asserted the default). What issue #143 actually reported was a diagnostic-quality gap
+   in the warning text printed on degrade, not a missing fallback. Making explicit
+   `--source com` also degrade (reversing ADR-0010 decision 1) was considered and
+   explicitly declined - the user confirmed only the diagnostic gap should be fixed, since
+   `--source com`'s "the failure is the user's to see" contract still has value for anyone
+   deliberately diagnosing a COM problem.
+2. **`PackageSourceErrorKind` gains `PackageIdentityRequired`**, mapped from
+   `HRESULT_FROM_WIN32(APPMODEL_ERROR_NO_PACKAGE)` (`0x80073D54`) in `mapHresultToKind`.
+   This is the HRESULT `docs/adr-phase-8.md` ADR-0037 recorded `PackageManager` activation
+   failing with on a machine where `winget list` itself worked normally - previously
+   unclassified and falling through to `Unknown`, so the CLI's warning/error text gave no
+   hint that the server was found and registered but refused typed WinRT interface
+   activation from this unpackaged, out-of-process caller. It maps to
+   `ExitCode::PackageEnumerationFailed` (`4`), same as every other kind
+   (`docs/com-api.md` "Exit codes").
+3. **`WingetComSource`'s `PackageManager` activation catch now names the cause when the
+   kind is `PackageIdentityRequired`**, and includes the HRESULT in hex for every other
+   activation failure too: `"The winget PackageManager COM server rejected typed
+   activation from this unpackaged process (APPMODEL_ERROR_NO_PACKAGE, HRESULT
+   0x80073d54)"` versus the prior always-generic `"Failed to activate the winget
+   PackageManager COM server"`. Only the `PackageManager` activation call site
+   (`Impl::Impl()`, the one ADR-0037 reproduced the failure against) was changed;
+   `GetLocalPackageCatalog`, `Connect`, and `FindPackagesOptions`/`PackageMatchFilter`
+   activation keep their existing per-site messages and still route through the same
+   `mapHresultToKind`, so a `PackageIdentityRequired` classification is still possible
+   from those sites, just without the specialized wording - out of scope for this issue.
+4. **Fixed a pre-existing classification bug found while auditing `mapHresultToKind`**:
+   the `RPC_S_SERVER_UNAVAILABLE` case compared against the raw Win32 error code (`1722`),
+   but a COM failure surfaces it wrapped as `HRESULT_FROM_WIN32(RPC_S_SERVER_UNAVAILABLE)`
+   (`0x800706BA`) - so this case could never have matched a real failure; it only appeared
+   to work because the pre-existing test fed the same raw constant back in. Fixed to match
+   the wrapped form; a new regression test
+   (`rawServerUnavailableWin32CodeDoesNotMatchAsAnHresult`) pins the raw constant falling
+   through to `Unknown` so this cannot silently regress. `RPC_E_DISCONNECTED`/
+   `RPC_E_SERVER_DIED` were already genuine HRESULTs and needed no change.
+
+### Reason
+
+- A degrade warning or `--source com` error that says only "Failed to activate the
+  winget PackageManager COM server" gives a reader no way to distinguish "the server
+  isn't installed" from "the server is installed and reachable, but this specific
+  activation call is rejected for an unpackaged caller" - two failure modes with
+  different, and possibly different-owner, remediation paths. Issue #143's own Test plan
+  section asked for exactly this: a named `mapHresultToKind` case so the failure surfaces
+  as something more specific than `Unknown`.
+- Root-causing *why* `APPMODEL_ERROR_NO_PACKAGE` occurs on some hosts and not others
+  (per-interface-version activation, a missing proxy/stub registration, or an inherent
+  limitation of unpackaged out-of-proc activation for this interface) remains explicitly
+  open, per issue #143's own open questions; this ADR only improves what the CLI reports
+  once the failure has already happened; the four open questions in issue #143 do not need
+  resolving for `--source auto` to keep working correctly for end users, since it already
+  degrades regardless of which kind the failure classifies as.
+- The `RPC_S_SERVER_UNAVAILABLE` fix was opportunistic, not requested by issue #143, but
+  surfaced directly by reading every case in `mapHresultToKind` while adding the new one;
+  leaving a known-dead case in an exhaustively-tested classifier would have been dishonest
+  by omission.
+
+### Verification
+
+`Debug`/`Release` × `x64` both build clean at `/W4 /WX` with zero warnings.
+`vstest.console.exe` reports 425/425 for both `Debug|x64` and `Release|x64` (407
+pre-existing + 4 new in `PackageSourceErrorTests.cpp`
+(`appmodelErrorNoPackageMapsToPackageIdentityRequired`,
+`rawServerUnavailableWin32CodeDoesNotMatchAsAnHresult`, and the updated
+`serverUnavailableHresultsMapToServerUnavailable`) + 1 in `DispatchTests.cpp`
+(`PackageIdentityRequired` added to `everyKindMapsToPackageEnumerationFailed`) + 1 in
+`ArgParserTests.cpp` (`sourceDefaultsToAutoWhenOmitted`); `ARM64` was not built for this
+change (diagnostics-only, no platform-specific code path).
+
+Manual verification on the reporting machine (the same host issue #143 was filed
+against, which reproducibly hits `APPMODEL_ERROR_NO_PACKAGE`), `Debug|x64`:
+
+```
+.\build\x64\Debug\syncwingetlink.exe scan --verbose
+→ warning: --source auto fell back to a filesystem scan: The winget PackageManager COM
+  server rejected typed activation from this unpackaged process
+  (APPMODEL_ERROR_NO_PACKAGE, HRESULT 0x80073d54)
+  ...scan proceeds normally via the filesystem source; exit code 0
+
+.\build\x64\Debug\syncwingetlink.exe scan --source com --verbose
+→ The winget PackageManager COM server rejected typed activation from this unpackaged
+  process (APPMODEL_ERROR_NO_PACKAGE, HRESULT 0x80073d54)
+  exit code 4
+
+.\build\x64\Debug\syncwingetlink.exe scan --source fs --verbose
+→ unchanged: package source - requested: fs, used: fs; exit code 0
+```
+
+### Consequences
+
+- `docs/com-api.md`'s "Failure and fallback" HRESULT table gains the
+  `PackageIdentityRequired` row and the corrected `RPC_S_SERVER_UNAVAILABLE` wrapping, and
+  its exit-code summary now says "eight" kinds rather than "seven".
+- Issue #143 stays open, narrowed to its root-cause questions (which this ADR explicitly
+  does not answer) rather than the diagnostic gap, which this ADR closes.
+- A future ADR that changes explicit `--source com`'s no-degrade contract (ADR-0010
+  decision 1) remains a distinct, separately-approved decision - this one does not touch
+  it.
+
+### Amendment (2026-08-08, issue #143)
+
+Decision 3's "`FindPackagesOptions`/`PackageMatchFilter` activation keep their existing
+per-site messages … out of scope for this issue" still holds - ADR-0040 changes the
+*mechanism* those two activations use (a non-throwing `CoCreateInstance` call replacing
+`winrt::create_instance`) but preserves their message text exactly. Decision 3's
+`PackageManager` message is likewise preserved byte-for-byte by ADR-0040. Decisions 1, 2
+and 4 are unaffected.
+
+---
+
+## ADR-0040 — Throw-free COM activation, and enforcing `WingetComSource`'s "no raw `hresult_error`" contract
+
+- **Date**: 2026-08-08
+- **Affected**: `src/core/WingetComSource.cpp`/`.h`, `src/core/PackageSourceFactory.cpp`/
+  `.h`, `tests/PackageSourceFactoryTests.cpp`, issue #143
+- **Status**: Accepted
+
+### Decision
+
+1. **The three COM activations (`PackageManager`, `FindPackagesOptions`,
+   `PackageMatchFilter`) go through a file-local `createInstanceNoThrow<T>()` helper that
+   calls `::CoCreateInstance` directly and returns the `HRESULT`, replacing
+   `winrt::create_instance<T>()`.** `winrt::create_instance<T>(clsid, ctx)` is
+   `CoCreateInstance(clsid, outer, ctx, guid_of<T>(), &result)` followed by
+   `winrt::check_hresult()`, which throws on failure - so on a host where an activation
+   reproducibly fails (this issue's own reporting machine, `PackageIdentityRequired` per
+   ADR-0039), every single `scan`/`fix` run raised a first-chance C++ exception for a
+   condition the code handles by design. The replacement performs the identical
+   activation attempt - same CLSID, same `CLSCTX_LOCAL_SERVER`, same **typed default
+   interface** IID via `winrt::guid_of<T>()` (not `IUnknown` - see decision 3 for why that
+   distinction matters), and the same adopt-without-an-extra-`AddRef` ownership transfer
+   `winrt::capture()` performs on success (`T{raw, winrt::take_ownership_from_abi}`) -
+   without the throw. `winrt::try_create_instance<T>()` was considered and rejected: it is
+   throw-free too, but discards the `HRESULT`, which `mapHresultToKind()` and the
+   diagnostic text both need.
+2. **The `PackageManager` activation's diagnostic message - including the
+   `PackageIdentityRequired` special case and its `{:#010x}` HRESULT formatting added by
+   ADR-0039 - is preserved byte-for-byte.** Verified by direct comparison against
+   ADR-0039's own recorded transcript (see Verification below).
+3. **`WingetComSource::Impl`'s constructor is split into a trivial `Impl() = default` plus
+   an `initialize()` method that returns `std::optional<PackageSourceError>` instead of
+   throwing.** `WingetComSource` itself gains a `static tryCreate(std::optional
+   <PackageSourceError>& error)` factory and loses its public constructor (made private -
+   the only way to obtain an instance is now `tryCreate()`, so no caller can hold one
+   whose activation was never checked). `PackageSourceFactory.h` gains a
+   `PackageSourceCreation{source, error}` struct, and `PackageSourceFactoryFn` now returns
+   it instead of a bare `unique_ptr<IPackageSource>`; `AutoPackageSource::enumeratePackages()`
+   branches on the returned struct for the construction step instead of catching a throw
+   (it still uses an ordinary `try`/`catch` for the ensuing `enumeratePackages()` call,
+   which is a ordinary runtime failure, not the "COM is unavailable" case the non-throwing
+   path exists for). Explicit `--source com`/`--source fs` (`requireSource()` in
+   `PackageSourceFactory.cpp`) still throw on failure - unchanged, per ADR-0010.
+4. **Every remaining winrt call in `WingetComSource.cpp` is now inside a translating
+   `catch`, closing a contract hole `WingetComSource.h` had documented since M2 without
+   actually enforcing**: `ConnectResult::Status()`/`ExtendedErrorCode()`/`PackageCatalog()`,
+   `FindPackagesResult::Status()`/`ExtendedErrorCode()`, and `Matches()` plus the
+   range-for's own iteration machinery (C++/WinRT's iterator calls `Size()`/`GetAt()` as
+   the loop advances, so the loop scaffolding, not only its body, could throw) were all
+   previously unguarded. This mattered concretely: `winrt::hresult_error` has no
+   `std::exception` base, so an escaping one would have defeated `AutoPackageSource`'s
+   filesystem fallback outright (it catches only `PackageSourceError`) and would not have
+   been caught by `Dispatch.cpp`'s or `main.cpp`'s `catch (const std::exception&)` either -
+   only `main.cpp`'s bare `catch (...)`, printing `"unexpected error (not a
+   std::exception)"` and exiting 3.
+5. **Declined: making `IPackageSource` itself non-throwing** (e.g. `std::expected`-based).
+   That would remove the last first-chance exception on a host where COM connects but
+   `FindPackages` then fails, but it changes `IPackageSource`'s public contract,
+   `AutoPackageSource`'s post-construction `try`/`catch`, and every `cli::run()` handler -
+   a larger, separate decision. Recorded here as considered-and-rejected so this ADR is
+   not read as claiming the program is now exception-free: it is not; the failure path
+   this issue's reporting machine actually hits (COM construction failure, degrading to
+   the filesystem source) now raises zero C++ exceptions, but `enumeratePackages()`
+   failing after a successful connection still throws, as it always has.
+
+### Reason
+
+- A first-chance exception on every single run, for a condition the code already handles
+  correctly and silently, is debugger noise that obscures genuine problems and makes this
+  issue's reporting machine an unpleasant environment to debug anything else in. Removing
+  it does not change behavior - `scan`/`fix` already completed successfully via the
+  filesystem fallback before this change (verified in the ADR-0039 investigation) - it
+  only removes the noise.
+- The contract hole decision 4 closes was not hypothetical: it directly threatened the
+  exact fallback issue #143 depends on. Any future edit that added a winrt call outside a
+  guarded region would have silently broken `--source auto` on a COM-unavailable host with
+  no compiler warning and no obviously-related test failure - the class's own header
+  comment already claimed the contract that would have been violated.
+- Making COM construction failure a return value rather than an exception was chosen over
+  leaving it exception-based and merely narrowing the `winrt::hresult_error` exposure,
+  because `--source auto` is *expected* to hit this failure routinely (it is the whole
+  point of `auto`) - using C++ exceptions for an expected, routine control-flow outcome is
+  the specific pattern this issue's first-chance-exception complaint identifies as
+  unwanted, not merely the exception *type* involved.
+
+### Verification
+
+`Debug`/`Release` × `x64` both build clean at `/W4 /WX` with zero warnings; `ARM64`
+(`Debug` and `Release`) cross-built clean at zero warnings too - unlike ADR-0039, this
+change was not diagnostics-only (a new function template instantiates three times per
+target), so ARM64 was not skipped this time. `vstest.console.exe` reports 426/426 for
+both `Debug|x64` and `Release|x64` (425 pre-existing + 1 new,
+`aFailingFactoryReportsViaReturnValueNotException` in `PackageSourceFactoryTests.cpp`;
+the existing `AutoPackageSourceTests`/`CreatePackageSourceTests` cases needed only their
+fake-factory helpers' return type updated to `PackageSourceCreation`, not new
+assertions).
+
+Message-text preservation (decision 2) was verified by direct comparison against
+ADR-0039's own recorded transcript, on the same reporting machine, `Debug|x64`:
+
+```
+.\build\x64\Debug\syncwingetlink.exe scan --verbose
+→ warning: --source auto fell back to a filesystem scan: The winget PackageManager COM
+  server rejected typed activation from this unpackaged process
+  (APPMODEL_ERROR_NO_PACKAGE, HRESULT 0x80073d54)
+  ...exit code 0 - byte-for-byte identical to ADR-0039's transcript
+
+.\build\x64\Debug\syncwingetlink.exe scan --source com --verbose
+→ The winget PackageManager COM server rejected typed activation from this unpackaged
+  process (APPMODEL_ERROR_NO_PACKAGE, HRESULT 0x80073d54)
+  exit code 4 - byte-for-byte identical
+
+.\build\x64\Debug\syncwingetlink.exe scan --source fs --verbose
+→ unchanged, exit code 0
+```
+
+**The exception-elimination claim itself (decision 1/4) was verified empirically, not
+just by code review**, using a small standalone harness (not part of the solution;
+scratch-built and discarded) that links `syncwingetlink.core.lib` and installs a
+`AddVectoredExceptionHandler` counting `RaiseException` calls with the MSVC C++-EH
+exception code (`0xE06D7363`) - the same signal Visual Studio's "break on all C++
+exceptions" debugger setting observes, but machine-checkable without an interactive
+session. Run on the reporting machine around a call to `WingetComSource::tryCreate()`:
+`tryCreate() succeeded: no`, `error.what()` matching the exact `PackageIdentityRequired`
+text above, and **`C++ exceptions raised during tryCreate(): 0`**. This is direct,
+on-the-actual-failing-host evidence that the activation failure this issue was filed
+about no longer raises a C++ exception at all, not only that the exception (if any) would
+be caught.
+
+### What was not tested
+
+No MSTest exercises any of the changed COM-activation or catalog-connect code paths -
+consistent with `docs/adr-phase-2.md` ADR-0009, which records that out-of-process
+activation for this CLSID is unreliable inside a sandboxed test runner. No fake-COM test
+was added (a bogus-CLSID call to `createInstanceNoThrow`, an in-proc COM object registered
+at test time, or an assertion on message strings, none of which either of the existing
+`tests/DispatchTests.cpp`/`tests/IntegrationTests.cpp` do) - see `docs/task.md`'s entry
+for this change for the specific alternatives considered and declined.
+
+### Consequences
+
+- `docs/com-api.md`'s "Activation" section, code sample, "Out-of-proc vs in-proc", "What
+  happens when", and "Failure and fallback" sections are updated to describe
+  `createInstanceNoThrow()`/`tryCreate()`/`PackageSourceCreation` rather than
+  `winrt::create_instance`/a throwing constructor; ADR-0037's historical reproduction
+  transcript (quoted in "Capabilities / permissions") is left as a historical record with
+  a forward pointer to this ADR, not rewritten.
+- `docs/PLAN.md` §3's "Implementation options" bullet is updated to describe the
+  non-throwing call.
+- `docs/adr-phase-8.md` ADR-0037's probe transcripts are historical evidence of a live run
+  against the code as it was at the time and are deliberately left untouched.
+- A future change to make `IPackageSource` itself non-throwing (decision 5) is a distinct,
+  separately-approved ADR - this one does not attempt it.

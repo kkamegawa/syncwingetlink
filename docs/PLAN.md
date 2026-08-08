@@ -79,9 +79,12 @@ sqlite `PortableIndex` directly**.
 ### Implementation options
 - Use **C++/WinRT** to project and consume `Microsoft.Management.Deployment` (recommended,
   and what is implemented).
-- Activate the out-of-proc COM server (`WindowsPackageManagerServer.exe`) via
-  `winrt::create_instance<T>(clsid, CLSCTX_LOCAL_SERVER)` with the fixed CLSIDs recorded
-  in `docs/com-api.md` — there is no in-process fallback.
+- Activate the out-of-proc COM server (`WindowsPackageManagerServer.exe`) via a
+  non-throwing `CoCreateInstance(clsid, nullptr, CLSCTX_LOCAL_SERVER, guid_of<T>(), ...)`
+  call (functionally equivalent to `winrt::create_instance<T>(clsid,
+  CLSCTX_LOCAL_SERVER)`, without its C++ exception on failure — `docs/adr-phase-9.md`
+  ADR-0040) with the fixed CLSIDs recorded in `docs/com-api.md` — there is no in-process
+  fallback.
 - The capability/permission requirements for calling this API from an unpackaged process
   were not established as a documented, citable fact (no first-party Microsoft
   documentation states one, and `src/app.manifest` declares no AppX capability because it

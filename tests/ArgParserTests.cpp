@@ -109,6 +109,14 @@ public:
         Assert::IsTrue(parseArguments({L"--source", L"auto"}).source == PackageSource::Auto);
     }
 
+    TEST_METHOD(sourceDefaultsToAutoWhenOmitted)
+    {
+        // Pins the documented default (--help: "default auto: COM first, filesystem
+        // scan fallback", docs/adr-phase-2.md ADR-0010) so a future regression here is
+        // caught by this test rather than only by re-reading the help text.
+        Assert::IsTrue(parseArguments({}).source == PackageSource::Auto);
+    }
+
     TEST_METHOD(invalidSourceValueIsRejected)
     {
         Assert::IsTrue(expectError({L"--source", L"bogus"}) ==
