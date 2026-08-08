@@ -328,8 +328,9 @@ void reportVerboseDiagnostics(const AppOptions& options, Console& console,
             }
 
             const std::filesystem::path linkPath = linksDirectory / resolution->alias;
-            candidates.allItems.push_back(
-                inspectLink(executable, resolution->alias, linkPath));
+            RepairItem item = inspectLink(executable, resolution->alias, linkPath);
+            item.packageId = package.id;
+            candidates.allItems.push_back(std::move(item));
         }
     }
 
