@@ -106,22 +106,6 @@ BOOL WINAPI consoleCtrlHandler(DWORD ctrlType)
     return false;
 }
 
-[[nodiscard]] std::wstring_view linkStatusDisplayName(LinkStatus status) noexcept
-{
-    switch (status)
-    {
-    case LinkStatus::Ok:
-        return L"Ok";
-    case LinkStatus::Missing:
-        return L"Missing";
-    case LinkStatus::Broken:
-        return L"Broken";
-    case LinkStatus::Mismatch:
-        return L"Mismatch";
-    }
-    return L"Unknown";
-}
-
 // Display text for the shared repair-batch executor's per-candidate result
 // (core/RepairBatch.h RepairDisposition), used by both the non-interactive and TUI
 // `fix` paths' `[current/total] alias: result` progress lines (docs/adr-phase-6.md
