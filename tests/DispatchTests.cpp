@@ -39,6 +39,7 @@ public:
             PackageSourceErrorKind::ServerUnavailable,
             PackageSourceErrorKind::CatalogError,
             PackageSourceErrorKind::ScanFailed,
+            PackageSourceErrorKind::PackageIdentityRequired,
             PackageSourceErrorKind::Unknown,
         };
 
