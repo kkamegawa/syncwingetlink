@@ -3,8 +3,10 @@
 #pragma once
 
 #include "IPackageSource.h"
+#include "PackageSourceError.h"
 
 #include <memory>
+#include <optional>
 
 namespace syncwingetlink
 {
@@ -19,18 +21,37 @@ namespace syncwingetlink
 // particular, tests/syncwingetlink.tests.vcxproj is not). All winrt types are confined to
 // WingetComSource.cpp behind this pimpl.
 //
-// Construction performs every COM activation this type needs - PackageManager,
-// FindPackagesOptions and PackageMatchFilter - plus the catalog connect, so a caller
-// implementing --source auto degradation can catch construction failure alone, without
-// calling enumeratePackages() first. enumeratePackages() itself still throws if the
-// FindPackages call or the catalog query fails at runtime, so an --source auto
-// implementation should cover both (see AutoPackageSource in PackageSourceFactory.h).
-// Throws PackageSourceError - never a raw winrt::hresult_error - on any unrecoverable
-// failure; see docs/adr-phase-2.md ADR-0009 for the HRESULT-to-kind mapping this uses.
+// tryCreate() performs every COM activation this type needs - PackageManager,
+// FindPackagesOptions and PackageMatchFilter - plus the catalog connect, and reports
+// failure by returning null and setting `error`, never by throwing. This lets
+// --source auto degrade to the filesystem source (docs/adr-phase-9.md ADR-0040, issue
+// #143) without raising a first-chance C++ exception on a host where COM activation is
+// expected to fail every time. enumeratePackages() itself still throws PackageSourceError
+// if the FindPackages call or the catalog query fails at runtime - that happens only
+// after a successful COM connection, a different case than the one tryCreate() exists to
+// avoid throwing for - so an --source auto implementation must still cover both (see
+// AutoPackageSource in PackageSourceFactory.h).
+//
+// This class never lets a raw winrt::hresult_error escape - not "should not", but does
+// not: every winrt call it makes is either inside a translating catch, or (the three COM
+// activations) made through a non-throwing CoCreateInstance call instead of
+// winrt::create_instance. This is enforced, not just intended, because
+// winrt::hresult_error has no std::exception base: AutoPackageSource
+// (PackageSourceFactory.h) catches only PackageSourceError, so one escaping here would
+// silently defeat --source auto's filesystem fallback, and cli::run()'s
+// catch (const std::exception&) would not catch it either. See docs/adr-phase-2.md
+// ADR-0009 for the HRESULT-to-kind mapping, and docs/adr-phase-9.md ADR-0040 for the
+// non-throwing activation this comment describes.
 class WingetComSource final : public IPackageSource
 {
 public:
-    WingetComSource();
+    // Attempts to construct a fully-initialized WingetComSource. On success, returns the
+    // instance and leaves `error` untouched. On failure, returns null and sets `error` -
+    // this is the one place in this class's public surface that reports failure without
+    // throwing.
+    [[nodiscard]] static std::unique_ptr<WingetComSource>
+    tryCreate(std::optional<PackageSourceError>& error);
+
     ~WingetComSource() override;
 
     WingetComSource(const WingetComSource&) = delete;
@@ -41,6 +62,11 @@ public:
     [[nodiscard]] std::vector<InstalledPackage> enumeratePackages() override;
 
 private:
+    // Private: the only supported way to obtain an instance is tryCreate(), which is the
+    // sole place initialization failure is handled. A public constructor would let a
+    // caller construct an object whose COM activation was never checked.
+    WingetComSource();
+
     struct Impl;
     std::unique_ptr<Impl> m_impl;
 };
