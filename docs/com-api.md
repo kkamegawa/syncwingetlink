@@ -103,11 +103,19 @@ Installer package's `AppxManifest.xml`:
 | `FindPackagesOptions` | `572DED96-9C60-4526-8F92-EE7D91D38C1A` |
 | `PackageMatchFilter` | `D02C9DAF-99DC-429C-B503-4E504E4AB000` |
 
-All three are activated with `winrt::create_instance<T>(clsid, CLSCTX_LOCAL_SERVER)` —
-`CLSCTX_LOCAL_SERVER` only, never `CLSCTX_INPROC_SERVER` or `CLSCTX_ALL`; see
-"Out-of-proc vs in-proc" below for what that choice implies. `FindPackagesOptions` in
-particular cannot be constructed as `FindPackagesOptions{}` — that throws
-`REGDB_E_CLASSNOTREG`.
+All three are activated via a direct `::CoCreateInstance(clsid, nullptr,
+CLSCTX_LOCAL_SERVER, winrt::guid_of<T>(), &raw)` call (the file-local
+`createInstanceNoThrow<T>()` helper in `WingetComSource.cpp`) — `CLSCTX_LOCAL_SERVER`
+only, never `CLSCTX_INPROC_SERVER` or `CLSCTX_ALL`; see "Out-of-proc vs in-proc" below
+for what that choice implies. `winrt::guid_of<T>()` requests `T`'s *typed default
+interface* (e.g. `IPackageManager`), not `IUnknown` — this matters concretely; see the
+`APPMODEL_ERROR_NO_PACKAGE` note below. This is functionally the same activation attempt
+`winrt::create_instance<T>(clsid, CLSCTX_LOCAL_SERVER)` performs internally, just without
+the C++ exception that call raises on failure (`docs/adr-phase-9.md` ADR-0040) —
+`mapHresultToKind()` and the diagnostic text both need the resulting `HRESULT`, so the
+throw-free `CoCreateInstance` route was chosen over `winrt::try_create_instance<T>()`,
+which discards it. `FindPackagesOptions` in particular cannot be constructed as
+`FindPackagesOptions{}` — that fails with `REGDB_E_CLASSNOTREG`.
 
 Two small build requirements exist only because this is an unpackaged, unusual consumer
 of a WinRT namespace:
@@ -135,6 +143,14 @@ constexpr GUID kPackageMatchFilterClsid = { /* see table above */ };
 
 // CoInitializeEx(nullptr, COINIT_MULTITHREADED) must already have been called on this
 // process (tolerating RPC_E_CHANGED_MODE) - main.cpp does this once, process-wide.
+//
+// Simplified here as winrt::create_instance for readability; the actual code
+// (createInstanceNoThrow<T>() in WingetComSource.cpp) calls ::CoCreateInstance directly
+// with winrt::guid_of<PackageManager>() and branches on the HRESULT instead of letting
+// this throw, so an activation failure - reproducibly hit on some hosts, issue #143 - is
+// reported through PackageSourceCreation rather than as a first-chance C++ exception
+// (docs/adr-phase-9.md ADR-0040). The activation attempt itself, and its result, are
+// identical either way.
 PackageManager manager =
     winrt::create_instance<PackageManager>(kPackageManagerClsid, CLSCTX_LOCAL_SERVER);
 
@@ -162,8 +178,8 @@ this section exists to satisfy):
 - **The out-of-process server (`WindowsPackageManagerServer.exe`, launched by COM from
   the Desktop App Installer package) must be launchable for `--source com` to work at
   all.** There is no in-process COM DLL this code can fall back to. If the server cannot
-  be launched or reached, activation fails at the `winrt::create_instance<PackageManager>`
-  call — the very first COM call this code makes — before anything else runs.
+  be launched or reached, activation fails at the very first COM call this code makes -
+  `createInstanceNoThrow(kPackageManagerClsid, manager)` - before anything else runs.
 - **Every call is genuinely cross-process and marshalled**, not a same-process vtable
   call. That is why `FindPackagesOptions`/`PackageMatchFilter` are activated **once**, in
   `WingetComSource::Impl`'s constructor, and the same instances are reused across every
@@ -179,7 +195,7 @@ this section exists to satisfy):
   recorded in ADR-0037 reproduced an environment where an unpackaged process could
   successfully `CoCreateInstance` the bare `PackageManager` CLSID (requesting `IUnknown`)
   but **failed** to activate it through the typed `IPackageManager` interface — exactly
-  the path `winrt::create_instance<PackageManager>` takes — with
+  the interface `winrt::guid_of<PackageManager>()` requests — with
   `HRESULT_FROM_WIN32(APPMODEL_ERROR_NO_PACKAGE)` (`0x80073D54`, "the process has no
   package identity"). See "Failure and fallback" for how that specific failure is
   classified and what a user sees. Whether this reflects a permanent constraint of
@@ -191,22 +207,31 @@ this section exists to satisfy):
 
 Every COM activation `WingetComSource` performs — `PackageManager`,
 `GetLocalPackageCatalog`, `Connect`, and building `FindPackagesOptions`/
-`PackageMatchFilter` — happens in `WingetComSource::Impl`'s **constructor**. Only
-`PackageCatalog::FindPackages` happens in `enumeratePackages()`. This split has a direct,
-user-visible consequence:
+`PackageMatchFilter` — happens in `WingetComSource::tryCreate()`, via the private
+`Impl::initialize()` it calls. Only `PackageCatalog::FindPackages` happens in
+`enumeratePackages()`. **`tryCreate()` reports failure by returning null and setting an
+out-parameter, never by throwing** (`docs/adr-phase-9.md` ADR-0040, issue #143) — this is
+different from every other failure path in this codebase, and exists specifically so a
+host where COM activation is expected to fail every time does not raise a first-chance
+C++ exception on every `scan`/`fix` run. This split has a direct, user-visible
+consequence:
 
-- **`--source com`** constructs a `WingetComSource` inside `createPackageSource()`
-  (`PackageSourceFactory.cpp`). Since every activation happens in the constructor, a
-  `--source com` run that gets past construction has already done all of its COM
-  activation — only `FindPackages` itself remains, deferred to the first `scan`/`fix`
-  call into `enumeratePackages()`. Either failure point is **not** degraded: the user
-  named `com` explicitly, so `createPackageSource()` lets the `PackageSourceError`
-  propagate. There is no attempt to also fall back to FS.
+- **`--source com`** calls `WingetComSource::tryCreate()` inside `createPackageSource()`
+  (`PackageSourceFactory.cpp`). A construction failure is converted into a thrown
+  `PackageSourceError` right there, at the boundary between the non-throwing
+  `tryCreate()`/`PackageSourceCreation` contract and `createPackageSource()`'s own
+  throwing one for this explicit case (`requireSource()`). A `--source com` run that gets
+  past construction has already done all of its COM activation — only `FindPackages`
+  itself remains, deferred to the first `scan`/`fix` call into `enumeratePackages()`.
+  Either failure point is **not** degraded: the user named `com` explicitly, so the
+  `PackageSourceError` propagates. There is no attempt to also fall back to FS.
 - **`--source auto`** wraps both source factories in `AutoPackageSource`
-  (`PackageSourceFactory.cpp`). Its `enumeratePackages()` constructs the `WingetComSource`
-  **and** calls its `enumeratePackages()` inside the same `try` block, so a failure at
-  either the constructor step (activation) or the `FindPackages` step degrades identically
-  to a filesystem scan.
+  (`PackageSourceFactory.cpp`). Its `enumeratePackages()` calls the COM factory (which
+  internally calls `tryCreate()`) and branches on the returned `PackageSourceCreation`
+  without throwing; if construction succeeded, it then calls the resulting source's
+  `enumeratePackages()` inside an ordinary `try` block. A failure at either the
+  construction step (activation, reported not thrown) or the `FindPackages` step (thrown,
+  caught) degrades identically to a filesystem scan.
 
 ## Enumeration
 
@@ -263,8 +288,14 @@ resolution is entirely the job of the M3 regex rules in `docs/rules.md`.
 
 ## Failure and fallback
 
-`WingetComSource` throws `PackageSourceError` — never a raw `winrt::hresult_error` — from
-every COM call site, classified by one of three independent rules.
+`WingetComSource` never lets a raw `winrt::hresult_error` escape from any COM call site —
+this is enforced, not just intended (`docs/adr-phase-9.md` ADR-0040): every winrt call it
+makes is either inside a translating `catch`, or (the three COM activations) made through
+the non-throwing `createInstanceNoThrow()` helper instead of `winrt::create_instance`.
+Failure is reported as a `PackageSourceError`, classified by one of three independent
+rules below - **thrown** from every site except the three activations inside
+`tryCreate()`/`Impl::initialize()`, which **return** it instead (see "What happens when"
+above).
 
 **HRESULT → `PackageSourceErrorKind`** (`mapHresultToKind`, `PackageSourceError.cpp`),
 used for `PackageManager` activation, `GetLocalPackageCatalog`, `Connect` (when it
@@ -366,8 +397,10 @@ nowhere in an unpackaged manifest to declare one. The out-of-process server acti
 a fixed CLSID rather than any packaged-identity mechanism.
 
 A live verification run (ADR-0037) reproduced a concrete, reproducible failure on one
-tested machine and App Installer version: `winrt::create_instance<PackageManager>`
-failed with `HRESULT_FROM_WIN32(APPMODEL_ERROR_NO_PACKAGE)` (`0x80073D54`) even though
+tested machine and App Installer version: `winrt::create_instance<PackageManager>` (as
+the code was at the time; see "Activation" above for the equivalent throw-free call the
+code makes today, ADR-0040) failed with `HRESULT_FROM_WIN32(APPMODEL_ERROR_NO_PACKAGE)`
+(`0x80073D54`) even though
 `winget list` (the real winget CLI) worked normally and a bare `CoCreateInstance` of the
 same CLSID requesting only `IUnknown` succeeded — the failure was specific to activating
 the **typed** `IPackageManager` interface out-of-process from this unpackaged caller. See
