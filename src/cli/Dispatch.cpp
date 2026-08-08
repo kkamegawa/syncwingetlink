@@ -764,6 +764,7 @@ ExitCode exitCodeFor(PackageSourceErrorKind kind) noexcept
     case PackageSourceErrorKind::ServerUnavailable:
     case PackageSourceErrorKind::CatalogError:
     case PackageSourceErrorKind::ScanFailed:
+    case PackageSourceErrorKind::PackageIdentityRequired:
     case PackageSourceErrorKind::Unknown:
         return ExitCode::PackageEnumerationFailed;
     }

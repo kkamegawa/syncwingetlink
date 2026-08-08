@@ -18,10 +18,20 @@ PackageSourceErrorKind mapHresultToKind(int32_t hresult) noexcept
         return PackageSourceErrorKind::AppInstallerMissing;
     case E_ACCESSDENIED:
         return PackageSourceErrorKind::AccessDenied;
-    case RPC_S_SERVER_UNAVAILABLE:
+    // RPC_S_SERVER_UNAVAILABLE is a Win32 error code, not an HRESULT; a COM failure
+    // surfaces it wrapped as HRESULT_FROM_WIN32(RPC_S_SERVER_UNAVAILABLE)
+    // (0x800706BA), so the raw constant never matched here (docs/adr-phase-9.md
+    // ADR-0039). RPC_E_DISCONNECTED/RPC_E_SERVER_DIED are already genuine HRESULTs.
+    case HRESULT_FROM_WIN32(RPC_S_SERVER_UNAVAILABLE):
     case RPC_E_DISCONNECTED:
     case RPC_E_SERVER_DIED:
         return PackageSourceErrorKind::ServerUnavailable;
+    // The server is registered and reachable, but rejected typed WinRT interface
+    // activation from this unpackaged caller (docs/adr-phase-9.md ADR-0039, issue
+    // #143). Distinct from AppInstallerMissing, whose HRESULTs mean the server was
+    // never found at all.
+    case HRESULT_FROM_WIN32(APPMODEL_ERROR_NO_PACKAGE):
+        return PackageSourceErrorKind::PackageIdentityRequired;
     default:
         return PackageSourceErrorKind::Unknown;
     }

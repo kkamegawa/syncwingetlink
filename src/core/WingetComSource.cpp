@@ -26,6 +26,7 @@
 #pragma comment(lib, "runtimeobject.lib")
 
 #include <algorithm>
+#include <format>
 #include <utility>
 
 namespace syncwingetlink
@@ -109,9 +110,23 @@ struct WingetComSource::Impl
         }
         catch (const winrt::hresult_error& error)
         {
-            throw PackageSourceError(mapHresultToKind(error.code()),
-                                     "Failed to activate the winget PackageManager COM server",
-                                     error.code());
+            const PackageSourceErrorKind kind = mapHresultToKind(error.code());
+            const auto rawHresult = static_cast<uint32_t>(static_cast<int32_t>(error.code()));
+            // PackageIdentityRequired gets a message naming the actual cause
+            // (APPMODEL_ERROR_NO_PACKAGE, docs/adr-phase-9.md ADR-0039, issue #143)
+            // rather than the generic wording, which previously gave no hint that the
+            // server was found and registered but refused typed activation.
+            const std::string message =
+                kind == PackageSourceErrorKind::PackageIdentityRequired
+                    ? std::format("The winget PackageManager COM server rejected typed "
+                                  "activation from this unpackaged process "
+                                  "(APPMODEL_ERROR_NO_PACKAGE, HRESULT {:#010x})",
+                                  rawHresult)
+                    : std::format(
+                          "Failed to activate the winget PackageManager COM server "
+                          "(HRESULT {:#010x})",
+                          rawHresult);
+            throw PackageSourceError(kind, message, error.code());
         }
 
         PackageCatalogReference catalogRef{nullptr};
