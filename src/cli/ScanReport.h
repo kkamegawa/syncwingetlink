@@ -34,6 +34,12 @@ enum class ReportMode
     FixPreview,
 };
 
+// Display text for a LinkStatus: "Ok"/"Missing"/"Broken"/"Mismatch", or "Unknown" for
+// any future enumerator this switch hasn't been updated to cover. The single shared
+// definition for both the grouped report's status column and Dispatch.cpp's fix consent
+// prompt, so the two can never silently diverge on wording.
+[[nodiscard]] std::wstring_view linkStatusDisplayName(LinkStatus status) noexcept;
+
 // Terminal column width of already-sanitized text (call sanitizeForDisplay() first - this
 // function does not sanitize). A UTF-16 surrogate pair counts as one code point; a code
 // point in a commonly wide East Asian block (CJK ideographs, Hangul syllables, fullwidth

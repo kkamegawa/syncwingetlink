@@ -22,29 +22,22 @@ constexpr std::wstring_view kAliasHeader = L"alias";
 constexpr std::wstring_view kTargetHeader = L"target";
 constexpr std::wstring_view kEmptyPackageId = L"-";
 
-// Duplicated from cli::Dispatch.cpp's file-local function of the same name (and
-// behavior) rather than shared, to keep this translation unit free of a dependency on
-// Dispatch.cpp's anonymous namespace. Both are internal linkage, so there is no ODR
-// conflict.
-[[nodiscard]] std::wstring_view linkStatusDisplayName(LinkStatus status) noexcept
+// Explicit over the switch's four cases rather than "status != LinkStatus::Ok", so a
+// future LinkStatus enumerator falls into the fallback below (NG - actionable and
+// surfaced, never silently folded into OK where a user would not notice it) instead of
+// changing this function's meaning by accident.
+[[nodiscard]] bool isNgStatus(LinkStatus status) noexcept
 {
     switch (status)
     {
-    case LinkStatus::Ok:
-        return L"Ok";
     case LinkStatus::Missing:
-        return L"Missing";
     case LinkStatus::Broken:
-        return L"Broken";
     case LinkStatus::Mismatch:
-        return L"Mismatch";
+        return true;
+    case LinkStatus::Ok:
+        return false;
     }
-    return L"Unknown";
-}
-
-[[nodiscard]] bool isNgStatus(LinkStatus status) noexcept
-{
-    return status != LinkStatus::Ok;
+    return true;
 }
 
 // Best-effort East Asian Wide/Fullwidth code point ranges - not exhaustive (see
@@ -182,6 +175,22 @@ void appendGroup(std::vector<ReportLine>& lines, std::wstring_view heading,
     appendTableRows(lines, rows, widths, bodyImportance);
 }
 } // namespace
+
+std::wstring_view linkStatusDisplayName(LinkStatus status) noexcept
+{
+    switch (status)
+    {
+    case LinkStatus::Ok:
+        return L"Ok";
+    case LinkStatus::Missing:
+        return L"Missing";
+    case LinkStatus::Broken:
+        return L"Broken";
+    case LinkStatus::Mismatch:
+        return L"Mismatch";
+    }
+    return L"Unknown";
+}
 
 std::size_t displayWidth(std::wstring_view text) noexcept
 {
