@@ -12,11 +12,18 @@ namespace syncwingetlink
 {
 namespace
 {
-// Invokes factory and normalizes its result: a missing factory, or a factory that hands
-// back neither a source nor an error, is a programming error, but it must not become a
-// null dereference - report it as PackageSourceCreation::error using the fallback
-// kind/message instead. This is the only place a "factory produced nothing usable" gap is
-// converted into an error; callers below never construct that fallback themselves.
+// Invokes factory and normalizes its result to PackageSourceCreation's "exactly one of
+// source/error is set" postcondition (PackageSourceFactory.h), regardless of what the
+// factory itself returned:
+// - a missing factory, or a factory that hands back neither a source nor an error, is a
+//   programming error, but it must not become a null dereference - reported as
+//   PackageSourceCreation::error using the fallback kind/message instead;
+// - a factory that hands back both is not trusted to have meant the error: callers below
+//   treat a non-null source as success (requireSource(), and
+//   AutoPackageSource::enumeratePackages()'s `if (comCreation.source)`), so a source and
+//   an error would otherwise be inconsistent - the source wins and the error is dropped.
+// This is the only place either gap is normalized; callers below never construct the
+// fallback error themselves, nor re-check the postcondition.
 [[nodiscard]] PackageSourceCreation invokeFactory(const PackageSourceFactoryFn& factory,
                                                   PackageSourceErrorKind fallbackKind,
                                                   const char* fallbackMessage)
@@ -27,7 +34,13 @@ namespace
     }
 
     PackageSourceCreation result = factory();
-    if (!result.source && !result.error.has_value())
+    if (result.source)
+    {
+        result.error.reset();
+        return result;
+    }
+
+    if (!result.error.has_value())
     {
         return PackageSourceCreation{nullptr, PackageSourceError(fallbackKind, fallbackMessage)};
     }

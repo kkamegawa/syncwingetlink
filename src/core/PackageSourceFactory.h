@@ -12,15 +12,23 @@
 
 namespace syncwingetlink
 {
-// The result of attempting to create one concrete source. Exactly one of `source`/`error`
-// is set on return: `source` on success, `error` on a reported (not thrown) failure. A
-// factory that fails to construct its source (e.g. WingetComSource::tryCreate() finding
-// COM activation unavailable) reports that by setting `error` rather than throwing, so
-// --source auto can degrade to the filesystem source without raising a first-chance C++
-// exception for a condition it handles by design (docs/adr-phase-9.md ADR-0040, issue
-// #143). A factory may still throw a non-PackageSourceError exception (std::bad_alloc, a
-// programming error) - that is not "the source is unavailable" and must propagate rather
-// than being silently converted into a filesystem scan.
+// The result of attempting to create one concrete source: `source` on success, `error` on
+// a reported (not thrown) failure. A factory that fails to construct its source (e.g.
+// WingetComSource::tryCreate() finding COM activation unavailable) reports that by
+// setting `error` rather than throwing, so --source auto can degrade to the filesystem
+// source without raising a first-chance C++ exception for a condition it handles by
+// design (docs/adr-phase-9.md ADR-0040, issue #143). A factory may still throw a
+// non-PackageSourceError exception (std::bad_alloc, a programming error) - that is not
+// "the source is unavailable" and must propagate rather than being silently converted
+// into a filesystem scan.
+//
+// A factory is not required to leave exactly one of `source`/`error` set - invokeFactory()
+// (PackageSourceFactory.cpp) is what enforces that as a postcondition on every result it
+// returns: a non-null `source` always wins and any `error` alongside it is discarded,
+// and neither set is normalized into the caller-supplied fallback error. Every
+// PackageSourceCreation this codebase's own code observes has gone through
+// invokeFactory(), so callers may rely on "exactly one is set" without re-checking it -
+// but a raw PackageSourceFactoryFn value itself carries no such guarantee.
 struct PackageSourceCreation
 {
     std::unique_ptr<IPackageSource> source;

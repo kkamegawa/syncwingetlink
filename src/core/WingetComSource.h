@@ -46,9 +46,10 @@ class WingetComSource final : public IPackageSource
 {
 public:
     // Attempts to construct a fully-initialized WingetComSource. On success, returns the
-    // instance and leaves `error` untouched. On failure, returns null and sets `error` -
-    // this is the one place in this class's public surface that reports failure without
-    // throwing.
+    // instance and clears `error` (so a caller reusing the same std::optional across
+    // calls never observes a stale failure from an earlier attempt). On failure, returns
+    // null and sets `error` - this is the one place in this class's public surface that
+    // reports failure without throwing.
     [[nodiscard]] static std::unique_ptr<WingetComSource>
     tryCreate(std::optional<PackageSourceError>& error);
 

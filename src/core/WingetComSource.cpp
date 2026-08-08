@@ -298,6 +298,9 @@ std::unique_ptr<WingetComSource> WingetComSource::tryCreate(std::optional<Packag
         return nullptr;
     }
 
+    // Clear rather than leave untouched, so a caller that reuses the same std::optional
+    // across calls never sees a stale error from an earlier failed attempt.
+    error.reset();
     return instance;
 }
 

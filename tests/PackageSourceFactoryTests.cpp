@@ -280,5 +280,25 @@ public:
                                     [] { return PackageSourceCreation{}; });
         });
     }
+
+    TEST_METHOD(aFactoryThatYieldsBothASourceAndAnErrorIsTreatedAsSuccess)
+    {
+        // PackageSourceCreation documents "exactly one of source/error is set" as a
+        // postcondition invokeFactory() enforces, not something every factory is trusted
+        // to have honored itself. A misbehaving factory that sets both must not surface
+        // the error - callers treat a non-null source as success elsewhere (requireSource(),
+        // AutoPackageSource::enumeratePackages()), so this asserts that a source wins here
+        // too, rather than being silently second-guessed by an error sitting next to it.
+        const std::unique_ptr<IPackageSource> source = createPackageSource(
+            PackageSource::Com,
+            [] {
+                return PackageSourceCreation{
+                    std::make_unique<FakeSource>(L"from-com"),
+                    PackageSourceError(PackageSourceErrorKind::Unknown, "should be ignored")};
+            },
+            makeFake(L"from-fs"));
+
+        Assert::IsTrue(onlyPackageId(source->enumeratePackages()) == L"from-com");
+    }
 };
 } // namespace syncwingetlink::tests

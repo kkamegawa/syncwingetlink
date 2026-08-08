@@ -3139,8 +3139,9 @@ between layers.
 
 ## 2026-08-08 — Classify `APPMODEL_ERROR_NO_PACKAGE` and fix the `RPC_S_SERVER_UNAVAILABLE` HRESULT mismatch
 
-**Trigger**: [issue #143](https://github.com/kkamegawa/syncwingetlink/issues/143) - "COM
-登録がないというエラー" reported at startup. Investigation on the reporting machine
+**Trigger**: [issue #143](https://github.com/kkamegawa/syncwingetlink/issues/143) - the
+user's original report, in Japanese, translates to "an error saying COM is not
+registered" appearing at startup ("COM登録がないというエラー"). Investigation on the reporting machine
 found `--source auto` (the default) was already degrading to the filesystem scan
 correctly (exit code 0); the actual defect was that the degrade warning's text was the
 generic `"Failed to activate the winget PackageManager COM server"` for every activation
