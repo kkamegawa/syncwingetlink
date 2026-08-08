@@ -103,6 +103,27 @@ syncwingetlink test-rule "codex-x86_64-pc-windows-msvc.exe"
 # -> codex-x86_64-pc-windows-msvc.exe -> rule "strip-rust-target-triple" -> codex.exe
 ```
 
+`scan`'s console output groups results into two tables, NG (`Missing`/`Broken`/
+`Mismatch`) always first, OK second - `fix`'s pre-batch preview (before its own
+`[current/total]` progress lines) uses the same layout. A group with nothing to report
+renders as just its heading followed by `nothing`:
+
+```
+NG
+------------------------------------------------------------------------------------------
+package                   | status  | alias                           | target
+------------------------------------------------------------------------------------------
+GitHub.Copilot.Prerelease | Missing | copilot.exe                     | C:\...\copilot.exe
+------------------------------------------------------------------------------------------
+
+OK
+------------------------------------------------------------------------------------------
+package                   | status  | alias                           | target
+------------------------------------------------------------------------------------------
+AgileBits.1Password.CLI   | Ok      | op.exe                          | C:\...\op.exe
+------------------------------------------------------------------------------------------
+```
+
 `test-rule`'s output has three possible shapes, matching `runTestRule()`
 (`src/cli/Dispatch.cpp`) exactly:
 

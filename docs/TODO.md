@@ -230,6 +230,16 @@ Build system decisions are recorded in [`adr.md`](./adr.md) (ADR-0001 … ADR-00
       out-of-proc/in-proc differences, fallback behavior on failure - issues #66, #137,
       #138, `docs/adr-phase-8.md` ADR-0037
 
+## Scan/fix result presentation (separate from M0-M9, issue #145)
+> Tracked as four stacked sub-issues (#146, #147, #148, #149); see `docs/adr-phase-9.md`
+> ADR-0038.
+- [x] Group `scan`'s console output (and `fix`'s pre-batch preview) into NG-first/OK
+      tables with a `package | status | alias | target` column layout - issues #145-#149,
+      `docs/adr-phase-9.md` ADR-0038. `RepairItem` gains a display-only `packageId`
+      field; `classifyLink()`/`inspectLink()` signatures and `--json` output/ordering
+      are unchanged; `Debug|Release` × `x64|ARM64` all build clean, `vstest.console.exe`
+      reports 422/422 for `Debug|x64`
+
 ## Future enhancements (separate milestone)
 - [ ] Read winget `PortableIndex` (sqlite) read-only (last resort when COM/FS are insufficient)
 - [ ] machine-scope support (requires admin)

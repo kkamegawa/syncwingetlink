@@ -22,6 +22,7 @@ approached that limit - check the latest one first for the most recent decisions
 | [`adr-phase-6.md`](./adr-phase-6.md) | ADR-0026 – ADR-0033 |
 | [`adr-phase-7.md`](./adr-phase-7.md) | ADR-0034 – ADR-0036 |
 | [`adr-phase-8.md`](./adr-phase-8.md) | ADR-0037 |
+| [`adr-phase-9.md`](./adr-phase-9.md) | ADR-0038 |
 
 ---
 

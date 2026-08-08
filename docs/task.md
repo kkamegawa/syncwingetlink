@@ -3057,3 +3057,80 @@ whether it warrants its own bug issue is left to the project owner.
 Issue #11 (M9) is closed by this layer: #66, #137, and #138 are all merged, satisfying
 its acceptance criteria. This does not close #1 - M0's #21 (CI) and #22 (automated
 vulnerability gate) remain open, per issue #11's own "Dependencies" note.
+
+## 2026-08-08 — Group scan/fix results into NG/OK tables (issue #145)
+
+**Trigger**: user reported `scan --source fs` output is hard to scan - 4 `Missing` items
+were scattered through 16 interleaved `Ok` lines with no grouping or sort order. Planned
+via plan mode, approved, then split into four stacked sub-issues (#146-#149, tracked
+under parent #145) per the branch's own instructions (>=3 tasks / >5 files touched).
+Branches created with `gh stack init` and kept in sync with `gh stack rebase --no-trunk`
+between layers.
+
+### Completed
+
+- `src/core/Model.h`: added `RepairItem::packageId`, a display-only field appended at
+  the end of the struct so existing aggregate-initialization call sites keep compiling.
+  `classifyLink()`/`inspectLink()` signatures are unchanged (#146).
+- `src/cli/Dispatch.cpp::buildRepairCandidates()`: sets `item.packageId = package.id;`
+  after `inspectLink()` returns, before pushing into `candidates.allItems` (#146).
+- `src/cli/ScanReport.h`/`.cpp` (new): pure formatting module - `cli::displayWidth()`
+  (a best-effort East Asian Wide/Fullwidth approximation) and
+  `cli::formatGroupedReport()` (splits items into NG/Missing-Broken-Mismatch and
+  OK/Ok groups, sorts each by alias then executable path, renders both as aligned
+  `package | status | alias | target` tables with widths computed once across both
+  groups). Added to `src/syncwingetlink.core.vcxproj`/`.filters` (#147).
+- `tests/ScanReportTests.cpp` (new): `DisplayWidthTests` (5 cases) and
+  `GroupedReportTests` (10 cases) covering NG-first ordering, empty-group `nothing`
+  rendering, alias sort order, cross-group column-width alignment, the
+  `ReportMode::Scan`/`ReportMode::FixPreview` `MessageImportance` split, non-ASCII
+  alignment, and the empty-`packageId` `-` fallback. Added to
+  `tests/syncwingetlink.tests.vcxproj`/`.filters` (#147).
+- `src/cli/Dispatch.cpp`: removed `printScanItem()`; `runScan()`'s non-JSON branch now
+  calls `formatGroupedReport(candidates.allItems, ReportMode::Scan)`. `runFix()` prints
+  the same grouped table (`ReportMode::FixPreview`) as an up-front preview, right after
+  the alias-collision warnings and before the TUI checklist / line-oriented confirmation
+  flow - skipped when `--json` or `--tui` is set. `fix`'s `[current/total]` progress
+  lines and `printBatchSummary()` are untouched (#148).
+- `docs/adr-phase-9.md` (new): ADR-0038, recording the NG-first ordering, the 4-column
+  layout, the `packageId` display-only-field decision, the once-computed column widths,
+  the never-truncated `target` column, the `displayWidth()` approximation, the
+  unchanged `--json` schema/ordering, and the `MessageImportance` assignment. Indexed
+  in `docs/adr.md`'s per-phase table.
+- `docs/PLAN.md` §8: added the "scan/fix console output" subsection (previously absent)
+  and updated the `--verbose`/`--quiet` log-level table's `Supplementary` row to
+  describe the grouped tables instead of a per-item `Ok` line.
+- `docs/TODO.md`: added a "Scan/fix result presentation" section (separate from M0-M9,
+  since M9 is already closed) tracking issue #145 and its four sub-issues.
+- `README.md`: added a `scan` output sample under `## Usage`, matching the existing
+  `test-rule` sample's precedent.
+
+### Deliberately not done
+
+- `--json` schema is unchanged for both `scan` and `fix` - no `packageId` field added,
+  item ordering still package-id enumeration order, not the grouped/sorted console
+  order. A schema change is a separate ADR-0022-governed decision.
+- No SGR color added - `Console::writeLine()` still strips ESC via
+  `sanitizeForDisplay()`; adding color needs a new `Console` API and is out of scope.
+- `src/tui/` rendering is untouched (ADR-0026-0028 unaffected).
+- `fix`'s `[current/total]` progress lines and final summary are unchanged (ADR-0028).
+- `*_ja.md` files were not read or changed, per `AGENTS.md`.
+
+### Verified
+
+- `Debug|Release` × `x64|ARM64` all build clean, 0 warnings/0 errors, across all three
+  source-changing layers (#146, #147, #148). `ARM64` (`Debug` and `Release`) is
+  cross-built, not run.
+- `vstest.console.exe` reports 422/422 passing for `Debug|x64` (407 pre-existing + 15
+  new: 5 `DisplayWidthTests`, 10 `GroupedReportTests`). This build environment still
+  lacks Developer Mode/elevation (issue #144), so no `Ok` sample row could be exercised
+  end-to-end against a real symlink; `GroupedReportTests` covers the `Ok` path directly
+  via unit fixtures instead.
+- Manual verification against a dummy Packages/Links tree (`--source fs`,
+  `--packages-dir`/`--links-dir` overrides, no COM dependency) on the built `Debug|x64`
+  binary: `scan` prints the NG table (three `Missing` items, alias-sorted) followed by
+  an OK section reading `nothing`; `scan --quiet` prints only the NG table;
+  `scan --fail-on-missing` still exits `1`; `scan --json` is byte-for-byte the
+  pre-existing schema/shape; `fix --dry-run --yes` prints the same grouped preview
+  followed by the unchanged `[current/total]` progress lines and summary.
+- No dependency added. No `*_ja.md` file was read or changed.
