@@ -277,10 +277,23 @@ throws rather than returning a non-`Ok` status), `FindPackagesOptions`/
 | `CO_E_SERVER_EXEC_FAILURE` | `AppInstallerMissing` |
 | `CLASS_E_CLASSNOTAVAILABLE` | `AppInstallerMissing` |
 | `E_ACCESSDENIED` | `AccessDenied` |
-| `RPC_S_SERVER_UNAVAILABLE` | `ServerUnavailable` |
+| `HRESULT_FROM_WIN32(RPC_S_SERVER_UNAVAILABLE)` (`0x800706BA`) | `ServerUnavailable` |
 | `RPC_E_DISCONNECTED` | `ServerUnavailable` |
 | `RPC_E_SERVER_DIED` | `ServerUnavailable` |
+| `HRESULT_FROM_WIN32(APPMODEL_ERROR_NO_PACKAGE)` (`0x80073D54`) | `PackageIdentityRequired` |
 | anything else | `Unknown` |
+
+`RPC_S_SERVER_UNAVAILABLE` is a Win32 error code (`1722`), not an HRESULT; a COM call
+surfaces it wrapped via `HRESULT_FROM_WIN32`. An earlier version of `mapHresultToKind`
+compared against the raw Win32 constant and never matched a real COM failure (fixed by
+`docs/adr-phase-9.md` ADR-0039).
+
+`PackageIdentityRequired` covers a case distinct from `AppInstallerMissing`: the winget
+COM server *is* registered and reachable (`winget` itself may work fine at the same
+time), but activating the typed WinRT `PackageManager` interface from this unpackaged,
+out-of-process caller is rejected. See `docs/adr-phase-9.md` ADR-0039 and issue #143 for
+the observed reproduction; the root cause of *why* activation is rejected on some hosts
+and not others remains open.
 
 `mapHresultToKind` is pure and winrt-independent, so it is unit-tested with synthetic
 HRESULTs (`tests/PackageSourceErrorTests.cpp`) without winget installed.
@@ -338,7 +351,7 @@ verbose: package source - requested: auto, used: filesystem (degraded: <error.wh
 fs` when no degrade occurred — these strings are derived from `options.source` alone and
 are not independently cross-checked against which source actually ran).
 
-**Exit codes**: every one of the seven `PackageSourceErrorKind` values maps to
+**Exit codes**: every one of the eight `PackageSourceErrorKind` values maps to
 `ExitCode::PackageEnumerationFailed` (`4`) in `src/cli/Dispatch.cpp::exitCodeFor()`.
 `ExitCode::InsufficientPermission` (`2`) is never reached from a package-source error —
 `AccessDenied` and `PolicyBlocked` both map to `4`, the same as every other kind. `2` is
@@ -358,19 +371,23 @@ failed with `HRESULT_FROM_WIN32(APPMODEL_ERROR_NO_PACKAGE)` (`0x80073D54`) even 
 `winget list` (the real winget CLI) worked normally and a bare `CoCreateInstance` of the
 same CLSID requesting only `IUnknown` succeeded — the failure was specific to activating
 the **typed** `IPackageManager` interface out-of-process from this unpackaged caller. See
-ADR-0037 for the exact reproduction. This is recorded as an **observed, environment- and
-possibly version-specific data point**, not a general rule: it was not established
-whether every unpackaged process on every supported Windows build and every App Installer
-version hits this, and no capability string or integrity-level requirement is asserted as
-fact here, because none could be confirmed from source or from Microsoft's own public
-documentation of this API. Treat `--source com` as something to verify empirically on the
-machine you care about (`scan --source com --verbose`), not as guaranteed by this
-document.
+ADR-0037 for the exact reproduction, and ADR-0039 for `mapHresultToKind` gaining the
+dedicated `PackageIdentityRequired` kind so this case's diagnostic message names the
+actual cause instead of the generic activation-failure wording. This is recorded as an
+**observed, environment- and possibly version-specific data point**, not a general rule:
+it was not established whether every unpackaged process on every supported Windows build
+and every App Installer version hits this, and no capability string or integrity-level
+requirement is asserted as fact here, because none could be confirmed from source or from
+Microsoft's own public documentation of this API. Treat `--source com` as something to
+verify empirically on the machine you care about (`scan --source com --verbose`), not as
+guaranteed by this document.
 
 Out-of-process COM server activation may also fail in environments without an
 interactive window station/desktop (headless CI, some sandboxes) — a process-level
-failure at the activation step is equivalent to `AppInstallerMissing`/`ServerUnavailable`
-for `--source auto` purposes. Do not assume an automated test proves `--source com` works
+failure at the activation step is equivalent to
+`AppInstallerMissing`/`ServerUnavailable`/`PackageIdentityRequired` for `--source auto`
+purposes: whichever kind `mapHresultToKind` assigns, `AutoPackageSource` degrades to the
+filesystem scan the same way. Do not assume an automated test proves `--source com` works
 in every environment; verify it in the environment that actually matters to you.
 
 ## Extending this code

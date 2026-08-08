@@ -166,3 +166,120 @@ this environment).
   strips ESC via `sanitizeForDisplay()` today, so color would need a new `Console` API,
   and would still have to respect ADR-0026's "`--no-color`/`NO_COLOR` gate
   `colorEnabled()` only, never `vtEnabled()`" rule.
+
+---
+
+## ADR-0039 — `PackageIdentityRequired`: naming `APPMODEL_ERROR_NO_PACKAGE`, and the `RPC_S_SERVER_UNAVAILABLE` HRESULT-vs-Win32-code bug
+
+- **Date**: 2026-08-08
+- **Affected**: `src/core/PackageSourceError.h`/`.cpp`, `src/core/WingetComSource.cpp`
+  (`Impl::Impl()`'s `PackageManager` activation catch), `src/cli/Dispatch.cpp`
+  (`exitCodeFor(PackageSourceErrorKind)`), issue #143
+- **Status**: Accepted
+
+### Decision
+
+1. **`--source auto`'s COM→filesystem fallback was already working correctly and is
+   unchanged by this ADR.** Investigating issue #143 on the reporting machine confirmed
+   `AutoPackageSource::enumeratePackages()` (`docs/adr-phase-2.md` ADR-0010) already
+   catches the activation failure and degrades to `FsScanSource` with exit code 0; the
+   default `--source` is already `auto` (`docs/adr-phase-2.md` ADR-0010, pinned by a new
+   `ArgParserTests.cpp` test, `sourceDefaultsToAutoWhenOmitted`, since no prior test
+   asserted the default). What issue #143 actually reported was a diagnostic-quality gap
+   in the warning text printed on degrade, not a missing fallback. Making explicit
+   `--source com` also degrade (reversing ADR-0010 decision 1) was considered and
+   explicitly declined - the user confirmed only the diagnostic gap should be fixed, since
+   `--source com`'s "the failure is the user's to see" contract still has value for anyone
+   deliberately diagnosing a COM problem.
+2. **`PackageSourceErrorKind` gains `PackageIdentityRequired`**, mapped from
+   `HRESULT_FROM_WIN32(APPMODEL_ERROR_NO_PACKAGE)` (`0x80073D54`) in `mapHresultToKind`.
+   This is the HRESULT `docs/adr-phase-8.md` ADR-0037 recorded `PackageManager` activation
+   failing with on a machine where `winget list` itself worked normally - previously
+   unclassified and falling through to `Unknown`, so the CLI's warning/error text gave no
+   hint that the server was found and registered but refused typed WinRT interface
+   activation from this unpackaged, out-of-process caller. It maps to
+   `ExitCode::PackageEnumerationFailed` (`4`), same as every other kind
+   (`docs/com-api.md` "Exit codes").
+3. **`WingetComSource`'s `PackageManager` activation catch now names the cause when the
+   kind is `PackageIdentityRequired`**, and includes the HRESULT in hex for every other
+   activation failure too: `"The winget PackageManager COM server rejected typed
+   activation from this unpackaged process (APPMODEL_ERROR_NO_PACKAGE, HRESULT
+   0x80073d54)"` versus the prior always-generic `"Failed to activate the winget
+   PackageManager COM server"`. Only the `PackageManager` activation call site
+   (`Impl::Impl()`, the one ADR-0037 reproduced the failure against) was changed;
+   `GetLocalPackageCatalog`, `Connect`, and `FindPackagesOptions`/`PackageMatchFilter`
+   activation keep their existing per-site messages and still route through the same
+   `mapHresultToKind`, so a `PackageIdentityRequired` classification is still possible
+   from those sites, just without the specialized wording - out of scope for this issue.
+4. **Fixed a pre-existing classification bug found while auditing `mapHresultToKind`**:
+   the `RPC_S_SERVER_UNAVAILABLE` case compared against the raw Win32 error code (`1722`),
+   but a COM failure surfaces it wrapped as `HRESULT_FROM_WIN32(RPC_S_SERVER_UNAVAILABLE)`
+   (`0x800706BA`) - so this case could never have matched a real failure; it only appeared
+   to work because the pre-existing test fed the same raw constant back in. Fixed to match
+   the wrapped form; a new regression test
+   (`rawServerUnavailableWin32CodeDoesNotMatchAsAnHresult`) pins the raw constant falling
+   through to `Unknown` so this cannot silently regress. `RPC_E_DISCONNECTED`/
+   `RPC_E_SERVER_DIED` were already genuine HRESULTs and needed no change.
+
+### Reason
+
+- A degrade warning or `--source com` error that says only "Failed to activate the
+  winget PackageManager COM server" gives a reader no way to distinguish "the server
+  isn't installed" from "the server is installed and reachable, but this specific
+  activation call is rejected for an unpackaged caller" - two failure modes with
+  different, and possibly different-owner, remediation paths. Issue #143's own Test plan
+  section asked for exactly this: a named `mapHresultToKind` case so the failure surfaces
+  as something more specific than `Unknown`.
+- Root-causing *why* `APPMODEL_ERROR_NO_PACKAGE` occurs on some hosts and not others
+  (per-interface-version activation, a missing proxy/stub registration, or an inherent
+  limitation of unpackaged out-of-proc activation for this interface) remains explicitly
+  open, per issue #143's own open questions; this ADR only improves what the CLI reports
+  once the failure has already happened; the four open questions in issue #143 do not need
+  resolving for `--source auto` to keep working correctly for end users, since it already
+  degrades regardless of which kind the failure classifies as.
+- The `RPC_S_SERVER_UNAVAILABLE` fix was opportunistic, not requested by issue #143, but
+  surfaced directly by reading every case in `mapHresultToKind` while adding the new one;
+  leaving a known-dead case in an exhaustively-tested classifier would have been dishonest
+  by omission.
+
+### Verification
+
+`Debug`/`Release` × `x64` both build clean at `/W4 /WX` with zero warnings.
+`vstest.console.exe` reports 425/425 for both `Debug|x64` and `Release|x64` (407
+pre-existing + 4 new in `PackageSourceErrorTests.cpp`
+(`appmodelErrorNoPackageMapsToPackageIdentityRequired`,
+`rawServerUnavailableWin32CodeDoesNotMatchAsAnHresult`, and the updated
+`serverUnavailableHresultsMapToServerUnavailable`) + 1 in `DispatchTests.cpp`
+(`PackageIdentityRequired` added to `everyKindMapsToPackageEnumerationFailed`) + 1 in
+`ArgParserTests.cpp` (`sourceDefaultsToAutoWhenOmitted`); `ARM64` was not built for this
+change (diagnostics-only, no platform-specific code path).
+
+Manual verification on the reporting machine (the same host issue #143 was filed
+against, which reproducibly hits `APPMODEL_ERROR_NO_PACKAGE`), `Debug|x64`:
+
+```
+.\build\x64\Debug\syncwingetlink.exe scan --verbose
+→ warning: --source auto fell back to a filesystem scan: The winget PackageManager COM
+  server rejected typed activation from this unpackaged process
+  (APPMODEL_ERROR_NO_PACKAGE, HRESULT 0x80073d54)
+  ...scan proceeds normally via the filesystem source; exit code 0
+
+.\build\x64\Debug\syncwingetlink.exe scan --source com --verbose
+→ The winget PackageManager COM server rejected typed activation from this unpackaged
+  process (APPMODEL_ERROR_NO_PACKAGE, HRESULT 0x80073d54)
+  exit code 4
+
+.\build\x64\Debug\syncwingetlink.exe scan --source fs --verbose
+→ unchanged: package source - requested: fs, used: fs; exit code 0
+```
+
+### Consequences
+
+- `docs/com-api.md`'s "Failure and fallback" HRESULT table gains the
+  `PackageIdentityRequired` row and the corrected `RPC_S_SERVER_UNAVAILABLE` wrapping, and
+  its exit-code summary now says "eight" kinds rather than "seven".
+- Issue #143 stays open, narrowed to its root-cause questions (which this ADR explicitly
+  does not answer) rather than the diagnostic gap, which this ADR closes.
+- A future ADR that changes explicit `--source com`'s no-degrade contract (ADR-0010
+  decision 1) remains a distinct, separately-approved decision - this one does not touch
+  it.

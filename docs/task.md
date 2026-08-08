@@ -3134,3 +3134,81 @@ between layers.
   pre-existing schema/shape; `fix --dry-run --yes` prints the same grouped preview
   followed by the unchanged `[current/total]` progress lines and summary.
 - No dependency added. No `*_ja.md` file was read or changed.
+
+---
+
+## 2026-08-08 — Classify `APPMODEL_ERROR_NO_PACKAGE` and fix the `RPC_S_SERVER_UNAVAILABLE` HRESULT mismatch
+
+**Trigger**: [issue #143](https://github.com/kkamegawa/syncwingetlink/issues/143) - "COM
+登録がないというエラー" reported at startup. Investigation on the reporting machine
+found `--source auto` (the default) was already degrading to the filesystem scan
+correctly (exit code 0); the actual defect was that the degrade warning's text was the
+generic `"Failed to activate the winget PackageManager COM server"` for every activation
+failure, because `mapHresultToKind` did not recognize the specific HRESULT this machine's
+`PackageManager` activation fails with
+(`HRESULT_FROM_WIN32(APPMODEL_ERROR_NO_PACKAGE)`, `0x80073D54`) and classified it as
+`Unknown`. Confirmed with the user (AskUserQuestion) that the fix should be scoped to
+this diagnostic gap only - `--source auto`'s fallback behavior and `--source com`'s
+no-degrade contract (`docs/adr-phase-2.md` ADR-0010) were kept unchanged.
+
+### What changed
+
+- `src/core/PackageSourceError.h`: added `PackageSourceErrorKind::PackageIdentityRequired`.
+- `src/core/PackageSourceError.cpp` (`mapHresultToKind`): added a case mapping
+  `HRESULT_FROM_WIN32(APPMODEL_ERROR_NO_PACKAGE)` to the new kind; fixed a pre-existing
+  bug where `RPC_S_SERVER_UNAVAILABLE` was compared as a raw Win32 error code (`1722`)
+  instead of `HRESULT_FROM_WIN32(RPC_S_SERVER_UNAVAILABLE)` (`0x800706BA`), so it could
+  never have matched a real COM failure.
+- `src/core/WingetComSource.cpp` (`Impl::Impl()`'s `PackageManager` activation catch):
+  names the cause for `PackageIdentityRequired` and includes the HRESULT in hex for
+  every activation failure, instead of a single always-generic message.
+- `src/cli/Dispatch.cpp` (`exitCodeFor(PackageSourceErrorKind)`): added
+  `PackageIdentityRequired` to the exhaustive switch (`/W4 /WX` requires it); maps to
+  `ExitCode::PackageEnumerationFailed` (4), same as every other kind.
+- `tests/PackageSourceErrorTests.cpp`: added
+  `appmodelErrorNoPackageMapsToPackageIdentityRequired` and
+  `rawServerUnavailableWin32CodeDoesNotMatchAsAnHresult` (regression guard for the fixed
+  bug); updated `serverUnavailableHresultsMapToServerUnavailable` to use the
+  HRESULT-wrapped constant.
+- `tests/DispatchTests.cpp`: added `PackageIdentityRequired` to
+  `everyKindMapsToPackageEnumerationFailed`.
+- `tests/ArgParserTests.cpp`: added `sourceDefaultsToAutoWhenOmitted`, pinning that
+  `--source`'s default is `Auto` (previously asserted only in help text/ADR-0010, not by
+  a test).
+- `docs/com-api.md`: updated the HRESULT→kind table with the new row and the corrected
+  `RPC_S_SERVER_UNAVAILABLE` wrapping; updated the exit-code summary's kind count from
+  seven to eight; expanded the ADR-0037 discussion to reference the new kind.
+- `docs/adr-phase-9.md`: added **ADR-0039**, recording this decision, its scope
+  boundary against issue #143's still-open root-cause questions, and the
+  `RPC_S_SERVER_UNAVAILABLE` fix.
+
+### Deliberately not done
+
+- Explicit `--source com` still does not degrade to the filesystem scan on failure
+  (`docs/adr-phase-2.md` ADR-0010 decision 1 stands) - the user confirmed this is not in
+  scope.
+- The degrade warning is still printed on every `--source auto` fallback; suppressing or
+  demoting it was considered and declined by the user.
+- Issue #143's root-cause questions (why `APPMODEL_ERROR_NO_PACKAGE` occurs on this host,
+  whether `IPackageManager2`..`8` activation succeeds where the base interface fails,
+  whether a proxy/stub registration workaround exists) remain open; only the diagnostic
+  classification was addressed.
+- `GetLocalPackageCatalog`, `Connect`, and `FindPackagesOptions`/`PackageMatchFilter`
+  activation still use their pre-existing generic per-site messages; only the
+  `PackageManager` activation catch (the site ADR-0037 reproduced the failure against)
+  got the specialized wording.
+- `*_ja.md` files were not read or changed, per `AGENTS.md`.
+
+### Verified
+
+- `Debug`/`Release` × `x64` both build clean, 0 warnings/0 errors. `ARM64` was not
+  built for this change (diagnostics-only, no platform-specific code).
+- `vstest.console.exe` reports 425/425 passing for both `Debug|x64` and `Release|x64`
+  (407 pre-existing + 6 new: 2 new + 1 updated in `PackageSourceErrorTests.cpp`, 1 in
+  `DispatchTests.cpp`, 1 in `ArgParserTests.cpp`).
+- Manual verification on the reporting machine (which reproducibly hits
+  `APPMODEL_ERROR_NO_PACKAGE`), `Debug|x64`: `scan --verbose` (default `--source auto`)
+  now warns with the specific cause and HRESULT and completes with exit code 0;
+  `scan --source com --verbose` prints the same specific message and exits 4;
+  `scan --source fs --verbose` is unchanged (exit code 0).
+- No dependency added.
