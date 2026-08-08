@@ -73,6 +73,12 @@ struct RepairItem
     LinkStatus status{LinkStatus::Missing};
     LinkEntryKind entryKind{LinkEntryKind::None};
     std::optional<std::filesystem::path> existingTarget;
+
+    // The owning InstalledPackage::id, carried for display only (the grouped scan/fix
+    // report's "package" column). Set by cli::buildRepairCandidates() after inspectLink()
+    // returns - never derived or read by core classification logic, which is why
+    // classifyLink()/inspectLink() keep their existing signatures.
+    std::wstring packageId;
 };
 
 // Reports that two or more distinct package executables resolved to the same alias.

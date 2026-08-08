@@ -295,6 +295,37 @@ Options:
   --version / --help
 ```
 
+### `scan`/`fix` console output
+
+`scan`'s human-readable output (and `fix`'s pre-batch preview, printed before its own
+`[current/total]` progress lines) groups candidates into two tables, NG always first:
+NG collects `Missing`/`Broken`/`Mismatch`; OK collects `Ok`. Each table has four
+columns - `package | status | alias | target` - sorted within the group by alias
+(ordinal case-insensitive ascending). A group with zero items renders as just its
+heading followed by a bare `nothing` line rather than an empty table:
+
+```
+NG
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+package                   | status  | alias       | target
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+GitHub.Copilot.Prerelease | Missing | copilot.exe | C:\Users\user\AppData\Local\Microsoft\WinGet\Packages\GitHub.Copilot.Prerelease_Microsoft.Winget.Source_8wekyb3d8bbwe\copilot.exe
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+OK
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+package                   | status  | alias       | target
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+AgileBits.1Password.CLI   | Ok      | op.exe      | C:\Users\user\AppData\Local\Microsoft\WinGet\Packages\AgileBits.1Password.CLI_Microsoft.Winget.Source_8wekyb3d8bbwe\op.exe
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+```
+
+Column widths (`package`/`status`/`alias`) are computed once across both groups so the
+two tables always line up; `target` is the last column and is never padded or
+truncated. `--json` output (schema, fields, and item ordering) is unchanged by this
+format - it reflects `scan`/`fix`'s underlying candidate list directly, not the
+grouped/sorted console presentation. See `docs/adr-phase-9.md` ADR-0038.
+
 `--include`/`--exclude` take shell-style wildcards (`*` and `?` only — no character
 classes, no path semantics), matched per executable against either the package identifier
 or the executable file name, ordinal and case-insensitive. An exclude match always beats
@@ -337,9 +368,11 @@ level; the three levels form a strict chain, each a superset of the one before:
 | `Normal` (default) | `Supplementary` + `Normal` |
 | `Verbose` | `Supplementary` + `Normal` + `Diagnostic` |
 
-`Supplementary` covers routine, skippable-under-`--quiet` output: per-item `Ok` lines in
-`scan`, `fix`'s per-item progress lines, and the batch summary headings. Anything a user
-must act on - `Missing`/`Broken`/`Mismatch` scan lines, warnings, errors - is `Normal`
+`Supplementary` covers routine, skippable-under-`--quiet` output: `scan`'s OK table (and
+its NG table/heading too, when there are zero NG items - `docs/adr-phase-9.md`
+ADR-0038), `fix`'s pre-batch preview (both its NG and OK tables, unconditionally),
+`fix`'s per-item progress lines, and the batch summary headings. Anything a user must
+act on - `scan`'s NG table when it has at least one row, warnings, errors - is `Normal`
 importance and is never suppressed by `--quiet`. `Diagnostic` is exclusively
 `--verbose`'s additional stderr-only reporting (never stdout, regardless of `--json` -
 ADR-0022's stdout-purity rule is unaffected by log level): the resolved effective

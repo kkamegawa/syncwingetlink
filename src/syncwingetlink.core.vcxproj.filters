@@ -27,6 +27,9 @@
     <ClInclude Include="cli\Json.h">
       <Filter>cli</Filter>
     </ClInclude>
+    <ClInclude Include="cli\ScanReport.h">
+      <Filter>cli</Filter>
+    </ClInclude>
     <ClInclude Include="cli\Version.h">
       <Filter>cli</Filter>
     </ClInclude>
@@ -102,6 +105,9 @@
       <Filter>cli</Filter>
     </ClCompile>
     <ClCompile Include="cli\Json.cpp">
+      <Filter>cli</Filter>
+    </ClCompile>
+    <ClCompile Include="cli\ScanReport.cpp">
       <Filter>cli</Filter>
     </ClCompile>
     <ClCompile Include="core\AliasResolver.cpp">

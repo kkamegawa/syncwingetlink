@@ -5,6 +5,7 @@
 #include "ArgParser.h"
 #include "Console.h"
 #include "Json.h"
+#include "ScanReport.h"
 #include "Version.h"
 
 #include "core/AliasResolver.h"
@@ -103,22 +104,6 @@ BOOL WINAPI consoleCtrlHandler(DWORD ctrlType)
         }
     }
     return false;
-}
-
-[[nodiscard]] std::wstring_view linkStatusDisplayName(LinkStatus status) noexcept
-{
-    switch (status)
-    {
-    case LinkStatus::Ok:
-        return L"Ok";
-    case LinkStatus::Missing:
-        return L"Missing";
-    case LinkStatus::Broken:
-        return L"Broken";
-    case LinkStatus::Mismatch:
-        return L"Mismatch";
-    }
-    return L"Unknown";
 }
 
 // Display text for the shared repair-batch executor's per-candidate result
@@ -328,8 +313,9 @@ void reportVerboseDiagnostics(const AppOptions& options, Console& console,
             }
 
             const std::filesystem::path linkPath = linksDirectory / resolution->alias;
-            candidates.allItems.push_back(
-                inspectLink(executable, resolution->alias, linkPath));
+            RepairItem item = inspectLink(executable, resolution->alias, linkPath);
+            item.packageId = package.id;
+            candidates.allItems.push_back(std::move(item));
         }
     }
 
@@ -344,20 +330,6 @@ void reportVerboseDiagnostics(const AppOptions& options, Console& console,
     }
 
     return candidates;
-}
-
-void printScanItem(Console& console, const RepairItem& item)
-{
-    // An Ok item is routine confirmation that nothing needs attention - suppressible
-    // under --quiet. Missing/Broken/Mismatch are actionable and always shown, matching
-    // #113's "Quiet suppresses per-item Ok lines" acceptance criterion.
-    const MessageImportance importance = item.status == LinkStatus::Ok
-                                             ? MessageImportance::Supplementary
-                                             : MessageImportance::Normal;
-    console.writeLine(std::format(L"{}: {} -> {}", linkStatusDisplayName(item.status),
-                                  sanitizeForDisplay(item.alias),
-                                  sanitizeForDisplay(item.executable.path.native())),
-                      ConsoleStream::Output, importance);
 }
 
 void printCollisions(Console& console, const std::vector<AliasCollision>& collisions)
@@ -402,9 +374,9 @@ void writeJsonDocument(Console& console, const std::string& json)
     }
     else
     {
-        for (const RepairItem& item : candidates.allItems)
+        for (const ReportLine& line : formatGroupedReport(candidates.allItems, ReportMode::Scan))
         {
-            printScanItem(console, item);
+            console.writeLine(line.text, ConsoleStream::Output, line.importance);
         }
         printCollisions(console, candidates.collisions);
     }
@@ -558,6 +530,19 @@ void printBatchSummary(Console& console, const RepairBatchSummary& summary)
 {
     const RepairCandidateSet candidates = buildRepairCandidates(options, console);
     printCollisions(console, candidates.collisions);
+
+    // The batch's own [current/total] progress lines (ADR-0028) stay exactly as they
+    // are; this is only an up-front picture of what fix is about to consider. Skipped
+    // for --tui, whose checklist supersedes it (and which must not print into the
+    // alternate screen), and for --json, per ADR-0022's stdout-purity rule.
+    if (!options.jsonOutput && !options.useTui)
+    {
+        for (const ReportLine& line :
+             formatGroupedReport(candidates.allItems, ReportMode::FixPreview))
+        {
+            console.writeLine(line.text, ConsoleStream::Output, line.importance);
+        }
+    }
 
     const TuiRunResult tuiResult = runTuiChecklistIfRequested(options, console, candidates);
     if (tuiResult.outcome == TuiRunOutcome::Cancelled)

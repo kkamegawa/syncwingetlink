@@ -48,6 +48,7 @@
     <ClCompile Include="cli\Console.cpp" />
     <ClCompile Include="cli\Dispatch.cpp" />
     <ClCompile Include="cli\Json.cpp" />
+    <ClCompile Include="cli\ScanReport.cpp" />
     <ClCompile Include="core\AliasResolver.cpp" />
     <ClCompile Include="core\ComApartment.cpp" />
     <ClCompile Include="core\ExecutableScanner.cpp" />
@@ -72,6 +73,7 @@
     <ClInclude Include="cli\Console.h" />
     <ClInclude Include="cli\Dispatch.h" />
     <ClInclude Include="cli\Json.h" />
+    <ClInclude Include="cli\ScanReport.h" />
     <ClInclude Include="cli\Version.h" />
     <ClInclude Include="core\AliasResolver.h" />
     <ClInclude Include="core\ComApartment.h" />
