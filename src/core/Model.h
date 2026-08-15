@@ -111,5 +111,6 @@ struct AppOptions
     bool jsonOutput{false};
     bool failOnMissing{false};
     bool noColor{false};
+    bool silent{false};
 };
 } // namespace syncwingetlink

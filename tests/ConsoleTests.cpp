@@ -278,6 +278,16 @@ public:
 
         Assert::IsFalse(console.confirm(L"Proceed?", /*assumeYes=*/false));
     }
+
+    TEST_METHOD(confirmWithSuppressedPromptReturnsFalseWithoutWriting)
+    {
+        std::vector<std::wstring> writes;
+        Console console(false, makeFakeOperations(true, true, writes, {std::wstring(L"yes")}));
+
+        Assert::IsFalse(
+            console.confirm(L"Proceed?", /*assumeYes=*/false, /*suppressPromptWhenFalse=*/true));
+        Assert::IsTrue(writes.empty());
+    }
 };
 
 // #113 (ADR-0030): a table-driven test over every (LogLevel, MessageImportance)

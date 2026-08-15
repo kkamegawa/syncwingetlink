@@ -333,4 +333,14 @@ SymlinkRepairResult repairLink(const RepairItem& candidate, RepairMode mode,
                                              : SymlinkRepairOutcome::Created;
     return SymlinkRepairResult{fresh, outcome, verified};
 }
+
+DeveloperModeState queryDeveloperMode() noexcept
+{
+    return queryDeveloperModeFromRegistry();
+}
+
+ElevationState queryElevation() noexcept
+{
+    return queryElevationFromProcessToken();
+}
 } // namespace syncwingetlink

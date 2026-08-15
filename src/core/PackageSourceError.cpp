@@ -8,6 +8,12 @@
 
 namespace syncwingetlink
 {
+namespace
+{
+constexpr std::string_view kTroubleshootingUrl =
+    "https://github.com/kkamegawa/syncwingetlink/blob/main/docs/troubleshooting.md";
+}
+
 PackageSourceErrorKind mapHresultToKind(int32_t hresult) noexcept
 {
     switch (hresult)
@@ -35,6 +41,40 @@ PackageSourceErrorKind mapHresultToKind(int32_t hresult) noexcept
     default:
         return PackageSourceErrorKind::Unknown;
     }
+}
+
+std::string remediationFor(PackageSourceErrorKind kind)
+{
+    const std::string suffix = std::string(" See ") + std::string(kTroubleshootingUrl);
+    
+    switch (kind)
+    {
+    case PackageSourceErrorKind::AppInstallerMissing:
+        return "Install or repair App Installer, or re-run with --source fs." + suffix;
+    case PackageSourceErrorKind::PolicyBlocked:
+        return "A policy blocked package enumeration; check policy settings or re-run with "
+               "--source fs." + suffix;
+    case PackageSourceErrorKind::AccessDenied:
+        return "Package enumeration was denied; retry with the required access or re-run "
+               "with --source fs." + suffix;
+    case PackageSourceErrorKind::ServerUnavailable:
+        return "The winget COM server was unavailable; retry, or re-run with --source fs." +
+               suffix;
+    case PackageSourceErrorKind::CatalogError:
+        return "The winget catalog was not usable; run winget list once to accept source "
+               "agreements, then retry, or re-run with --source fs." + suffix;
+    case PackageSourceErrorKind::ScanFailed:
+        return "The Packages directory could not be scanned; verify it or pass "
+               "--packages-dir." + suffix;
+    case PackageSourceErrorKind::PackageIdentityRequired:
+        return "This host rejected typed WinRT activation from an unpackaged process; "
+               "re-run with --source fs, or use --source auto to fall back automatically." +
+               suffix;
+    case PackageSourceErrorKind::Unknown:
+        return "Re-run with --verbose, and try --source fs to bypass COM." + suffix;
+    }
+
+    return std::string(kTroubleshootingUrl);
 }
 
 bool isPortableInstallerType(std::wstring_view installerType) noexcept

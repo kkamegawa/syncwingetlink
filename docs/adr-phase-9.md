@@ -7,6 +7,67 @@ belongs to a new, unnumbered milestone tracked as issue #145 (four stacked sub-i
 
 ---
 
+## ADR-0042 — Startup Developer Mode gate, optional elevation prompt, and localized permission guidance
+
+- **Date**: 2026-08-15
+- **Affected**: `src/cli/ArgParser.*`, `src/cli/Console.*`, `src/cli/Dispatch.cpp`,
+  `src/core/Model.h`, `src/core/SymlinkService.*`, `README.md`,
+  `docs/troubleshooting.md`, issue #143 follow-up
+- **Status**: Accepted
+
+### Decision
+
+1. **`fix` now performs a startup permission gate before repair begins, but only for a
+   mutating run.** `scan`, `test-rule`, and `fix --dry-run` are unchanged. The gate calls
+   the same `queryDeveloperMode()` / `queryElevation()` helpers that `SymlinkService`
+   already uses after a permission-shaped Win32 failure, so startup guidance and
+   post-failure guidance both read from the same registry/token source rather than
+   duplicating logic with two potentially divergent implementations.
+2. **If Developer Mode is disabled or unknown, the CLI prints an immediate warning before
+   attempting repairs.** This is advisory, not a hard stop: the command may still succeed
+   later when run elevated or when the host's policy allows symlink creation despite the
+   preflight uncertainty.
+3. **When the process is not already elevated and `--silent` is not set, the CLI asks
+   whether to relaunch elevated.** Consent uses the existing `Console::confirm()` flow.
+   If the user declines, an ordinary line-oriented `fix` continues in the current process,
+   but `fix --tui` exits 2 without opening an editable checklist that cannot create links.
+   If the relaunch succeeds, the original process exits successfully after handing off to
+   the elevated instance. If the relaunch fails, the original process reports that failure
+   and exits 2.
+4. **`--silent` suppresses only the relaunch question, not the warning.** This keeps the
+   command automation-safe: scripts still receive the diagnostic text on stderr, but the
+   process never blocks waiting for input about privilege elevation. For `fix --tui`, the
+   suppressed prompt is treated like a declined elevation and exits 2 before the TUI starts.
+5. **Localized runtime text is introduced narrowly for this startup-permission path only.**
+   On a Japanese UI OS (`GetUserDefaultUILanguage()` primary language `LANG_JAPANESE`),
+   the startup warning and relaunch prompt are Japanese. Every other UI language falls
+   back to English. This is an intentionally narrow exception to ADR-0031, not a general
+   message-table or MUI system.
+
+### Reason
+
+- The user reported a host where Developer Mode is believed to be enabled but symlink
+  creation still fails. The existing behavior only explains permission state after
+  `CreateSymbolicLinkW` or delete-by-handle has already failed; it gives no early signal
+  that the host's Developer Mode state looks suspicious before the batch starts.
+- The new gate reuses `SymlinkService`'s own registry/token queries so the startup check
+  and the operational error path cannot disagree about which state they observed.
+- A full localization system remains out of scope, but the user explicitly requested
+  Japanese messaging on Japanese Windows for this permission path. A narrow, startup-only
+  exception meets that need without pretending the rest of the diagnostic surface is now
+  localized.
+
+### Consequences
+
+- `AppOptions` gains `--silent`, documented as "print the startup permission warning but
+  do not ask whether to restart elevated."
+- `Console::confirm()` gains a suppress-prompt path so callers can opt out of the prompt
+  without introducing a second confirmation API.
+- ADR-0031 remains the general rule, but README/TODO/troubleshooting now record this
+  startup-permission exception explicitly.
+
+---
+
 ## ADR-0038 — Grouped NG/OK scan report, its column model, and the display-width approximation
 
 - **Date**: 2026-08-08
@@ -447,3 +508,55 @@ for this change for the specific alternatives considered and declined.
   against the code as it was at the time and are deliberately left untouched.
 - A future change to make `IPackageSource` itself non-throwing (decision 5) is a distinct,
   separately-approved ADR - this one does not attempt it.
+
+---
+
+## ADR-0041 — Remediation hints for package-source failures
+
+- **Date**: 2026-08-15
+- **Affected**: `src/core/PackageSourceError.cpp`/`.h`, `src/cli/Dispatch.cpp`,
+  `docs/troubleshooting.md`, `docs/com-api.md`, `README.md`, issue #143
+- **Status**: Accepted
+
+### Decision
+
+1. **Add a pure `remediationFor(PackageSourceErrorKind)` lookup in `PackageSourceError.*`.**
+   It returns one actionable line per currently defined failure kind and is intentionally
+   winrt-free, so MSTest can verify the text without depending on live COM activation.
+2. **Runtime diagnostics point at a stable public GitHub URL, not a repository-relative
+   path.** The release artifact is a single EXE, not a checkout containing
+   `docs/troubleshooting.md`, so a relative path in stderr would frequently be unusable.
+   Repository documents still use ordinary relative Markdown links.
+3. **`cli::run()` prints `hint: <remediationFor(error.kind())>` only when package
+   enumeration ultimately fails.** An explicit `--source com`/`--source fs` failure prints
+   the hint. A successful `--source auto` degradation does not: the existing warning and
+   verbose diagnostics stay byte-for-byte unchanged. If the filesystem fallback also fails,
+   the final `PackageSourceError` reaches `cli::run()` and does print the hint.
+4. **The reporting host's runtime verification proves the throw-free activation path, not
+   the full `winrt::hresult_error` boundary backstop.** The observed host fails in
+   `createInstanceNoThrow()` before later marshalled calls run, so the manual evidence for
+   this issue is limited to user-visible fallback/remediation behavior and to zero-C++
+   exception activation failure. This limitation is recorded explicitly in the ADR and PR
+   rather than overstating what was proven by manual runs.
+
+### Reason
+
+- Issue #143's remaining UX problem was not misclassification; ADR-0039 already named
+  `APPMODEL_ERROR_NO_PACKAGE`. The missing piece was actionable guidance that tells the
+  user what to do next on a host where COM activation is unavailable.
+- A troubleshooting page needs to be reachable from both the repository and the shipped
+  executable. Those are different environments, so runtime and Markdown links cannot use
+  the same form.
+- Printing the hint on a successful `--source auto` degradation would turn an expected,
+  self-healing path into repetitive noise. The warning already states that the tool
+  degraded and why; the hint is reserved for the path that still ends in failure.
+
+### Consequences
+
+- `tests/PackageSourceErrorTests.cpp` gains coverage for the remediation text, including
+  the stable troubleshooting URL and the `PackageIdentityRequired` recommendation to use
+  `--source fs`.
+- `README.md`/`README_ja.md` and `docs/com-api.md`/`docs/com-api_ja.md` link the new
+  troubleshooting pages.
+- The root cause of the activation rejection itself remains open and is not resolved by
+  this ADR.

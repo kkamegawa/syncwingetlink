@@ -99,6 +99,24 @@ public:
     }
 };
 
+TEST_CLASS(StartupPermissionGateTests)
+{
+public:
+    TEST_METHOD(declinedElevationStopsTui)
+    {
+        const std::optional<ExitCode> result = exitCodeAfterElevationDeclined(true);
+
+        Assert::IsTrue(result.has_value());
+        Assert::AreEqual(static_cast<int>(ExitCode::InsufficientPermission),
+                         static_cast<int>(*result));
+    }
+
+    TEST_METHOD(declinedElevationKeepsLineOrientedFixFlow)
+    {
+        Assert::IsFalse(exitCodeAfterElevationDeclined(false).has_value());
+    }
+};
+
 // printVersion() itself is not exported (it is file-local to Dispatch.cpp) and was
 // verified by hand to print "syncwingetlink " followed by this constant - see
 // docs/task.md's issue #57 entry. What is tested here is that cli::kVersion, the one

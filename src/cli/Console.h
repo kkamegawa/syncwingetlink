@@ -187,6 +187,9 @@ public:
     // Otherwise, one line is read from stdin and passed through isAffirmative().
     [[nodiscard]] bool confirm(std::wstring_view promptText, bool assumeYes);
 
+    [[nodiscard]] bool confirm(std::wstring_view promptText, bool assumeYes,
+                               bool suppressPromptWhenFalse);
+
 private:
     // Whether a line at importance clears the active LogLevel's bar. Total over
     // MessageImportance, so a future importance value fails to compile here rather than

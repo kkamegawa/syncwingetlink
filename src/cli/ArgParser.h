@@ -62,7 +62,7 @@ private:
 //   Options: --source com|fs|auto, --tui, --dry-run, --yes/-y, --rules <path>,
 //            --packages-dir <path>, --links-dir <path>, --include <glob>,
 //            --exclude <glob>, --json, --verbose, --quiet, --fail-on-missing,
-//            --no-color, --version, --help/-h
+//            --no-color, --silent, --version, --help/-h
 //
 // A "--" token stops option parsing; every token after it is positional (this lets a
 // test-rule NAME that happens to start with "-" be passed unambiguously).

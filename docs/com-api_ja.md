@@ -87,6 +87,15 @@ void EnumerateInstalledPortables()
 - App Installer 未導入、winget ポリシー無効などの場合は COM 活性化に失敗する。
   その際は `--source auto` により `FsScanSource` に自動縮退する。
 
+## 失敗時の扱いとフォールバック
+
+`WingetComSource` は生の `winrt::hresult_error` を外へ漏らしません。3 つの COM
+アクティベーションは `createInstanceNoThrow()` で例外を投げずに試行し、公開入口
+である `tryCreate()` と `enumeratePackages()` が、万一そこから漏れた
+`winrt::hresult_error` を最終的に `PackageSourceError` へ変換します。一方、
+`std::exception` やその他の例外はそのまま伝播します。想定外のプログラミング失敗
+を、黙ってファイルシステム走査へすり替えないためです。
+
 ## フォールバックの挙動（`--source`）
 
 | 値 | 挙動 |
@@ -94,6 +103,14 @@ void EnumerateInstalledPortables()
 | `com` | COM API のみ使用。失敗時はエラー終了。 |
 | `fs` | ファイルシステム走査のみ使用（COM を試さない）。 |
 | `auto`（既定） | COM を試し、失敗したら FS 走査へ縮退。 |
+
+`--source auto` の縮退が成功した場合は、既存の warning / verbose 表示のみで、
+追加の hint は出ません。最終的にパッケージ列挙が失敗した場合（たとえば
+`--source com` / `--source fs`、あるいは FS フォールバックも失敗した `auto`）は、
+`cli::run()` が `hint: ...` を stderr に出力し、次の公開ページへ案内します。
+
+- <https://github.com/kkamegawa/syncwingetlink/blob/main/docs/troubleshooting.md>
+- [`troubleshooting_ja.md`](./troubleshooting_ja.md)
 
 ## 既知の注意点
 

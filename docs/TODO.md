@@ -181,10 +181,12 @@ Build system decisions are recorded in [`adr.md`](./adr.md) (ADR-0001 … ADR-00
       via `cli::run()` (extends #61's harness). Hosts without symlink privilege log
       and skip per ADR-0016; `Debug|Release` × `x64|ARM64` all build clean,
       `vstest.console.exe` reports 405/405 for `Debug|x64`/`Release|x64`
-- [x] Diagnostic localization policy: **English-only** for the first release - issue
-      #63, ADR-0031 (`docs/adr-phase-6.md`). Japanese is served by documentation
-      (`README_ja.md`, `docs/*_ja.md`), not runtime message lookup; non-ASCII **data**
-      (paths, file names) is unaffected and remains #62's scope
+- [x] Diagnostic localization policy: English by default for the first release, with a
+      targeted exception for startup permission guidance on Japanese UI OSes - issue
+      #63, ADR-0031 (`docs/adr-phase-6.md`) plus the startup-permission follow-up ADR in
+      `docs/adr-phase-9.md`. Japanese is still not a general runtime message-table
+      system; non-ASCII **data** (paths, file names) is unaffected and remains #62's
+      scope
 - [x] `VS_VERSION_INFO` resource and a single version source - issue #118, ADR-0032
       (`docs/adr-phase-6.md`). One new `Directory.Build.props` property
       (`ProductVersion`) is what `src/syncwingetlink.rc` (new, executable project
@@ -239,6 +241,20 @@ Build system decisions are recorded in [`adr.md`](./adr.md) (ADR-0001 … ADR-00
       field; `classifyLink()`/`inspectLink()` signatures and `--json` output/ordering
       are unchanged; `Debug|Release` × `x64|ARM64` all build clean, `vstest.console.exe`
       reports 422/422 for `Debug|x64`
+
+## COM activation fallback and remediation (issue #143)
+- [x] Add a structural exception boundary in `WingetComSource` so no raw
+      `winrt::hresult_error` escapes the two public entry points; translate only
+      `winrt::hresult_error`, and let unrelated exceptions propagate unchanged
+- [x] Add `remediationFor(PackageSourceErrorKind)` with actionable guidance and a stable
+      public troubleshooting URL
+- [x] Print a `hint:` line on terminal package-enumeration failure without changing the
+      successful `--source auto` degrade warning
+- [x] Add `docs/troubleshooting.md` and `docs/troubleshooting_ja.md`, and link them from
+      `README*` and `docs/com-api*`
+- [x] Record ADR-0041 and update `docs/task.md`
+- [x] Verify `Debug|Release` × `x64`, cross-build `ARM64`, and run the relevant manual
+      `--source com|auto|fs` checks on the reporting host
 
 ## Future enhancements (separate milestone)
 - [ ] Read winget `PortableIndex` (sqlite) read-only (last resort when COM/FS are insufficient)

@@ -7,6 +7,7 @@
 #include "core/SymlinkService.h"
 #include "rules/RuleSet.h"
 
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -40,6 +41,11 @@ enum class ExitCode : int
 // an otherwise-successful batch is the "some repairs failed" case, not the permission
 // case.
 [[nodiscard]] ExitCode exitCodeFor(SymlinkServiceErrorKind kind) noexcept;
+
+// A TUI checklist must not be shown when the requested elevation is declined or
+// intentionally suppressed. The line-oriented fix flow may continue and report its
+// per-item permission result, so it keeps the historical continue behavior.
+[[nodiscard]] std::optional<ExitCode> exitCodeAfterElevationDeclined(bool useTui) noexcept;
 
 // Runs the whole CLI given already-parsed process arguments (excluding argv[0] - the
 // program name). This is the only function main.cpp calls; kept separate from wmain so

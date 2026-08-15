@@ -11,6 +11,12 @@ using namespace Microsoft::VisualStudio::CppUnitTestFramework;
 
 namespace syncwingetlink::tests
 {
+namespace
+{
+constexpr std::string_view kTroubleshootingUrl =
+    "https://github.com/kkamegawa/syncwingetlink/blob/main/docs/troubleshooting.md";
+}
+
 TEST_CLASS(PackageSourceErrorTests)
 {
 public:
@@ -83,6 +89,35 @@ public:
     {
         Assert::IsTrue(mapHresultToKind(E_FAIL) == PackageSourceErrorKind::Unknown);
         Assert::IsTrue(mapHresultToKind(E_INVALIDARG) == PackageSourceErrorKind::Unknown);
+    }
+
+    TEST_METHOD(remediationTextIsPresentForCurrentlySupportedKinds)
+    {
+        constexpr PackageSourceErrorKind kAllKinds[] = {
+            PackageSourceErrorKind::AppInstallerMissing,
+            PackageSourceErrorKind::PolicyBlocked,
+            PackageSourceErrorKind::AccessDenied,
+            PackageSourceErrorKind::ServerUnavailable,
+            PackageSourceErrorKind::CatalogError,
+            PackageSourceErrorKind::ScanFailed,
+            PackageSourceErrorKind::PackageIdentityRequired,
+            PackageSourceErrorKind::Unknown,
+        };
+
+        for (const PackageSourceErrorKind kind : kAllKinds)
+        {
+            const std::string remediation = remediationFor(kind);
+            Assert::IsFalse(remediation.empty());
+            Assert::IsTrue(remediation.find(kTroubleshootingUrl) != std::string::npos);
+        }
+    }
+
+    TEST_METHOD(packageIdentityRequiredRemediationMentionsFilesystemFallback)
+    {
+        const std::string remediation =
+            remediationFor(PackageSourceErrorKind::PackageIdentityRequired);
+
+        Assert::IsTrue(remediation.find("--source fs") != std::string::npos);
     }
 
     TEST_METHOD(portableInstallerTypeIsRecognizedCaseInsensitively)

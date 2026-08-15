@@ -216,4 +216,9 @@ struct SymlinkServiceOperations
 // APIs and inspectLink() - the deterministic test seam.
 [[nodiscard]] SymlinkRepairResult repairLink(const RepairItem& candidate, RepairMode mode,
                                              const SymlinkServiceOperations& operations);
+
+// Public query helpers for startup-time policy checks. These use the same registry/token
+// sources the permission-classification path records after a mutating failure.
+[[nodiscard]] DeveloperModeState queryDeveloperMode() noexcept;
+[[nodiscard]] ElevationState queryElevation() noexcept;
 } // namespace syncwingetlink
