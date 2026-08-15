@@ -46,9 +46,7 @@ jobs:
     # format if one is ever added (docs/adr-phase-9.md ADR-0043) -- but is wired in so a
     # future conan.lock, package-lock.json, or vendored C/C++ tree is covered
     # automatically without a workflow change.
-    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@8deb546fdb875b9996d27d4950be7312dac076a1 # v2.5.0
-    permissions:
-      contents: read
-      actions: read
+    # Pinned to v2.5.0.
+    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@8deb546fdb875b9996d27d4950be7312dac076a1
     with:
       upload-sarif: false
