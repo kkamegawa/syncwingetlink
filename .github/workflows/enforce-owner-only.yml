@@ -1,0 +1,116 @@
+name: Owner-only Gate
+
+on:
+  pull_request_target:
+    branches:
+      - main
+
+permissions:
+  contents: read
+  pull-requests: read
+  statuses: write
+
+jobs:
+  owner-only-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Evaluate commit authors
+        id: evaluate
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const ownerLogin = context.repo.owner.toLowerCase();
+            const pullNumber = context.payload.pull_request.number;
+            const commits = await github.paginate(
+              github.rest.pulls.listCommits,
+              {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: pullNumber,
+                per_page: 100
+              }
+            );
+
+            // Bot logins are only trusted when GitHub also reports them as
+            // type "Bot"; this prevents a human account that merely
+            // registers one of these usernames from satisfying the gate.
+            const allowedBotLogins = new Set([
+              "copilot",
+              "github-copilot[bot]",
+              "dependabot[bot]"
+            ]);
+
+            // Only the GitHub API-reported login/type is trusted here.
+            // commit.commit.author/committer email is user-controlled and
+            // can be spoofed, so it is intentionally not used. A missing
+            // login (actor could not be resolved to a GitHub account) is
+            // always treated as blocked.
+            function isAllowedActor(actor) {
+              if (!actor || !actor.login) {
+                return false;
+              }
+
+              const normalized = actor.login.toLowerCase();
+              if (normalized === ownerLogin) {
+                return true;
+              }
+
+              return actor.type === "Bot" && allowedBotLogins.has(normalized);
+            }
+
+            const blocked = [];
+
+            for (const commit of commits) {
+              const authorLogin = commit.author?.login ?? "";
+              const committerLogin = commit.committer?.login ?? "";
+
+              const allowed =
+                isAllowedActor(commit.author) ||
+                isAllowedActor(commit.committer);
+
+              if (!allowed) {
+                blocked.push({
+                  sha: commit.sha,
+                  authorLogin,
+                  committerLogin
+                });
+              }
+            }
+
+            if (blocked.length === 0) {
+              core.setOutput("state", "success");
+              core.setOutput("description", "All commits are from owner, Copilot, or Dependabot.");
+              core.setOutput("summary", "Owner/Copilot/Dependabot commit policy passed.");
+              return;
+            }
+
+            const offender = blocked[0];
+            const details =
+              `Blocked commit ${offender.sha.slice(0, 7)} ` +
+              `(author=${offender.authorLogin || "unknown"}, ` +
+              `committer=${offender.committerLogin || "unknown"})`;
+
+            core.setOutput("state", "failure");
+            core.setOutput("description", details.slice(0, 140));
+            core.setOutput("summary", details);
+
+      - name: Publish required status context
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          STATUS_STATE: ${{ steps.evaluate.outputs.state }}
+          STATUS_DESCRIPTION: ${{ steps.evaluate.outputs.description }}
+        with:
+          script: |
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: context.payload.pull_request.head.sha,
+              state: process.env.STATUS_STATE,
+              context: "Enforce owner-only changes",
+              description: process.env.STATUS_DESCRIPTION,
+              target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`
+            });
+
+            if (process.env.STATUS_STATE !== "success") {
+              core.setFailed(process.env.STATUS_DESCRIPTION);
+            }

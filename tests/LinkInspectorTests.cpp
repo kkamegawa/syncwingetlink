@@ -720,7 +720,8 @@ public:
 
         Assert::IsTrue(item.status == LinkStatus::Broken);
         Assert::IsTrue(item.entryKind == LinkEntryKind::SymbolicLink);
-        Assert::IsFalse(item.existingTarget.has_value());
+        Assert::IsTrue(item.existingTarget.has_value());
+        Assert::IsTrue(item.existingTarget->native() == staleTarget.native());
     }
 };
 

@@ -1,0 +1,79 @@
+name: CI
+
+on:
+  push:
+    tags:
+      - "v*"
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test:
+    name: ${{ matrix.platform }} / ${{ matrix.configuration }}
+    runs-on: windows-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: x64
+            configuration: Debug
+          - platform: x64
+            configuration: Release
+          - platform: ARM64
+            configuration: Debug
+          - platform: ARM64
+            configuration: Release
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@6fb02220983dee41ce7ae257b6f4d8f9bf5ed4ce # v2.0.0
+
+      - name: Build ${{ matrix.platform }} / ${{ matrix.configuration }}
+        run: msbuild syncwingetlink.sln -m:1 /nr:false -p:Configuration=${{ matrix.configuration }} -p:Platform=${{ matrix.platform }}
+
+      - name: Test x64 binaries
+        if: ${{ matrix.platform == 'x64' }}
+        shell: powershell
+        run: |
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
+          if (-not (Test-Path $vswhere)) {
+            throw "vswhere.exe not found at $vswhere"
+          }
+
+          $vsInstallPath = & $vswhere -latest -products * -requires Microsoft.VisualStudio.PackageGroup.TestTools.Core -property installationPath
+          if (-not $vsInstallPath) {
+            $vsInstallPath = & $vswhere -latest -products * -property installationPath
+          }
+          if (-not $vsInstallPath) {
+            throw "Visual Studio installation not found (vswhere returned empty)."
+          }
+
+          $vstestCandidates = @(
+            (Join-Path $vsInstallPath "Common7\IDE\Extensions\TestPlatform\vstest.console.exe"),
+            (Join-Path $vsInstallPath "Common7\IDE\CommonExtensions\Microsoft\TestWindow\vstest.console.exe")
+          ) | Where-Object { Test-Path $_ }
+
+          if ($vstestCandidates.Count -eq 0) {
+            throw "vstest.console.exe not found under: $vsInstallPath"
+          }
+
+          & $vstestCandidates[0] "build\x64\${{ matrix.configuration }}\syncwingetlink.tests.dll" /Platform:x64 /InIsolation
+
+      - name: ARM64 cross-compile note
+        if: ${{ matrix.platform == 'ARM64' }}
+        shell: powershell
+        run: |
+          Write-Host "ARM64 is cross-compiled on the x64 hosted runner by design; unit tests run only for x64."
