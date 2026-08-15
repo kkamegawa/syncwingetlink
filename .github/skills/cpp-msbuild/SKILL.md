@@ -203,20 +203,35 @@ shipping DLLs next to the executable, defeating the single-file release goal.
    own security page.
 4. **Pin `builtin-baseline`** so port versions never move implicitly. Roll it
    deliberately, and repeat step 3 when you do.
+5. **Record it in `.github/dependency-inventory.json`** (`nativeDependencies`: port,
+   version, license, justification, and the ISO date step 3 was performed). CI fails the
+   `Dependency Audit` workflow if a `vcpkg.json`/port appears that isn't recorded there —
+   see below.
 
-### The vulnerability gate is manual today — do not overstate it
+### What the vulnerability gate automates today, and what stays manual
 
 **No dependency may ship with a known vulnerability**; this is a completion condition
-(section 1). But be precise about how it is enforced:
+(section 1). Be precise about how it is enforced — part of this is now automated, part
+is not, and conflating the two overstates the gate:
 
-- **Dependabot does not support vcpkg**, and GitHub's dependency graph does not parse
-  `vcpkg.json`. `.github/dependabot.yml` covers `github-actions` only, on purpose.
-- So the check on native dependencies is the **manual** procedure above. Wiring in a
-  scanner that understands vcpkg remains an open item — consult the project's ADR or
-  TODO for its current status.
+- **Automated (`.github/workflows/dependency-audit.yml`, `tools/Test-DependencyInventory.ps1`
+  / `.sh`; see `docs/adr-phase-9.md` ADR-0043)**: CI fails the moment a tracked
+  dependency manifest (`vcpkg.json`, `conan.lock`, `CMakeLists.txt`, `package.json`,
+  `.gitmodules`, a vendored/`third_party` tree, a checked-in binary, or an MSBuild
+  `<PackageReference>`) appears that isn't recorded in
+  `.github/dependency-inventory.json`, and the moment a GitHub Actions `uses:` is
+  unpinned (not a full 40-character commit SHA) or references a repo absent from the
+  inventory's allow-list. This guarantees the dependency set can't silently grow — it is
+  a *presence* check, not a vulnerability scan.
+- **Still manual**: whether a given vcpkg port version actually has a known CVE.
+  **Dependabot does not support vcpkg**, and GitHub's dependency graph does not parse
+  `vcpkg.json`; `.github/dependabot.yml` covers `github-actions` only, on purpose. No
+  scanner evaluated to date (OSV-Scanner included — see ADR-0043) understands
+  `vcpkg.json` either. So the actual advisory check is the manual procedure above (steps
+  1-4), performed whenever a port is added or the baseline is rolled.
 - Never write "dependencies scanned" or "no vulnerabilities" in a PR unless you actually
-  performed the check. If the dependency set is empty, say that instead — it is a
-  stronger and more honest claim.
+  performed the manual check above. If the dependency set is empty, say that instead — it
+  is a stronger and more honest claim than implying a scan happened.
 - If a vulnerability is found in a dependency that cannot be updated, **stop and report
   it**. Do not work around it silently.
 - Report vulnerabilities in *this* project privately per `SECURITY.md`; never in a public

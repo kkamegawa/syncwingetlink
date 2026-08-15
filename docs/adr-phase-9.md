@@ -560,3 +560,107 @@ for this change for the specific alternatives considered and declined.
   troubleshooting pages.
 - The root cause of the activation rejection itself remains open and is not resolved by
   this ADR.
+
+---
+
+## ADR-0043 — Dependency-inventory tripwire and Actions pin check as the automated vulnerability gate
+
+- **Date**: 2026-08-16
+- **Affected**: `.github/dependency-inventory.json` (new), `tools/Test-DependencyInventory.ps1`
+  (new), `tools/test-dependency-inventory.sh` (new), `.github/workflows/dependency-audit.yml`
+  (new), `.github/skills/cpp-msbuild/SKILL.md` §5, `.github/dependabot.yml`, `AGENTS.md` §10,
+  `docs/PLAN.md` §11, `CONTRIBUTING.md`, `docs/TODO.md` M0, issue #22, #164, #165
+- **Status**: Accepted
+
+### Decision
+
+1. **Evaluated OSV-Scanner against `docs/adr.md` open item 6 and confirmed it does not
+   support vcpkg.** Its documented supported artifacts and manifests list, checked
+   2026-08-16 at <https://google.github.io/osv-scanner/supported-languages-and-lockfiles/>,
+   covers only `conan.lock` for C/C++ package manifests (plus vendored/submoduled C/C++
+   matched by vulnerable *commit ranges*, not a manifest). `vcpkg.json` is not an OSV
+   ecosystem, and no GitHub Actions workflow extractor is documented either. No
+   vcpkg-aware scanner of any kind was found. This is a factual finding, not a decision —
+   it constrains everything below.
+2. **The gate is built around what is actually true and checkable today: the dependency
+   set is empty, and CI now enforces that it stays that way.**
+   `.github/dependency-inventory.json` is the single tracked record of every dependency
+   the project knowingly accepts (`nativeDependencies` — empty; `githubActions` — the
+   allow-listed action repositories; `agentToolingDependencies` — the `apm`-managed
+   `github/awesome-copilot` skill bundle; `acknowledgedPaths` — an explicit escape hatch).
+   `tools/Test-DependencyInventory.ps1` (and its bash twin,
+   `tools/test-dependency-inventory.sh`) fails CI the moment a tracked dependency
+   manifest (`vcpkg.json`, `conan.lock`, `CMakeLists.txt`, `package.json`, `.gitmodules`,
+   etc.), a vendored/third-party tree, a checked-in binary, or an MSBuild
+   `<PackageReference>` appears that is not recorded there. This is deliberately a
+   *presence* check, not a vulnerability database — it cannot tell whether a future
+   vcpkg port has a known CVE. It can only guarantee that adding one is never silent.
+3. **GitHub Actions — the one real dependency set this project has today — get a real
+   pin-and-allow-list check**, not just Dependabot's routine SHA bumps. Every `uses:` in
+   `.github/workflows/*.yml` must resolve to a full 40-character commit SHA, and its
+   `owner/repo` must appear in the inventory's `githubActions` list. The inventory
+   records **repositories, not SHAs**: Dependabot already keeps SHAs current, and
+   recording them a second place would just create a value that goes stale. What the
+   inventory exists to gate is a *new* third-party action being introduced at all — the
+   decision that actually deserves review.
+4. **OSV-Scanner forward coverage was attempted and reverted, not shipped.** The intent
+   was to wire `google/osv-scanner-action`'s reusable `osv-scanner-reusable.yml@v2.5.0`
+   workflow into `dependency-audit.yml` as forward coverage for whichever ecosystem a
+   future dependency actually uses (with `upload-sarif: false`, since this repository is
+   **private** and has no GitHub Advanced Security). In practice, calling it via `uses:`
+   failed at GitHub's workflow-parse stage — `startup_failure`, **zero check-runs
+   created**, before any job (including the unrelated `inventory-guard` job in the same
+   file) could run. Two different fix attempts were tried: granting `actions: read` at
+   the workflow level (the job's own `permissions:` block requested it, and a job cannot
+   request more than the workflow-level ceiling for a reusable-workflow call), and
+   separately removing the job-level `permissions:` override and the trailing comment on
+   the `uses:` line entirely, in case either was mishandled by the parser. Neither
+   fixed it. The SHA, the exact file path at that SHA, the repository's
+   `allowed_actions: "all"` setting, and the account type (personal `User`, not an
+   organization) were all verified valid via the GitHub REST API, so the cause is not
+   diagnosable from a checkout — most likely an organization/enterprise Actions policy
+   visible only in the repository's Settings UI. Rather than ship a required check that
+   is permanently red (or block the working `inventory-guard` tripwire on an unrelated,
+   undiagnosed failure), the job was removed. `dependency-audit.yml` ships with
+   `inventory-guard` alone; OSV-Scanner forward coverage is deferred, not delivered.
+5. **The vcpkg-specific advisory check remains manual.** No decision here changes the
+   procedure in the `cpp-msbuild` skill §5 (pin `builtin-baseline`, check the exact port
+   version against the GitHub Advisory Database before adding or rolling it). This ADR
+   does not claim that procedure is now automated — only that the surrounding "is the
+   dependency set what we think it is" question is.
+
+### Reason
+
+- ADR-0007 already predicted this exact regression: "Dependabot does not support vcpkg…
+  the vulnerability gate weakens," and recorded evaluating a vcpkg-aware scanner as open
+  item 6. Doing that evaluation honestly means accepting a negative result rather than
+  reaching for the nearest scanner and calling the item closed.
+- `.github/dependabot.yml`'s own header comment already warns against "adding one would
+  be silently ineffective and would give a false sense of coverage" — wiring in
+  OSV-Scanner as if it covered vcpkg would repeat exactly that mistake one layer up.
+- The project's actual dependency risk today is not "an unpatched vcpkg port" (there are
+  none) but "a dependency gets added without anyone noticing the Definition-of-Done line
+  about vulnerabilities no longer holds." A presence tripwire directly closes that gap;
+  a vcpkg vulnerability scanner that doesn't exist cannot.
+- GitHub Actions are pinned to commit SHAs by convention already (see every existing
+  `.github/workflows/*.yml`), but nothing previously *enforced* the convention or
+  constrained which repos may appear at all — a genuine, if narrow, supply-chain gap
+  distinct from the vcpkg question.
+
+### Consequences
+
+- `docs/adr.md` open item 6 is marked resolved, pointing here.
+- `docs/TODO.md` M0's scanner-evaluation bullet is checked off, worded to the actual
+  outcome ("evaluated; no vcpkg-aware scanner exists; a tripwire and Actions pin check
+  were wired in instead") rather than "a scanner was wired in."
+- Adding any future native dependency now requires a `.github/dependency-inventory.json`
+  entry or CI fails; `CONTRIBUTING.md` and the `cpp-msbuild` skill's "before adding a
+  dependency" checklist say so.
+- **OSV-Scanner forward coverage remains an open follow-up**, not a shipped feature —
+  see decision 4. Whoever picks it up next should start by checking the repository's
+  Settings → Actions page (and, if applicable, any organization/enterprise Actions
+  policy) for a reusable-workflow restriction, rather than re-attempting the same
+  workflow-file variants this ADR already ruled out.
+- The `inventory-guard` job is not yet in `main`'s required status checks; adding it is a
+  branch-protection change only the repository owner can make (recorded as a manual
+  follow-up in #164, not something an agent can do from a checkout).

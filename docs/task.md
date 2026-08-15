@@ -3366,3 +3366,54 @@ fallback (`winrt::hresult_error` has no `std::exception` base, so neither
   line-oriented `fix` path retains its previous continue-and-report behavior.
 - Added a focused dispatch contract test and documented the TUI-specific permission
   behavior in the README, troubleshooting guide, and ADR-0042.
+
+## 2026-08-16 — Automate the vulnerability gate (issue #22)
+
+- Evaluated a vcpkg-aware vulnerability scanner per `docs/adr.md` open item 6:
+  OSV-Scanner's documented supported artifacts and manifests cover only `conan.lock` for
+  C/C++, not `vcpkg.json`. No scanner that understands vcpkg was found.
+- Split the work into two sub-issues, tracked on separate branches/PRs:
+  - **[#164](https://github.com/kkamegawa/syncwingetlink/issues/164)** (CI mechanism,
+    [PR #166](https://github.com/kkamegawa/syncwingetlink/pull/166)): added
+    `.github/dependency-inventory.json`, `tools/Test-DependencyInventory.ps1` +
+    `tools/test-dependency-inventory.sh`, and
+    `.github/workflows/dependency-audit.yml` (`inventory-guard` job). CI now fails if a
+    tracked dependency manifest, vendored tree, checked-in binary, or MSBuild
+    `<PackageReference>` appears without being recorded in the inventory, and if a
+    GitHub Actions `uses:` is unpinned or references a repo absent from the allow-list.
+  - **[#165](https://github.com/kkamegawa/syncwingetlink/issues/165)** (this doc
+    reconciliation): `docs/adr-phase-9.md` ADR-0043, `docs/adr.md` open item 6 resolved,
+    `docs/TODO.md` M0, the `cpp-msbuild` skill §5, `.github/dependabot.yml`,
+    `AGENTS.md` §10, `docs/PLAN.md` §11/§5, `CONTRIBUTING.md`.
+
+### Deliberately not done
+
+- **OSV-Scanner forward coverage was attempted and reverted.** Calling
+  `google/osv-scanner-action`'s reusable workflow via `uses:` failed at GitHub's
+  workflow-parse stage (`startup_failure`, zero check-runs created) across two different
+  permission/syntax variants; SHA, path, and permissions were all verified valid via the
+  REST API, so the cause could not be diagnosed further from a checkout — likely an
+  organization/enterprise Actions policy visible only in repo Settings. Rather than ship
+  a permanently red required check, the job was removed and `dependency-audit.yml`
+  ships with `inventory-guard` alone. Wiring in OSV-Scanner (or any scanner that later
+  adds vcpkg support) remains open; whoever picks it up should start by checking the
+  repo's Settings → Actions page for a reusable-workflow restriction before retrying the
+  same approach.
+- The vcpkg-specific advisory-review procedure (checking a port version against the
+  GitHub Advisory Database) is unchanged and remains manual — no automation claims
+  otherwise.
+
+### Verified
+
+- `tools/Test-DependencyInventory.ps1` and `tools/test-dependency-inventory.sh` agree on
+  a clean checkout (141 tracked files, 4 workflow files, zero findings as of the final
+  commit on #164's branch).
+- Manually verified the tripwire fires for a stub `vcpkg.json`, an unpinned
+  `actions/checkout@v5` tag reference, and a `uses:` for a repo absent from the
+  inventory — and that an *untracked* scratch workflow file is correctly ignored (the
+  bug Copilot's automated PR review caught and this session fixed before merge).
+- The `Dependency inventory guard` job ran successfully in real CI on PR #166 after the
+  OSV-Scanner job was removed.
+- No C++ source changed; `Debug`/`Release` × `x64`/`ARM64` rebuild was not re-run in this
+  session (no build-capable shell available here) — flagged as unverified rather than
+  assumed, consistent with the existing 426/426 test count from the prior entry.

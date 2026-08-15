@@ -22,7 +22,7 @@ approached that limit - check the latest one first for the most recent decisions
 | [`adr-phase-6.md`](./adr-phase-6.md) | ADR-0026 – ADR-0033 |
 | [`adr-phase-7.md`](./adr-phase-7.md) | ADR-0034 – ADR-0036 |
 | [`adr-phase-8.md`](./adr-phase-8.md) | ADR-0037 |
-| [`adr-phase-9.md`](./adr-phase-9.md) | ADR-0038 – ADR-0040 |
+| [`adr-phase-9.md`](./adr-phase-9.md) | ADR-0038 – ADR-0043 |
 
 ---
 
@@ -406,6 +406,17 @@ ADR-0005. Until something automated is in place, the gate rests on:
 Evaluating a scanner that does understand vcpkg (OSV-Scanner has been suggested, but its
 vcpkg coverage was **not** verified) is recorded as open item 6. Do not describe the
 vulnerability gate as automated until one is actually wired into CI.
+
+**Resolved 2026-08-16, see ADR-0043** (`docs/adr-phase-9.md`): the evaluation found no
+scanner understands vcpkg. Rather than close this gap with a scanner that measures
+nothing, `docs/adr-phase-9.md` ADR-0043 wires in a CI tripwire that keeps the tracked
+dependency set exactly what `.github/dependency-inventory.json` says it is, plus an
+enforced pin-and-allow-list check on GitHub Actions. An OSV-Scanner forward-coverage job
+was attempted but reverted — it fails at GitHub's workflow-parse stage for a reason not
+diagnosable from a checkout (ADR-0043 decision 4) — so it remains an open follow-up, not
+a shipped feature. Items 1–3 above still describe the vcpkg-specific procedure
+accurately; only the "gate rests on" framing is superseded — the presence of a
+dependency is now enforced automatically, its safety is still checked manually.
 
 ---
 

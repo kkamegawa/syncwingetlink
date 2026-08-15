@@ -32,9 +32,14 @@ Build system decisions are recorded in [`adr.md`](./adr.md) (ADR-0001 … ADR-00
 - [ ] CI (GitHub Actions): `msbuild` + `vstest.console.exe`, x64 and ARM64.
       Confirm whether a `windows-11-arm` runner is available; if not, ARM64 is
       build-only and must be documented as such (open item 3 in `adr.md`)
-- [ ] Evaluate a vulnerability scanner that understands vcpkg (OSV-Scanner is a candidate,
-      coverage unverified) and wire it into CI — Dependabot cannot do this
-      (open item 6 in `adr.md`). Until then the gate is manual; do not claim otherwise
+- [x] Evaluate a vulnerability scanner that understands vcpkg — evaluated OSV-Scanner;
+      it does not support `vcpkg.json` (no scanner does, as of this check). Rather than
+      claim coverage that doesn't exist, wired in a CI tripwire
+      (`.github/dependency-inventory.json` + `tools/Test-DependencyInventory.ps1`/`.sh`)
+      that keeps the tracked dependency set exactly what the inventory says it is, plus
+      an enforced pin-and-allow-list check on GitHub Actions (open item 6 in `adr.md`,
+      resolved by `docs/adr-phase-9.md` ADR-0043, issues #22/#164/#165). The vcpkg
+      advisory-review procedure itself remains manual; do not claim otherwise
 
 ## M1. Paths / model foundation
 - [x] `core/Model.h`: define `InstalledPackage`, `PackageExe`, `LinkStatus{Ok,Missing,Broken,Mismatch}`, `RepairItem`, `AppOptions`

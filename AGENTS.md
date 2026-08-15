@@ -300,8 +300,12 @@ see it for issue/ADR citations.
       not sufficient evidence) - 407/407 for `Debug|x64`/`Release|x64` as of M9; see
       `docs/PLAN.md` §11 for the full evidence and the issue #144 caveat
 - [x] **No dependency has a known vulnerability**, and every dependency is MIT-compatible
-      and justified - zero third-party dependencies exist today; the automated gate for
-      if that changes remains open (issue #22)
+      and justified - zero third-party dependencies exist today; a CI tripwire now
+      enforces that the tracked dependency set stays exactly what
+      `.github/dependency-inventory.json` says it is, plus a pin-and-allow-list check on
+      GitHub Actions (issues #22/#164/#165, `docs/adr-phase-9.md` ADR-0043). The
+      vcpkg-specific advisory check itself remains manual - no scanner supports
+      `vcpkg.json`
 
 Per-change completion criteria are in the `cpp-msbuild` skill, section 1.
 

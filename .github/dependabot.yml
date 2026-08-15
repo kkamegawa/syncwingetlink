@@ -5,10 +5,15 @@
 # not parse vcpkg.json either. There is deliberately no entry for it below; adding one
 # would be silently ineffective and would give a false sense of coverage.
 #
-# Until a scanner that understands vcpkg is wired into CI (adr.md open item 6), native
-# dependency vulnerabilities are checked MANUALLY: pin builtin-baseline in vcpkg.json,
-# and review advisories for the exact port version whenever a port is added or the
-# baseline is rolled. See the cpp-msbuild skill, section 5.
+# No scanner that understands vcpkg was found to exist (docs/adr-phase-9.md ADR-0043,
+# resolving adr.md open item 6); native dependency vulnerabilities are checked MANUALLY:
+# pin builtin-baseline in vcpkg.json, and review advisories for the exact port version
+# whenever a port is added or the baseline is rolled. See the cpp-msbuild skill,
+# section 5. What IS automated is presence, not safety: .github/workflows/
+# dependency-audit.yml + tools/Test-DependencyInventory.ps1/.sh fail CI if a dependency
+# manifest or an unpinned/un-allow-listed GitHub Action appears without being recorded
+# in .github/dependency-inventory.json -- this Dependabot job below covers the routine
+# SHA bumps for that same allow-list.
 version: 2
 
 updates:
