@@ -219,14 +219,25 @@ enum class StartupPermissionMessage
         parameters += L'"';
     }
 
-    wchar_t exePath[MAX_PATH + 1]{};
-    if (GetModuleFileNameW(nullptr, exePath, MAX_PATH + 1) == 0)
+    std::wstring exePath(MAX_PATH, L'\0');
+    for (;;)
     {
-        return false;
+        const DWORD len = GetModuleFileNameW(nullptr, exePath.data(), static_cast<DWORD>(exePath.size()));
+        if (len == 0)
+        {
+            return false;
+        }
+        if (len < static_cast<DWORD>(exePath.size()))
+        {
+            exePath.resize(len);
+            break;
+        }
+        // Buffer was too small (len == capacity); double and retry.
+        exePath.resize(exePath.size() * 2);
     }
 
     const HINSTANCE result =
-        ShellExecuteW(nullptr, L"runas", exePath, parameters.empty() ? nullptr : parameters.c_str(),
+        ShellExecuteW(nullptr, L"runas", exePath.c_str(), parameters.empty() ? nullptr : parameters.c_str(),
                       nullptr, SW_SHOWNORMAL);
     return reinterpret_cast<INT_PTR>(result) > 32;
 }
