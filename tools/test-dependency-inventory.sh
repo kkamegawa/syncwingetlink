@@ -153,9 +153,13 @@ while IFS= read -r file; do
 done <<< "$tracked_files"
 
 # ---- Check 2: GitHub Actions pinning ----------------------------------------------
+# Derived from $tracked_files, not a glob, so this stays scoped to `git ls-files` like
+# the header comment promises: an untracked scratch workflow file never trips it, and
+# .yaml (not just .yml) workflows are covered too.
 workflow_count=0
-for workflow in .github/workflows/*.yml; do
-    [ -f "$workflow" ] || continue
+workflow_list="$(printf '%s\n' "$tracked_files" | grep -E '^\.github/workflows/.*\.ya?ml$' || true)"
+while IFS= read -r workflow; do
+    [ -z "$workflow" ] && continue
     workflow_count=$((workflow_count + 1))
     workflow_name="$(basename "$workflow")"
 
@@ -195,7 +199,7 @@ for workflow in .github/workflows/*.yml; do
             violations+=("$workflow_name: action repo '$owner_repo_lc' is not in .github/dependency-inventory.json's githubActions allow-list")
         fi
     done < "$workflow"
-done
+done <<< "$workflow_list"
 
 if [ "${#violations[@]}" -gt 0 ]; then
     echo "::error::Dependency inventory check failed with ${#violations[@]} finding(s):"

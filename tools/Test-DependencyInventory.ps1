@@ -104,11 +104,15 @@ try {
     }
 
     # ---- Check 2: GitHub Actions pinning -----------------------------------------
-    $workflowFiles = Get-ChildItem -Path '.github/workflows' -Filter '*.yml' -File
+    # Derived from $trackedFiles, not Get-ChildItem, so this stays scoped to `git
+    # ls-files` like the header comment promises: an untracked scratch workflow file
+    # never trips it, and .yaml (not just .yml) workflows are covered too.
+    $workflowFiles = $trackedFiles | Where-Object { $_ -like '.github/workflows/*.yml' -or $_ -like '.github/workflows/*.yaml' }
     $usesPattern = [regex]'^\s*(?:-\s*)?uses:\s*([^\s#]+)'
 
     foreach ($workflow in $workflowFiles) {
-        foreach ($line in Get-Content -Path $workflow.FullName) {
+        $workflowName = Split-Path -Leaf $workflow
+        foreach ($line in Get-Content -Path $workflow) {
             $match = $usesPattern.Match($line)
             if (-not $match.Success) {
                 continue
@@ -119,13 +123,13 @@ try {
                 continue
             }
             if ($ref.StartsWith('docker://')) {
-                $violations.Add("$($workflow.Name): docker:// action reference is not allowed: $ref")
+                $violations.Add("${workflowName}: docker:// action reference is not allowed: $ref")
                 continue
             }
 
             $atIndex = $ref.LastIndexOf('@')
             if ($atIndex -lt 0) {
-                $violations.Add("$($workflow.Name): action reference has no @<sha> pin: $ref")
+                $violations.Add("${workflowName}: action reference has no @<sha> pin: $ref")
                 continue
             }
 
@@ -133,16 +137,16 @@ try {
             $pin = $ref.Substring($atIndex + 1)
             $repoSegments = $repoPath -split '/'
             if ($repoSegments.Count -lt 2) {
-                $violations.Add("$($workflow.Name): unrecognized action reference: $ref")
+                $violations.Add("${workflowName}: unrecognized action reference: $ref")
                 continue
             }
             $ownerRepo = "$($repoSegments[0])/$($repoSegments[1])".ToLowerInvariant()
 
             if ($pin -notmatch '^[0-9a-f]{40}$') {
-                $violations.Add("$($workflow.Name): '$ownerRepo' is not pinned to a full 40-character commit SHA: $ref")
+                $violations.Add("${workflowName}: '$ownerRepo' is not pinned to a full 40-character commit SHA: $ref")
             }
             if ($allowedActionRepos -notcontains $ownerRepo) {
-                $violations.Add("$($workflow.Name): action repo '$ownerRepo' is not in .github/dependency-inventory.json's githubActions allow-list")
+                $violations.Add("${workflowName}: action repo '$ownerRepo' is not in .github/dependency-inventory.json's githubActions allow-list")
             }
         }
     }
