@@ -252,7 +252,7 @@ enum class StartupPermissionMessage
         return std::nullopt;
     }
 
-    if (options.silent || options.assumeYes)
+    if (options.silent)
     {
         if (const std::optional<ExitCode> tuiExitCode =
                 exitCodeAfterElevationDeclined(options.useTui);
@@ -264,7 +264,7 @@ enum class StartupPermissionMessage
     }
 
     if (!console.confirm(localizedMessage(language, StartupPermissionMessage::ElevationPrompt),
-                         false, options.silent))
+                         options.assumeYes))
     {
         if (const std::optional<ExitCode> tuiExitCode =
                 exitCodeAfterElevationDeclined(options.useTui);

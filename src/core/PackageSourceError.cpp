@@ -43,7 +43,7 @@ PackageSourceErrorKind mapHresultToKind(int32_t hresult) noexcept
     }
 }
 
-std::string remediationFor(PackageSourceErrorKind kind) noexcept
+std::string remediationFor(PackageSourceErrorKind kind)
 {
     const std::string suffix = std::string(" See ") + std::string(kTroubleshootingUrl);
     

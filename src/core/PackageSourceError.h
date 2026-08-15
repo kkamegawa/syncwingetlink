@@ -73,7 +73,8 @@ private:
 
 // User-facing remediation guidance for a package-source failure kind. This is a pure,
 // winrt-free lookup so tests can verify the text without the winget COM server.
-[[nodiscard]] std::string remediationFor(PackageSourceErrorKind kind) noexcept;
+// Note: may allocate (std::string construction), so can throw on allocation failure.
+[[nodiscard]] std::string remediationFor(PackageSourceErrorKind kind);
 
 // True when a winget PackageVersionMetadataField::InstallerType value denotes a portable
 // package. The COM API returns this as a free-form hstring rather than the
