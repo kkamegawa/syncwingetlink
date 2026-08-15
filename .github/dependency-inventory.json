@@ -32,11 +32,6 @@
       "repo": "softprops/action-gh-release",
       "license": "MIT",
       "justification": "Publishes the draft GitHub release with the built assets."
-    },
-    {
-      "repo": "google/osv-scanner-action",
-      "license": "Apache-2.0",
-      "justification": "Forward-looking OSV coverage for any dependency manifest OSV-Scanner does support (docs/adr-phase-9.md ADR-0043); it does not cover vcpkg and currently extracts nothing from this repository."
     }
   ],
   "_githubActions_comment": "Allow-listed action REPOSITORIES only, deliberately without pinned SHAs here -- tools/Test-DependencyInventory.ps1 checks the SHA pin separately by reading each workflow file, so Dependabot's routine SHA bumps never require touching this file. Adding a new repo here is the actual review checkpoint; keeping it in step with the workflow's SHA is Dependabot's job.",

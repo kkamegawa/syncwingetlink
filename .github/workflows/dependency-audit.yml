@@ -1,25 +1,27 @@
 name: Dependency Audit
 
 # Automated half of the dependency-vulnerability gate (issue #22, #164; see
-# docs/adr-phase-9.md ADR-0043). No scanner understands vcpkg.json, so `inventory-guard`
+# docs/adr-phase-9.md ADR-0043). No scanner understands vcpkg.json, so this workflow
 # enforces the project's real invariant -- the dependency set stays exactly what
-# .github/dependency-inventory.json says it is -- while `osv-scanner` provides forward
-# coverage for whichever ecosystem a future dependency actually uses. As of this writing
-# osv-scanner covers none of this repository's current dependencies (there are none) and
-# is expected to report a clean scan.
+# .github/dependency-inventory.json says it is.
+#
+# NOTE: an OSV-Scanner "forward coverage" job (for whichever dependency ecosystem is
+# added in the future) was attempted here and removed for now -- calling
+# google/osv-scanner-action's reusable workflow via `uses:` fails at workflow-parse time
+# (startup_failure, zero check-runs created) for a reason that could not be diagnosed
+# from the REST API alone (SHA/path/permissions all verified valid). Likely an
+# organization/enterprise Actions policy visible only in repo Settings. Tracked
+# separately; see issue #164 follow-up discussion.
 
 on:
   push:
     branches:
       - main
   pull_request:
-  schedule:
-    - cron: "30 12 * * 1" # Mondays 12:30 UTC
   workflow_dispatch:
 
 permissions:
   contents: read
-  actions: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -37,16 +39,3 @@ jobs:
       - name: Run dependency inventory check
         shell: pwsh
         run: ./tools/Test-DependencyInventory.ps1
-
-  osv-scanner:
-    name: OSV-Scanner (forward coverage)
-    # Private repository: no GitHub Advanced Security, so SARIF upload to Code Scanning
-    # is disabled below. This job currently extracts nothing from this repository --
-    # OSV-Scanner does not support vcpkg.json, the project's only dependency manifest
-    # format if one is ever added (docs/adr-phase-9.md ADR-0043) -- but is wired in so a
-    # future conan.lock, package-lock.json, or vendored C/C++ tree is covered
-    # automatically without a workflow change.
-    # Pinned to v2.5.0.
-    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@8deb546fdb875b9996d27d4950be7312dac076a1
-    with:
-      upload-sarif: false
