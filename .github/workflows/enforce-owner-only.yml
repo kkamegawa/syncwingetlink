@@ -31,28 +31,31 @@ jobs:
               }
             );
 
+            // Bot logins are only trusted when GitHub also reports them as
+            // type "Bot"; this prevents a human account that merely
+            // registers one of these usernames from satisfying the gate.
             const allowedBotLogins = new Set([
-              "github-copilot[bot]",
               "copilot",
+              "github-copilot[bot]",
               "dependabot[bot]"
             ]);
 
-            function isAllowedLogin(login) {
-              if (!login) {
+            // Only the GitHub API-reported login/type is trusted here.
+            // commit.commit.author/committer email is user-controlled and
+            // can be spoofed, so it is intentionally not used. A missing
+            // login (actor could not be resolved to a GitHub account) is
+            // always treated as blocked.
+            function isAllowedActor(actor) {
+              if (!actor || !actor.login) {
                 return false;
               }
 
-              const normalized = login.toLowerCase();
-              return normalized === ownerLogin || allowedBotLogins.has(normalized);
-            }
-
-            function isAllowedCopilotEmail(email) {
-              if (!email) {
-                return false;
+              const normalized = actor.login.toLowerCase();
+              if (normalized === ownerLogin) {
+                return true;
               }
 
-              const normalized = email.toLowerCase();
-              return normalized.endsWith("+copilot@users.noreply.github.com");
+              return actor.type === "Bot" && allowedBotLogins.has(normalized);
             }
 
             const blocked = [];
@@ -60,22 +63,16 @@ jobs:
             for (const commit of commits) {
               const authorLogin = commit.author?.login ?? "";
               const committerLogin = commit.committer?.login ?? "";
-              const authorEmail = commit.commit?.author?.email ?? "";
-              const committerEmail = commit.commit?.committer?.email ?? "";
 
               const allowed =
-                isAllowedLogin(authorLogin) ||
-                isAllowedLogin(committerLogin) ||
-                isAllowedCopilotEmail(authorEmail) ||
-                isAllowedCopilotEmail(committerEmail);
+                isAllowedActor(commit.author) ||
+                isAllowedActor(commit.committer);
 
               if (!allowed) {
                 blocked.push({
                   sha: commit.sha,
                   authorLogin,
-                  committerLogin,
-                  authorEmail,
-                  committerEmail
+                  committerLogin
                 });
               }
             }
@@ -90,8 +87,8 @@ jobs:
             const offender = blocked[0];
             const details =
               `Blocked commit ${offender.sha.slice(0, 7)} ` +
-              `(author=${offender.authorLogin || offender.authorEmail || "unknown"}, ` +
-              `committer=${offender.committerLogin || offender.committerEmail || "unknown"})`;
+              `(author=${offender.authorLogin || "unknown"}, ` +
+              `committer=${offender.committerLogin || "unknown"})`;
 
             core.setOutput("state", "failure");
             core.setOutput("description", details.slice(0, 140));

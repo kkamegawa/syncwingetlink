@@ -32,8 +32,9 @@ jobs:
         shell: powershell
         run: |
           $version = "${{ github.ref_name }}".TrimStart('v')
+          $assetArch = "${{ matrix.platform }}".ToLowerInvariant()
           $source = Join-Path $PWD "build\${{ matrix.platform }}\Release\syncwingetlink.exe"
-          $target = Join-Path $PWD "syncwingetlink-$version-${{ matrix.platform }}.exe"
+          $target = Join-Path $PWD "syncwingetlink-$version-$assetArch.exe"
           Copy-Item -Path $source -Destination $target -Force
 
           $sha = (Get-FileHash $target -Algorithm SHA256).Hash.ToLowerInvariant()
