@@ -23,7 +23,7 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
       - name: Setup MSBuild
-        uses: microsoft/setup-msbuild@fcef4f8d7f1b546a7a89e33d70f4d11fa0482a6b # v2.0.0
+        uses: microsoft/setup-msbuild@6fb02220983dee41ce7ae257b6f4d8f9bf5ed4ce # v2.0.0
 
       - name: Build release binary
         run: msbuild syncwingetlink.sln -m:1 /nr:false -p:Configuration=Release -p:Platform=${{ matrix.platform }}
