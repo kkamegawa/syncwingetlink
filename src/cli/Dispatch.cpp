@@ -847,6 +847,8 @@ int run(const std::vector<std::wstring>& args)
     catch (const PackageSourceError& error)
     {
         console.writeLine(utf8ToWide(error.what()), ConsoleStream::Error);
+        console.writeLine(std::wstring(L"hint: ") + utf8ToWide(remediationFor(error.kind())),
+                          ConsoleStream::Error);
         return static_cast<int>(exitCodeFor(error.kind()));
     }
     catch (const RuleSetError& error)

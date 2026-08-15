@@ -447,3 +447,55 @@ for this change for the specific alternatives considered and declined.
   against the code as it was at the time and are deliberately left untouched.
 - A future change to make `IPackageSource` itself non-throwing (decision 5) is a distinct,
   separately-approved ADR - this one does not attempt it.
+
+---
+
+## ADR-0041 — Remediation hints for package-source failures
+
+- **Date**: 2026-08-15
+- **Affected**: `src/core/PackageSourceError.cpp`/`.h`, `src/cli/Dispatch.cpp`,
+  `docs/troubleshooting.md`, `docs/com-api.md`, `README.md`, issue #143
+- **Status**: Accepted
+
+### Decision
+
+1. **Add a pure `remediationFor(PackageSourceErrorKind)` lookup in `PackageSourceError.*`.**
+   It returns one actionable line per currently defined failure kind and is intentionally
+   winrt-free, so MSTest can verify the text without depending on live COM activation.
+2. **Runtime diagnostics point at a stable public GitHub URL, not a repository-relative
+   path.** The release artifact is a single EXE, not a checkout containing
+   `docs/troubleshooting.md`, so a relative path in stderr would frequently be unusable.
+   Repository documents still use ordinary relative Markdown links.
+3. **`cli::run()` prints `hint: <remediationFor(error.kind())>` only when package
+   enumeration ultimately fails.** An explicit `--source com`/`--source fs` failure prints
+   the hint. A successful `--source auto` degradation does not: the existing warning and
+   verbose diagnostics stay byte-for-byte unchanged. If the filesystem fallback also fails,
+   the final `PackageSourceError` reaches `cli::run()` and does print the hint.
+4. **The reporting host's runtime verification proves the throw-free activation path, not
+   the full `winrt::hresult_error` boundary backstop.** The observed host fails in
+   `createInstanceNoThrow()` before later marshalled calls run, so the manual evidence for
+   this issue is limited to user-visible fallback/remediation behavior and to zero-C++
+   exception activation failure. This limitation is recorded explicitly in the ADR and PR
+   rather than overstating what was proven by manual runs.
+
+### Reason
+
+- Issue #143's remaining UX problem was not misclassification; ADR-0039 already named
+  `APPMODEL_ERROR_NO_PACKAGE`. The missing piece was actionable guidance that tells the
+  user what to do next on a host where COM activation is unavailable.
+- A troubleshooting page needs to be reachable from both the repository and the shipped
+  executable. Those are different environments, so runtime and Markdown links cannot use
+  the same form.
+- Printing the hint on a successful `--source auto` degradation would turn an expected,
+  self-healing path into repetitive noise. The warning already states that the tool
+  degraded and why; the hint is reserved for the path that still ends in failure.
+
+### Consequences
+
+- `tests/PackageSourceErrorTests.cpp` gains coverage for the remediation text, including
+  the stable troubleshooting URL and the `PackageIdentityRequired` recommendation to use
+  `--source fs`.
+- `README.md`/`README_ja.md` and `docs/com-api.md`/`docs/com-api_ja.md` link the new
+  troubleshooting pages.
+- The root cause of the activation rejection itself remains open and is not resolved by
+  this ADR.

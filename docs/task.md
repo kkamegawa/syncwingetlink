@@ -221,6 +221,34 @@ Closes #25.
 
 ---
 
+## 2026-08-15 — COM activation fallback hardening and remediation hints (issue #143)
+
+**Trigger**: issue #143 reports that `--source com` fails with
+`APPMODEL_ERROR_NO_PACKAGE` on a host where `winget` itself works, while `--source auto`
+quietly degrades to the filesystem source with no actionable remediation text.
+
+### Completed
+
+- Added a structural exception boundary around `WingetComSource::tryCreate()` and
+  `WingetComSource::enumeratePackages()`: any escaping `winrt::hresult_error` is
+  translated into `PackageSourceError`, while unrelated `std::exception` and foreign
+  exceptions still propagate unchanged.
+- Added `remediationFor(PackageSourceErrorKind)` in `core/PackageSourceError.*`, with
+  stable public troubleshooting links suitable for runtime CLI diagnostics.
+- Updated `cli::run()` to print a `hint:` line on terminal package-enumeration failures,
+  without changing the successful `--source auto` degrade warning path.
+- Added `docs/troubleshooting.md` and `docs/troubleshooting_ja.md`, and linked them from
+  `README*` and `docs/com-api*`.
+
+### Important limitation
+
+The reporting host still fails in the non-throwing `createInstanceNoThrow()` path, so the
+manual runtime verification for this issue proves the user-visible fallback/remediation
+behavior, but does **not** execute the new exception-boundary backstop itself. That
+limitation is documented explicitly rather than implied away.
+
+---
+
 ## 2026-07-25 (continued) — Fix extended-length re-check after normalization (PR #76 review)
 
 **Trigger**: `copilot-pull-request-reviewer[bot]` flagged that `toExtendedLengthPath()`

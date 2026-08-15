@@ -289,13 +289,16 @@ resolution is entirely the job of the M3 regex rules in `docs/rules.md`.
 ## Failure and fallback
 
 `WingetComSource` never lets a raw `winrt::hresult_error` escape from any COM call site —
-this is enforced, not just intended (`docs/adr-phase-9.md` ADR-0040): every winrt call it
-makes is either inside a translating `catch`, or (the three COM activations) made through
-the non-throwing `createInstanceNoThrow()` helper instead of `winrt::create_instance`.
-Failure is reported as a `PackageSourceError`, classified by one of three independent
-rules below - **thrown** from every site except the three activations inside
-`tryCreate()`/`Impl::initialize()`, which **return** it instead (see "What happens when"
-above).
+this is structurally enforced (`docs/adr-phase-9.md` ADR-0040 and ADR-0041): the three COM
+activations are performed through the non-throwing `createInstanceNoThrow()` helper instead
+of `winrt::create_instance`, and the two public entry points (`tryCreate()` and
+`enumeratePackages()`) own a final exception boundary that translates any escaping
+`winrt::hresult_error` into `PackageSourceError`. Unrelated `std::exception` or foreign
+exception types still propagate unchanged; they are programming/unexpected failures, not a
+reason to silently degrade into a filesystem scan. Failure is therefore reported as a
+`PackageSourceError`, classified by one of three independent rules below - **thrown** from
+every site except the three activations inside `tryCreate()`/`Impl::initialize()`, which
+**return** it instead (see "What happens when" above).
 
 **HRESULT → `PackageSourceErrorKind`** (`mapHresultToKind`, `PackageSourceError.cpp`),
 used for `PackageManager` activation, `GetLocalPackageCatalog`, `Connect` (when it
@@ -377,6 +380,20 @@ and, additionally under `--verbose`:
 ```
 verbose: package source - requested: auto, used: filesystem (degraded: <error.what()>)
 ```
+
+When package enumeration ultimately fails (for example `--source com`, `--source fs`, or
+an `auto` run whose filesystem fallback also fails), `cli::run()` prints:
+
+```text
+hint: <remediationFor(error.kind())>
+```
+
+The hint text points to the public troubleshooting page at
+<https://github.com/kkamegawa/syncwingetlink/blob/main/docs/troubleshooting.md>. A
+successful `--source auto` degradation does **not** print this hint: only the existing
+warning/verbose messages above.
+
+See also [`troubleshooting.md`](./troubleshooting.md).
 
 (or `requested: auto, used: com` / `requested: com, used: com` / `requested: fs, used:
 fs` when no degrade occurred — these strings are derived from `options.source` alone and

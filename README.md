@@ -178,6 +178,11 @@ confirm-per-item flow. Its real behavior, not just its intent:
 | 4 | Package enumeration failed (an explicit `--source com`/`--source fs` could not enumerate at all) |
 | 10 | Some repairs failed |
 
+## Troubleshooting
+
+For common COM activation and package-enumeration failures, see
+[`docs/troubleshooting.md`](./docs/troubleshooting.md).
+
 ## Alias replacement rules
 
 You can define regex rules (in JSON) that derive the alias name from the real file name.

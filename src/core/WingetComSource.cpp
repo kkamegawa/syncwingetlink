@@ -123,6 +123,38 @@ template <typename T>
         return {};
     }
 }
+
+[[noreturn]] void rethrowUnexpectedException()
+{
+    throw;
+}
+
+template <typename TCallable>
+[[nodiscard]] auto translateHresultBoundary(TCallable&& operation) -> decltype(operation())
+{
+    try
+    {
+        return operation();
+    }
+    catch (const PackageSourceError&)
+    {
+        throw;
+    }
+    catch (const winrt::hresult_error& error)
+    {
+        throw PackageSourceError(mapHresultToKind(error.code()),
+                                 "A winget COM call raised an unclassified hresult_error",
+                                 error.code());
+    }
+    catch (const std::exception&)
+    {
+        rethrowUnexpectedException();
+    }
+    catch (...)
+    {
+        rethrowUnexpectedException();
+    }
+}
 } // namespace
 
 struct WingetComSource::Impl
@@ -287,21 +319,36 @@ struct WingetComSource::Impl
 
 std::unique_ptr<WingetComSource> WingetComSource::tryCreate(std::optional<PackageSourceError>& error)
 {
-    // new, not std::make_unique: the constructor is private, and make_unique's own
-    // implementation - not this static member function - is what would need access to
-    // it.
-    auto instance = std::unique_ptr<WingetComSource>(new WingetComSource());
-    std::optional<PackageSourceError> initError = instance->m_impl->initialize();
-    if (initError.has_value())
+    try
     {
-        error = std::move(initError);
+        // new, not std::make_unique: the constructor is private, and make_unique's own
+        // implementation - not this static member function - is what would need access to
+        // it.
+        auto instance = std::unique_ptr<WingetComSource>(new WingetComSource());
+        std::optional<PackageSourceError> initError = instance->m_impl->initialize();
+        if (initError.has_value())
+        {
+            error = std::move(initError);
+            return nullptr;
+        }
+
+        // Clear rather than leave untouched, so a caller that reuses the same std::optional
+        // across calls never sees a stale error from an earlier failed attempt.
+        error.reset();
+        return instance;
+    }
+    catch (const PackageSourceError&)
+    {
+        throw;
+    }
+    catch (const winrt::hresult_error& boundaryError)
+    {
+        error = PackageSourceError(mapHresultToKind(boundaryError.code()),
+                                   "A winget COM activation call raised an unclassified "
+                                   "hresult_error",
+                                   boundaryError.code());
         return nullptr;
     }
-
-    // Clear rather than leave untouched, so a caller that reuses the same std::optional
-    // across calls never sees a stale error from an earlier failed attempt.
-    error.reset();
-    return instance;
 }
 
 WingetComSource::WingetComSource() : m_impl(std::make_unique<Impl>())
@@ -313,6 +360,11 @@ WingetComSource::WingetComSource(WingetComSource&&) noexcept = default;
 WingetComSource& WingetComSource::operator=(WingetComSource&&) noexcept = default;
 
 std::vector<InstalledPackage> WingetComSource::enumeratePackages()
+{
+    return translateHresultBoundary([this] { return enumeratePackagesImpl(); });
+}
+
+std::vector<InstalledPackage> WingetComSource::enumeratePackagesImpl()
 {
     FindPackagesResult findResult{nullptr};
     try

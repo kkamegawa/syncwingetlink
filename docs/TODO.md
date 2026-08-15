@@ -240,6 +240,20 @@ Build system decisions are recorded in [`adr.md`](./adr.md) (ADR-0001 … ADR-00
       are unchanged; `Debug|Release` × `x64|ARM64` all build clean, `vstest.console.exe`
       reports 422/422 for `Debug|x64`
 
+## COM activation fallback and remediation (issue #143)
+- [x] Add a structural exception boundary in `WingetComSource` so no raw
+      `winrt::hresult_error` escapes the two public entry points; translate only
+      `winrt::hresult_error`, and let unrelated exceptions propagate unchanged
+- [x] Add `remediationFor(PackageSourceErrorKind)` with actionable guidance and a stable
+      public troubleshooting URL
+- [x] Print a `hint:` line on terminal package-enumeration failure without changing the
+      successful `--source auto` degrade warning
+- [x] Add `docs/troubleshooting.md` and `docs/troubleshooting_ja.md`, and link them from
+      `README*` and `docs/com-api*`
+- [ ] Record ADR-0041 and update `docs/task.md`
+- [ ] Verify `Debug|Release` × `x64`, cross-build `ARM64`, and run the relevant manual
+      `--source com|auto|fs` checks on the reporting host
+
 ## Future enhancements (separate milestone)
 - [ ] Read winget `PortableIndex` (sqlite) read-only (last resort when COM/FS are insufficient)
 - [ ] machine-scope support (requires admin)

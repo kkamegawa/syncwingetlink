@@ -87,6 +87,11 @@ syncwingetlink test-rule "codex-x86_64-pc-windows-msvc.exe"
 | 3 | 引数 / 設定エラー |
 | 10 | 一部の修復に失敗 |
 
+## トラブルシューティング
+
+COM アクティベーションやパッケージ列挙の代表的な失敗については
+[`docs/troubleshooting_ja.md`](./docs/troubleshooting_ja.md) を参照してください。
+
 ## エイリアス置換ルール
 
 実ファイル名からエイリアス名を導く正規表現ルールを JSON で定義できます。
