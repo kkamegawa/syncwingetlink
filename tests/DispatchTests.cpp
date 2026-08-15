@@ -107,7 +107,8 @@ public:
         const std::optional<ExitCode> result = exitCodeAfterElevationDeclined(true);
 
         Assert::IsTrue(result.has_value());
-        Assert::AreEqual(ExitCode::InsufficientPermission, *result);
+        Assert::AreEqual(static_cast<int>(ExitCode::InsufficientPermission),
+                         static_cast<int>(*result));
     }
 
     TEST_METHOD(declinedElevationKeepsLineOrientedFixFlow)

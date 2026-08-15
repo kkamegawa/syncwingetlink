@@ -285,15 +285,6 @@ enum class StartupPermissionMessage
     return static_cast<int>(ExitCode::InsufficientPermission);
 }
 
-std::optional<ExitCode> exitCodeAfterElevationDeclined(bool useTui) noexcept
-{
-    if (useTui)
-    {
-        return ExitCode::InsufficientPermission;
-    }
-    return std::nullopt;
-}
-
 // The four guidance strings ADR-0019/the Wiki page document for an InsufficientPermission
 // failure, chosen from the (elevation, developerMode) pair it carries. Never suggests
 // self-elevation (no ShellExecuteW/runas) - only what the user should do themselves.
@@ -910,6 +901,15 @@ void printVersion(Console& console)
     console.writeLine(std::wstring(L"syncwingetlink ") + kVersion);
 }
 } // namespace
+
+std::optional<ExitCode> exitCodeAfterElevationDeclined(bool useTui) noexcept
+{
+    if (useTui)
+    {
+        return ExitCode::InsufficientPermission;
+    }
+    return std::nullopt;
+}
 
 ExitCode exitCodeFor(PackageSourceErrorKind kind) noexcept
 {
