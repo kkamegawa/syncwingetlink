@@ -219,8 +219,14 @@ enum class StartupPermissionMessage
         parameters += L'"';
     }
 
+    wchar_t exePath[MAX_PATH + 1]{};
+    if (GetModuleFileNameW(nullptr, exePath, MAX_PATH + 1) == 0)
+    {
+        return false;
+    }
+
     const HINSTANCE result =
-        ShellExecuteW(nullptr, L"runas", nullptr, parameters.empty() ? nullptr : parameters.c_str(),
+        ShellExecuteW(nullptr, L"runas", exePath, parameters.empty() ? nullptr : parameters.c_str(),
                       nullptr, SW_SHOWNORMAL);
     return reinterpret_cast<INT_PTR>(result) > 32;
 }
