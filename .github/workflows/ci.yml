@@ -20,6 +20,7 @@ jobs:
   build-test:
     name: ${{ matrix.platform }} / ${{ matrix.configuration }}
     runs-on: windows-latest
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -37,40 +38,39 @@ jobs:
       - name: Check out source
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
-      - name: Locate Visual Studio Build Tools
-        shell: powershell
-        run: |
-          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-          if (-not (Test-Path $vswhere)) {
-            throw "vswhere.exe was not found. Install Visual Studio 2026 or the Visual Studio Build Tools before running this workflow."
-          }
-
-          $vsPath = & $vswhere -latest -products * -requires Microsoft.VisualStudio.ComponentGroup.NativeDesktop -property installationPath
-          if (-not $vsPath) {
-            throw "No compatible Visual Studio installation was found. This project requires the Windows C++ toolchain and the Win32/WinRT SDK." 
-          }
-
-          $vcvars = Join-Path $vsPath "VC\Auxiliary\Build\vcvarsall.bat"
-          if (-not (Test-Path $vcvars)) {
-            throw "vcvarsall.bat was not found under $vsPath."
-          }
-
-          "VS_PATH=$vsPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          "VCVARS_BAT=$vcvars" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          Write-Host "Using Visual Studio at $vsPath"
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@fcef4f8d7f1b546a7a89e33d70f4d11fa0482a6b # v2.0.0
 
       - name: Build ${{ matrix.platform }} / ${{ matrix.configuration }}
-        shell: cmd
-        run: |
-          call "%VCVARS_BAT%" -arch=${{ matrix.platform == 'x64' && 'amd64' || 'arm64' }} -host_arch=amd64
-          msbuild syncwingetlink.sln -p:Configuration=${{ matrix.configuration }} -p:Platform=${{ matrix.platform }} -m
+        run: msbuild syncwingetlink.sln -m:1 /nr:false -p:Configuration=${{ matrix.configuration }} -p:Platform=${{ matrix.platform }}
 
       - name: Test x64 binaries
         if: ${{ matrix.platform == 'x64' }}
-        shell: cmd
+        shell: powershell
         run: |
-          call "%VCVARS_BAT%" -arch=amd64 -host_arch=amd64
-          vstest.console.exe build\x64\${{ matrix.configuration }}\syncwingetlink.tests.dll /Platform:x64
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
+          if (-not (Test-Path $vswhere)) {
+            throw "vswhere.exe not found at $vswhere"
+          }
+
+          $vsInstallPath = & $vswhere -latest -products * -requires Microsoft.VisualStudio.PackageGroup.TestTools.Core -property installationPath
+          if (-not $vsInstallPath) {
+            $vsInstallPath = & $vswhere -latest -products * -property installationPath
+          }
+          if (-not $vsInstallPath) {
+            throw "Visual Studio installation not found (vswhere returned empty)."
+          }
+
+          $vstestCandidates = @(
+            (Join-Path $vsInstallPath "Common7\IDE\Extensions\TestPlatform\vstest.console.exe"),
+            (Join-Path $vsInstallPath "Common7\IDE\CommonExtensions\Microsoft\TestWindow\vstest.console.exe")
+          ) | Where-Object { Test-Path $_ }
+
+          if ($vstestCandidates.Count -eq 0) {
+            throw "vstest.console.exe not found under: $vsInstallPath"
+          }
+
+          & $vstestCandidates[0] "build\x64\${{ matrix.configuration }}\syncwingetlink.tests.dll" /Platform:x64 /InIsolation
 
       - name: ARM64 cross-compile note
         if: ${{ matrix.platform == 'ARM64' }}
