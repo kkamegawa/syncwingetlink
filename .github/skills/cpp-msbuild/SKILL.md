@@ -203,10 +203,17 @@ shipping DLLs next to the executable, defeating the single-file release goal.
    own security page.
 4. **Pin `builtin-baseline`** so port versions never move implicitly. Roll it
    deliberately, and repeat step 3 when you do.
-5. **Record it in `.github/dependency-inventory.json`** (`nativeDependencies`: port,
-   version, license, justification, and the ISO date step 3 was performed). CI fails the
-   `Dependency Audit` workflow if a `vcpkg.json`/port appears that isn't recorded there —
-   see below.
+5. **Update `.github/dependency-inventory.json` in two places**, since the tripwire
+   script only consults one of them for the actual pass/fail:
+   - Add `vcpkg.json`'s path to `acknowledgedPaths` — this is what
+     `tools/Test-DependencyInventory.ps1`/`.sh` actually checks before flagging a
+     tracked `vcpkg.json` as an untracked manifest. Adding a `nativeDependencies` entry
+     alone does **not** satisfy the tripwire; the two arrays are read independently, and
+     forgetting `acknowledgedPaths` fails CI even with a fully-documented
+     `nativeDependencies` entry.
+   - Add the port to `nativeDependencies` (port, version, license, justification, and
+     the ISO date step 3 was performed) as the human-reviewed audit trail — not
+     mechanically enforced, but required by this checklist and by review.
 
 ### What the vulnerability gate automates today, and what stays manual
 
@@ -218,11 +225,13 @@ is not, and conflating the two overstates the gate:
   / `.sh`; see `docs/adr-phase-9.md` ADR-0043)**: CI fails the moment a tracked
   dependency manifest (`vcpkg.json`, `conan.lock`, `CMakeLists.txt`, `package.json`,
   `.gitmodules`, a vendored/`third_party` tree, a checked-in binary, or an MSBuild
-  `<PackageReference>`) appears that isn't recorded in
-  `.github/dependency-inventory.json`, and the moment a GitHub Actions `uses:` is
-  unpinned (not a full 40-character commit SHA) or references a repo absent from the
-  inventory's allow-list. This guarantees the dependency set can't silently grow — it is
-  a *presence* check, not a vulnerability scan.
+  `<PackageReference>`) appears whose path isn't listed in
+  `.github/dependency-inventory.json`'s `acknowledgedPaths` (the `apm` lockfile pair is
+  the one exception, gated by a populated `agentToolingDependencies` instead — see the
+  file's own comments), and the moment a GitHub Actions `uses:` is unpinned (not a full
+  40-character commit SHA) or references a repo absent from the inventory's allow-list.
+  This guarantees the dependency set can't silently grow — it is a *presence* check, not
+  a vulnerability scan.
 - **Still manual**: whether a given vcpkg port version actually has a known CVE.
   **Dependabot does not support vcpkg**, and GitHub's dependency graph does not parse
   `vcpkg.json`; `.github/dependabot.yml` covers `github-actions` only, on purpose. No
