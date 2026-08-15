@@ -1,0 +1,79 @@
+name: CI
+
+on:
+  push:
+    tags:
+      - "v*"
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test:
+    name: ${{ matrix.platform }} / ${{ matrix.configuration }}
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: x64
+            configuration: Debug
+          - platform: x64
+            configuration: Release
+          - platform: ARM64
+            configuration: Debug
+          - platform: ARM64
+            configuration: Release
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Locate Visual Studio Build Tools
+        shell: powershell
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          if (-not (Test-Path $vswhere)) {
+            throw "vswhere.exe was not found. Install Visual Studio 2026 or the Visual Studio Build Tools before running this workflow."
+          }
+
+          $vsPath = & $vswhere -latest -products * -requires Microsoft.VisualStudio.ComponentGroup.NativeDesktop -property installationPath
+          if (-not $vsPath) {
+            throw "No compatible Visual Studio installation was found. This project requires the Windows C++ toolchain and the Win32/WinRT SDK." 
+          }
+
+          $vcvars = Join-Path $vsPath "VC\Auxiliary\Build\vcvarsall.bat"
+          if (-not (Test-Path $vcvars)) {
+            throw "vcvarsall.bat was not found under $vsPath."
+          }
+
+          "VS_PATH=$vsPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "VCVARS_BAT=$vcvars" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          Write-Host "Using Visual Studio at $vsPath"
+
+      - name: Build ${{ matrix.platform }} / ${{ matrix.configuration }}
+        shell: cmd
+        run: |
+          call "%VCVARS_BAT%" -arch=${{ matrix.platform == 'x64' && 'amd64' || 'arm64' }} -host_arch=amd64
+          msbuild syncwingetlink.sln -p:Configuration=${{ matrix.configuration }} -p:Platform=${{ matrix.platform }} -m
+
+      - name: Test x64 binaries
+        if: ${{ matrix.platform == 'x64' }}
+        shell: cmd
+        run: |
+          call "%VCVARS_BAT%" -arch=amd64 -host_arch=amd64
+          vstest.console.exe build\x64\${{ matrix.configuration }}\syncwingetlink.tests.dll /Platform:x64
+
+      - name: ARM64 cross-compile note
+        if: ${{ matrix.platform == 'ARM64' }}
+        shell: powershell
+        run: |
+          Write-Host "ARM64 is cross-compiled on the x64 hosted runner by design; unit tests run only for x64."

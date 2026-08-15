@@ -1,0 +1,90 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build ${{ matrix.platform }} release binary
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: x64
+          - platform: ARM64
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Locate Visual Studio Build Tools
+        shell: powershell
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          if (-not (Test-Path $vswhere)) {
+            throw "vswhere.exe was not found."
+          }
+
+          $vsPath = & $vswhere -latest -products * -requires Microsoft.VisualStudio.ComponentGroup.NativeDesktop -property installationPath
+          if (-not $vsPath) {
+            throw "No compatible Visual Studio installation was found."
+          }
+
+          $vcvars = Join-Path $vsPath "VC\Auxiliary\Build\vcvarsall.bat"
+          if (-not (Test-Path $vcvars)) {
+            throw "vcvarsall.bat was not found under $vsPath."
+          }
+
+          "VS_PATH=$vsPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "VCVARS_BAT=$vcvars" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Build release binary
+        shell: cmd
+        run: |
+          call "%VCVARS_BAT%" -arch=${{ matrix.platform == 'x64' && 'amd64' || 'arm64' }} -host_arch=amd64
+          msbuild syncwingetlink.sln -p:Configuration=Release -p:Platform=${{ matrix.platform }} -m
+
+      - name: Stage release asset
+        shell: powershell
+        run: |
+          $version = "${{ github.ref_name }}".TrimStart('v')
+          $source = Join-Path $PWD "build\${{ matrix.platform }}\Release\syncwingetlink.exe"
+          $target = Join-Path $PWD "syncwingetlink-$version-${{ matrix.platform }}.exe"
+          Copy-Item -Path $source -Destination $target -Force
+
+          $sha = (Get-FileHash $target -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$sha  $([System.IO.Path]::GetFileName($target))" | Out-File -FilePath "SHA256SUMS.txt" -Encoding ascii -Append
+
+      - name: Upload release artifact
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08
+        with:
+          name: syncwingetlink-${{ matrix.platform }}
+          path: |
+            syncwingetlink-*.exe
+            SHA256SUMS.txt
+
+  publish:
+    name: Publish draft GitHub release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@7a1cd3216ca9260cd8022db641d960b1db4d1be4
+        with:
+          path: release-artifacts
+
+      - name: Publish draft release
+        uses: softprops/action-gh-release@c95fe1489396fe8a9eb87c0abf8aa5b2ef267fda
+        with:
+          draft: true
+          generate_release_notes: true
+          files: |
+            release-artifacts/**/syncwingetlink-*.exe
+            release-artifacts/**/SHA256SUMS.txt
