@@ -91,7 +91,7 @@ public:
         Assert::IsTrue(mapHresultToKind(E_INVALIDARG) == PackageSourceErrorKind::Unknown);
     }
 
-    TEST_METHOD(remediationTextIsPresentForEveryDefinedKind)
+    TEST_METHOD(remediationTextIsPresentForCurrentlySupportedKinds)
     {
         constexpr PackageSourceErrorKind kAllKinds[] = {
             PackageSourceErrorKind::AppInstallerMissing,
@@ -106,18 +106,18 @@ public:
 
         for (const PackageSourceErrorKind kind : kAllKinds)
         {
-            const std::string_view remediation = remediationFor(kind);
+            const std::string remediation = remediationFor(kind);
             Assert::IsFalse(remediation.empty());
-            Assert::IsTrue(remediation.find(kTroubleshootingUrl) != std::string_view::npos);
+            Assert::IsTrue(remediation.find(kTroubleshootingUrl) != std::string::npos);
         }
     }
 
     TEST_METHOD(packageIdentityRequiredRemediationMentionsFilesystemFallback)
     {
-        const std::string_view remediation =
+        const std::string remediation =
             remediationFor(PackageSourceErrorKind::PackageIdentityRequired);
 
-        Assert::IsTrue(remediation.find("--source fs") != std::string_view::npos);
+        Assert::IsTrue(remediation.find("--source fs") != std::string::npos);
     }
 
     TEST_METHOD(portableInstallerTypeIsRecognizedCaseInsensitively)

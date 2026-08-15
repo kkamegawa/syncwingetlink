@@ -35,6 +35,10 @@ namespace syncwingetlink::cli
 {
 namespace
 {
+extern "C" __declspec(dllimport) HINSTANCE __stdcall ShellExecuteW(
+    HWND hwnd, LPCWSTR lpOperation, LPCWSTR lpFile, LPCWSTR lpParameters, LPCWSTR lpDirectory,
+    INT nShowCmd);
+
 // Set by the console control handler below, checked between (never during) items in
 // the fix batch loop - Ctrl+C stops the batch at the next opportunity rather than
 // mid-item, and never bypasses SymlinkService's own re-inspection/no-rollback rules.
@@ -137,6 +141,131 @@ BOOL WINAPI consoleCtrlHandler(DWORD ctrlType)
         return L"not attempted";
     }
     return L"unknown";
+}
+
+enum class UiLanguage
+{
+    English,
+    Japanese,
+};
+
+enum class StartupPermissionMessage
+{
+    DeveloperModeDisabled,
+    DeveloperModeUnknown,
+    ElevationPrompt,
+    ElevationLaunchFailed,
+};
+
+[[nodiscard]] UiLanguage detectUiLanguage() noexcept
+{
+    const LANGID language = ::GetUserDefaultUILanguage();
+    return PRIMARYLANGID(language) == LANG_JAPANESE ? UiLanguage::Japanese
+                                                    : UiLanguage::English;
+}
+
+[[nodiscard]] std::wstring localizedMessage(UiLanguage language,
+                                            StartupPermissionMessage message)
+{
+    if (language == UiLanguage::Japanese)
+    {
+        switch (message)
+        {
+        case StartupPermissionMessage::DeveloperModeDisabled:
+            return L"開発者モードが無効です。シンボリックリンクの作成には、開発者モードを有効にするか、管理者として実行する必要があります。";
+        case StartupPermissionMessage::DeveloperModeUnknown:
+            return L"開発者モードの状態を確認できませんでした。シンボリックリンクの作成には、開発者モードを確認するか、管理者として実行してください。";
+        case StartupPermissionMessage::ElevationPrompt:
+            return L"管理者権限で再起動しますか? [y/N] ";
+        case StartupPermissionMessage::ElevationLaunchFailed:
+            return L"管理者権限での再起動に失敗しました。管理者として再実行してください。";
+        }
+    }
+
+    switch (message)
+    {
+    case StartupPermissionMessage::DeveloperModeDisabled:
+        return L"Developer Mode is disabled. Creating symlinks requires Developer Mode or running elevated.";
+    case StartupPermissionMessage::DeveloperModeUnknown:
+        return L"Could not determine Developer Mode state. Check Developer Mode or run elevated to create symlinks.";
+    case StartupPermissionMessage::ElevationPrompt:
+        return L"Restart with administrator privileges? [y/N] ";
+    case StartupPermissionMessage::ElevationLaunchFailed:
+        return L"Could not restart with administrator privileges. Re-run this command from an elevated shell.";
+    }
+
+    return L"";
+}
+
+[[nodiscard]] bool relaunchElevated(const std::vector<std::wstring>& args) noexcept
+{
+    std::wstring parameters;
+    for (std::size_t index = 0; index < args.size(); ++index)
+    {
+        if (index != 0)
+        {
+            parameters += L' ';
+        }
+
+        parameters += L'"';
+        for (const wchar_t ch : args[index])
+        {
+            if (ch == L'"')
+            {
+                parameters += L'\\';
+            }
+            parameters += ch;
+        }
+        parameters += L'"';
+    }
+
+    const HINSTANCE result =
+        ShellExecuteW(nullptr, L"runas", nullptr, parameters.empty() ? nullptr : parameters.c_str(),
+                      nullptr, SW_SHOWNORMAL);
+    return reinterpret_cast<INT_PTR>(result) > 32;
+}
+
+[[nodiscard]] std::optional<int> handleFixStartupPermissionGate(const AppOptions& options,
+                                                                Console& console,
+                                                                const std::vector<std::wstring>& args)
+{
+    if (options.command != AppCommand::Fix || options.dryRun)
+    {
+        return std::nullopt;
+    }
+
+    const DeveloperModeState developerMode = queryDeveloperMode();
+    if (developerMode == DeveloperModeState::Enabled)
+    {
+        return std::nullopt;
+    }
+
+    const UiLanguage language = detectUiLanguage();
+    const StartupPermissionMessage warningMessage =
+        developerMode == DeveloperModeState::Disabled
+            ? StartupPermissionMessage::DeveloperModeDisabled
+            : StartupPermissionMessage::DeveloperModeUnknown;
+    console.writeLine(localizedMessage(language, warningMessage), ConsoleStream::Error);
+
+    if (options.silent || options.assumeYes || queryElevation() == ElevationState::Elevated)
+    {
+        return std::nullopt;
+    }
+
+    if (!console.confirm(localizedMessage(language, StartupPermissionMessage::ElevationPrompt),
+                         false, options.silent))
+    {
+        return std::nullopt;
+    }
+
+    if (relaunchElevated(args))
+    {
+        return static_cast<int>(ExitCode::Success);
+    }
+
+    console.writeLine(localizedMessage(language, StartupPermissionMessage::ElevationLaunchFailed),
+                      ConsoleStream::Error);
+    return static_cast<int>(ExitCode::InsufficientPermission);
 }
 
 // The four guidance strings ADR-0019/the Wiki page document for an InsufficientPermission
@@ -731,6 +860,8 @@ void printHelp(Console& console)
         L"  --no-color             disable colored/VT output regardless of TTY",
         L"                         state (also honors the NO_COLOR environment",
         L"                         variable)",
+        L"  --silent               do not ask whether to restart elevated; print only",
+        L"                         the startup permission message",
         L"  --version              print the version number and exit",
         L"  --help, -h             print this help text and exit",
         L"",
@@ -834,6 +965,13 @@ int run(const std::vector<std::wstring>& args)
 
     try
     {
+        if (const std::optional<int> startupResult =
+                handleFixStartupPermissionGate(options, console, args);
+            startupResult.has_value())
+        {
+            return *startupResult;
+        }
+
         if (options.command == AppCommand::TestRule)
         {
             return static_cast<int>(runTestRule(options, console));

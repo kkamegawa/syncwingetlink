@@ -62,6 +62,12 @@ be enabled.
 
 Enable Developer Mode, or re-run the command from an elevated shell.
 
+`fix` now performs a startup check before repair begins. If Developer Mode is disabled
+or cannot be determined, the CLI prints a warning first. On a Japanese UI OS that
+warning and the optional elevation prompt are shown in Japanese; on every other OS they
+fall back to English. Pass `--silent` to suppress the "restart elevated?" question and
+print only the warning text.
+
 ## Exit code 3: invalid `rules.json`
 
 **Symptom**

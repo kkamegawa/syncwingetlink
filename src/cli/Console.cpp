@@ -542,9 +542,19 @@ void Console::writeLine(std::wstring_view text, ConsoleStream stream,
 
 bool Console::confirm(std::wstring_view promptText, bool assumeYes)
 {
+    return confirm(promptText, assumeYes, false);
+}
+
+bool Console::confirm(std::wstring_view promptText, bool assumeYes, bool suppressPromptWhenFalse)
+{
     if (assumeYes)
     {
         return true;
+    }
+
+    if (suppressPromptWhenFalse)
+    {
+        return false;
     }
 
     if (m_operations.write)
@@ -552,8 +562,8 @@ bool Console::confirm(std::wstring_view promptText, bool assumeYes)
         m_operations.write(ConsoleStream::Output, sanitizeForDisplay(promptText));
     }
 
-    const std::optional<std::wstring> line =
-        m_operations.readLine ? m_operations.readLine() : std::nullopt;
+    const std::optional<std::wstring> line = m_operations.readLine ? m_operations.readLine()
+                                                                   : std::nullopt;
     return isAffirmative(line);
 }
 } // namespace syncwingetlink::cli

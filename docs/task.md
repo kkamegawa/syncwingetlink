@@ -3345,3 +3345,15 @@ fallback (`winrt::hresult_error` has no `std::exception` base, so neither
   `tryCreate()` reported failure with the expected `PackageIdentityRequired` message, and
   **zero** C++ exceptions were raised during the call.
 - No dependency added.
+## 2026-08-15 — Startup Developer Mode gate and localized elevation prompt
+
+- Added a startup permission gate for mutating `fix` runs. It checks the same Developer
+  Mode registry value and process-token elevation state that `SymlinkService` already
+  uses after a permission-shaped Win32 failure, then warns before the repair batch starts
+  if Developer Mode is disabled or cannot be determined.
+- Added `--silent` so automation gets the warning text on stderr but never blocks on a
+  "restart elevated?" question.
+- Added a narrow localization exception for this startup path only: Japanese warning and
+  relaunch prompt on Japanese UI Windows, English fallback otherwise.
+- Added targeted tests for `--silent` parsing and the suppressed-prompt `Console::confirm`
+  behavior.

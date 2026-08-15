@@ -7,6 +7,64 @@ belongs to a new, unnumbered milestone tracked as issue #145 (four stacked sub-i
 
 ---
 
+## ADR-0042 — Startup Developer Mode gate, optional elevation prompt, and localized permission guidance
+
+- **Date**: 2026-08-15
+- **Affected**: `src/cli/ArgParser.*`, `src/cli/Console.*`, `src/cli/Dispatch.cpp`,
+  `src/core/Model.h`, `src/core/SymlinkService.*`, `README.md`,
+  `docs/troubleshooting.md`, issue #143 follow-up
+- **Status**: Accepted
+
+### Decision
+
+1. **`fix` now performs a startup permission gate before repair begins, but only for a
+   mutating run.** `scan`, `test-rule`, and `fix --dry-run` are unchanged. The gate calls
+   the same `queryDeveloperMode()` / `queryElevation()` helpers that `SymlinkService`
+   already uses after a permission-shaped Win32 failure, so startup guidance and
+   post-failure guidance both read from the same registry/token source rather than
+   duplicating logic with two potentially divergent implementations.
+2. **If Developer Mode is disabled or unknown, the CLI prints an immediate warning before
+   attempting repairs.** This is advisory, not a hard stop: the command may still succeed
+   later when run elevated or when the host's policy allows symlink creation despite the
+   preflight uncertainty.
+3. **When the process is not already elevated and `--silent` is not set, the CLI asks
+   whether to relaunch elevated.** Consent uses the existing `Console::confirm()` flow.
+   If the user declines, the command continues in the current process. If the relaunch
+   succeeds, the original process exits successfully after handing off to the elevated
+   instance. If the relaunch fails, the original process reports that failure and exits 2.
+4. **`--silent` suppresses only the relaunch question, not the warning.** This keeps the
+   command automation-safe: scripts still receive the diagnostic text on stderr, but the
+   process never blocks waiting for input about privilege elevation.
+5. **Localized runtime text is introduced narrowly for this startup-permission path only.**
+   On a Japanese UI OS (`GetUserDefaultUILanguage()` primary language `LANG_JAPANESE`),
+   the startup warning and relaunch prompt are Japanese. Every other UI language falls
+   back to English. This is an intentionally narrow exception to ADR-0031, not a general
+   message-table or MUI system.
+
+### Reason
+
+- The user reported a host where Developer Mode is believed to be enabled but symlink
+  creation still fails. The existing behavior only explains permission state after
+  `CreateSymbolicLinkW` or delete-by-handle has already failed; it gives no early signal
+  that the host's Developer Mode state looks suspicious before the batch starts.
+- The new gate reuses `SymlinkService`'s own registry/token queries so the startup check
+  and the operational error path cannot disagree about which state they observed.
+- A full localization system remains out of scope, but the user explicitly requested
+  Japanese messaging on Japanese Windows for this permission path. A narrow, startup-only
+  exception meets that need without pretending the rest of the diagnostic surface is now
+  localized.
+
+### Consequences
+
+- `AppOptions` gains `--silent`, documented as "print the startup permission warning but
+  do not ask whether to restart elevated."
+- `Console::confirm()` gains a suppress-prompt path so callers can opt out of the prompt
+  without introducing a second confirmation API.
+- ADR-0031 remains the general rule, but README/TODO/troubleshooting now record this
+  startup-permission exception explicitly.
+
+---
+
 ## ADR-0038 — Grouped NG/OK scan report, its column model, and the display-width approximation
 
 - **Date**: 2026-08-08

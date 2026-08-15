@@ -189,6 +189,11 @@ public:
         Assert::IsTrue(parseArguments({L"--no-color"}).noColor);
     }
 
+    TEST_METHOD(silentFlagSets)
+    {
+        Assert::IsTrue(parseArguments({L"fix", L"--silent"}).silent);
+    }
+
     TEST_METHOD(missingOptionValueIsRejected)
     {
         Assert::IsTrue(expectError({L"--source"}) == ArgParseErrorKind::MissingOptionValue);

@@ -23,13 +23,14 @@ namespace syncwingetlink
 //
 // tryCreate() performs the class's activation-time work - PackageManager,
 // FindPackagesOptions and PackageMatchFilter activation, plus the catalog connect - and
-// reports failure by returning null and setting `error`, never by throwing. This lets
-// --source auto degrade to the filesystem source (docs/adr-phase-9.md ADR-0040, issue
-// #143) without raising a first-chance C++ exception on a host where COM activation is
-// expected to fail every time. enumeratePackages() itself still throws PackageSourceError
-// if the later FindPackages call or result inspection fails at runtime, after a
-// successful connection, so an --source auto implementation must still cover both (see
-// AutoPackageSource in PackageSourceFactory.h).
+// reports expected activation and connection failures by returning null and setting
+// `error`, never by throwing. This lets --source auto degrade to the filesystem source
+// (docs/adr-phase-9.md ADR-0040, issue #143) without raising a first-chance C++
+// exception on a host where COM activation is expected to fail every time. Unrelated
+// exceptions (e.g. std::bad_alloc) still propagate unchanged. enumeratePackages()
+// itself still throws PackageSourceError if the later FindPackages call or result
+// inspection fails at runtime, after a successful connection, so an --source auto
+// implementation must still cover both (see AutoPackageSource in PackageSourceFactory.h).
 //
 // This class structurally enforces its "no raw winrt::hresult_error escapes" contract:
 // tryCreate() and enumeratePackages() both own a boundary that translates any escaping

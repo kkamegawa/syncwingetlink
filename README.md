@@ -6,9 +6,8 @@
 
 📖 日本語版は [`README_ja.md`](./README_ja.md) を参照してください。
 
-Runtime diagnostics (warnings, errors, `--help` text) are English-only for the first
-release; this repository's own documentation, including `README_ja.md`, is how
-Japanese is served instead.
+This repository's documentation is bilingual. Runtime diagnostics fall back to English,
+except for the startup permission guidance path, which uses Japanese on a Japanese UI OS.
 
 ## What is this?
 
@@ -165,6 +164,7 @@ confirm-per-item flow. Its real behavior, not just its intent:
 | `--verbose` / `--quiet` | Log level - `--quiet` suppresses routine per-item/summary lines; `--verbose` additionally reports the resolved paths, package source, and rule source on stderr. Repeating either is last-wins |
 | `--fail-on-missing` | `scan` exits 1 if a Missing/Broken/Mismatch link is found |
 | `--no-color` | Disable colored/VT output regardless of TTY state (also honors the `NO_COLOR` environment variable) |
+| `--silent` | Print the startup permission warning without asking whether to restart elevated |
 | `--help`, `-h` / `--version` | Help / version |
 
 ### Exit codes
