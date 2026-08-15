@@ -29,12 +29,15 @@ belongs to a new, unnumbered milestone tracked as issue #145 (four stacked sub-i
    preflight uncertainty.
 3. **When the process is not already elevated and `--silent` is not set, the CLI asks
    whether to relaunch elevated.** Consent uses the existing `Console::confirm()` flow.
-   If the user declines, the command continues in the current process. If the relaunch
-   succeeds, the original process exits successfully after handing off to the elevated
-   instance. If the relaunch fails, the original process reports that failure and exits 2.
+   If the user declines, an ordinary line-oriented `fix` continues in the current process,
+   but `fix --tui` exits 2 without opening an editable checklist that cannot create links.
+   If the relaunch succeeds, the original process exits successfully after handing off to
+   the elevated instance. If the relaunch fails, the original process reports that failure
+   and exits 2.
 4. **`--silent` suppresses only the relaunch question, not the warning.** This keeps the
    command automation-safe: scripts still receive the diagnostic text on stderr, but the
-   process never blocks waiting for input about privilege elevation.
+   process never blocks waiting for input about privilege elevation. For `fix --tui`, the
+   suppressed prompt is treated like a declined elevation and exits 2 before the TUI starts.
 5. **Localized runtime text is introduced narrowly for this startup-permission path only.**
    On a Japanese UI OS (`GetUserDefaultUILanguage()` primary language `LANG_JAPANESE`),
    the startup warning and relaunch prompt are Japanese. Every other UI language falls

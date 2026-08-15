@@ -3345,6 +3345,7 @@ fallback (`winrt::hresult_error` has no `std::exception` base, so neither
   `tryCreate()` reported failure with the expected `PackageIdentityRequired` message, and
   **zero** C++ exceptions were raised during the call.
 - No dependency added.
+
 ## 2026-08-15 — Startup Developer Mode gate and localized elevation prompt
 
 - Added a startup permission gate for mutating `fix` runs. It checks the same Developer
@@ -3357,3 +3358,11 @@ fallback (`winrt::hresult_error` has no `std::exception` base, so neither
   relaunch prompt on Japanese UI Windows, English fallback otherwise.
 - Added targeted tests for `--silent` parsing and the suppressed-prompt `Console::confirm`
   behavior.
+
+## 2026-08-15 — Do not open TUI after declined elevation
+
+- `fix --tui` now exits with code `2` when elevation is declined or suppressed with
+  `--silent`, before package enumeration or checklist rendering. The ordinary
+  line-oriented `fix` path retains its previous continue-and-report behavior.
+- Added a focused dispatch contract test and documented the TUI-specific permission
+  behavior in the README, troubleshooting guide, and ADR-0042.

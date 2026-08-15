@@ -247,14 +247,31 @@ enum class StartupPermissionMessage
             : StartupPermissionMessage::DeveloperModeUnknown;
     console.writeLine(localizedMessage(language, warningMessage), ConsoleStream::Error);
 
-    if (options.silent || options.assumeYes || queryElevation() == ElevationState::Elevated)
+    if (queryElevation() == ElevationState::Elevated)
     {
+        return std::nullopt;
+    }
+
+    if (options.silent || options.assumeYes)
+    {
+        if (const std::optional<ExitCode> tuiExitCode =
+                exitCodeAfterElevationDeclined(options.useTui);
+            tuiExitCode.has_value())
+        {
+            return static_cast<int>(*tuiExitCode);
+        }
         return std::nullopt;
     }
 
     if (!console.confirm(localizedMessage(language, StartupPermissionMessage::ElevationPrompt),
                          false, options.silent))
     {
+        if (const std::optional<ExitCode> tuiExitCode =
+                exitCodeAfterElevationDeclined(options.useTui);
+            tuiExitCode.has_value())
+        {
+            return static_cast<int>(*tuiExitCode);
+        }
         return std::nullopt;
     }
 
@@ -266,6 +283,15 @@ enum class StartupPermissionMessage
     console.writeLine(localizedMessage(language, StartupPermissionMessage::ElevationLaunchFailed),
                       ConsoleStream::Error);
     return static_cast<int>(ExitCode::InsufficientPermission);
+}
+
+std::optional<ExitCode> exitCodeAfterElevationDeclined(bool useTui) noexcept
+{
+    if (useTui)
+    {
+        return ExitCode::InsufficientPermission;
+    }
+    return std::nullopt;
 }
 
 // The four guidance strings ADR-0019/the Wiki page document for an InsufficientPermission

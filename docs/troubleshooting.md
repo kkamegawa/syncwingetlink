@@ -68,6 +68,9 @@ warning and the optional elevation prompt are shown in Japanese; on every other 
 fall back to English. Pass `--silent` to suppress the "restart elevated?" question and
 print only the warning text.
 
+For `fix --tui`, declining elevation or suppressing the prompt with `--silent` exits
+with code `2` without opening the editable checklist.
+
 ## Exit code 3: invalid `rules.json`
 
 **Symptom**

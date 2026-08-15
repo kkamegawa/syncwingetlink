@@ -145,6 +145,8 @@ confirm-per-item flow. Its real behavior, not just its intent:
   is ever emitted, and a warning is printed to stderr - when stdin and stdout aren't
   both a real, interactive console, or when virtual-terminal processing isn't available
   (e.g. output is redirected/piped).
+- **It does not start when required elevation is declined or suppressed** - `fix --tui`
+  exits with code `2` instead of opening an editable checklist that cannot create links.
 - `--dry-run` and `--no-color` both remain compatible with `--tui`.
 
 ### Main options
