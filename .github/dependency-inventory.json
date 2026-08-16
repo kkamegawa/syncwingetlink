@@ -1,0 +1,49 @@
+{
+  "_comment": "SPDX-License-Identifier: MIT. Tracked inventory of every dependency this project knowingly accepts. Read by tools/Test-DependencyInventory.ps1 and tools/test-dependency-inventory.sh (issue #164, docs/adr-phase-9.md ADR-0043). A new entry here is itself a review checkpoint: confirm the license is MIT-compatible and, for nativeDependencies, that the exact port version has been checked against the GitHub Advisory Database (see the cpp-msbuild skill, section 5) before adding it.",
+  "nativeDependencies": [],
+  "_nativeDependencies_comment": "vcpkg ports. Empty because the project has zero third-party C++ dependencies (docs/adr.md ADR-0005/ADR-0007). No scanner understands vcpkg.json today (docs/adr-phase-9.md ADR-0043), so advisory review for anything added here is manual: record port, version, license, justification, and the ISO date the advisory check was performed.",
+  "githubActions": [
+    {
+      "repo": "actions/checkout",
+      "license": "MIT",
+      "justification": "Checks out the repository; used by every workflow."
+    },
+    {
+      "repo": "microsoft/setup-msbuild",
+      "license": "MIT",
+      "justification": "Puts msbuild.exe on PATH for the hosted windows-latest runner."
+    },
+    {
+      "repo": "actions/github-script",
+      "license": "MIT",
+      "justification": "Runs the owner-only commit-author gate via the GitHub API."
+    },
+    {
+      "repo": "actions/upload-artifact",
+      "license": "MIT",
+      "justification": "Stages release binaries between the build and publish jobs."
+    },
+    {
+      "repo": "actions/download-artifact",
+      "license": "MIT",
+      "justification": "Retrieves staged release binaries in the publish job."
+    },
+    {
+      "repo": "softprops/action-gh-release",
+      "license": "MIT",
+      "justification": "Publishes the draft GitHub release with the built assets."
+    }
+  ],
+  "_githubActions_comment": "Allow-listed action REPOSITORIES only, deliberately without pinned SHAs here -- tools/Test-DependencyInventory.ps1 checks the SHA pin separately by reading each workflow file, so Dependabot's routine SHA bumps never require touching this file. Adding a new repo here is the actual review checkpoint; keeping it in step with the workflow's SHA is Dependabot's job.",
+  "agentToolingDependencies": [
+    {
+      "repo": "github/awesome-copilot",
+      "pinnedVia": "apm.lock.yaml",
+      "resolvedCommit": "aa280f28b1b73f9b6e6917b607eb92127b67b419",
+      "justification": "Dev-time agent skill bundle deployed by apm; not shipped in the built executable."
+    }
+  ],
+  "_agentToolingDependencies_comment": "Recorded so the tripwire's apm.lock.yaml hit is an acknowledged fact, not an unexplained pass. Not part of the shipped product.",
+  "acknowledgedPaths": [],
+  "_acknowledgedPaths_comment": "Escape hatch for a tripwire pattern that is legitimately present for a reason other than a new dependency. Empty today; add an entry with a path and a reason before suppressing a finding here."
+}

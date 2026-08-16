@@ -1,0 +1,41 @@
+name: Dependency Audit
+
+# Automated half of the dependency-vulnerability gate (issue #22, #164; see
+# docs/adr-phase-9.md ADR-0043). No scanner understands vcpkg.json, so this workflow
+# enforces the project's real invariant -- the dependency set stays exactly what
+# .github/dependency-inventory.json says it is.
+#
+# NOTE: an OSV-Scanner "forward coverage" job (for whichever dependency ecosystem is
+# added in the future) was attempted here and removed for now -- calling
+# google/osv-scanner-action's reusable workflow via `uses:` fails at workflow-parse time
+# (startup_failure, zero check-runs created) for a reason that could not be diagnosed
+# from the REST API alone (SHA/path/permissions all verified valid). Likely an
+# organization/enterprise Actions policy visible only in repo Settings. Tracked
+# separately; see issue #164 follow-up discussion.
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  inventory-guard:
+    name: Dependency inventory guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Run dependency inventory check
+        shell: pwsh
+        run: ./tools/Test-DependencyInventory.ps1
