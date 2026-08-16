@@ -62,8 +62,15 @@ jobs:
           $zipName = "syncwingetlink-$version-$assetArch.zip"
           Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $zipName -Force
 
+          # Out-File always writes CRLF on Windows even with -Encoding ascii, which
+          # would leave a trailing `r on the filename field and break `sha256sum -c`
+          # on Linux/WSL (the verification path README.md documents). Write LF
+          # explicitly so the checksum file is portable across platforms.
           $sha = (Get-FileHash $zipName -Algorithm SHA256).Hash.ToLowerInvariant()
-          "$sha  $zipName" | Out-File -FilePath "SHA256SUMS-$assetArch.txt" -Encoding ascii
+          [System.IO.File]::WriteAllText(
+            (Join-Path $PWD "SHA256SUMS-$assetArch.txt"),
+            "$sha  $zipName`n",
+            [System.Text.Encoding]::ASCII)
 
       - name: Upload release artifact
         uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08
