@@ -58,7 +58,7 @@ Invoke-WebRequest -Uri "https://github.com/<owner>/syncwingetlink/releases/downl
 # 展開する前にハッシュを検証してください。
 $expected = (Select-String -Path SHA256SUMS.txt -Pattern "syncwingetlink-<version>-<arch>\.zip").Line.Split()[0]
 $actual = (Get-FileHash syncwingetlink.zip -Algorithm SHA256).Hash
-if ($actual -ne $expected) { throw "Checksum mismatch - do not run this file." }
+if ($actual -ne $expected) { throw "Checksum mismatch - do not extract this file." }
 
 Expand-Archive -Path syncwingetlink.zip -DestinationPath syncwingetlink
 
