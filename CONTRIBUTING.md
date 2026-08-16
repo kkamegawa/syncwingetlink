@@ -77,7 +77,8 @@ the IDE.
   its `.vcxproj.filters`. New logic belongs in the `syncwingetlink.core` static library,
   not in the executable project, so that it remains unit-testable.
 - **Dependencies**: keep additions minimal; justify them in the PR and confirm MIT
-  compatibility.
+  compatibility. Record any new dependency in `.github/dependency-inventory.json` — CI
+  fails the `Dependency Audit` workflow otherwise.
 - **Side effects**: `scan` must stay read-only. Destructive operations must honor
   `--dry-run`.
 

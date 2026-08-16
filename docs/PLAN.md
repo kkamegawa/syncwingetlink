@@ -544,8 +544,13 @@ than invalid UTF-8 or a hard failure.
       justified in the PR that introduced it - the project has **zero third-party
       dependencies** (no `vcpkg.json`; C++/WinRT comes from the Windows SDK), stated as
       such rather than as "scanned clean," consistent with every M8 entry that touched
-      this point. The *automated* gate for if that ever changes is still open
-      (`docs/adr.md` open item 6, issue #22).
+      this point. A CI tripwire now enforces that stays true -
+      `.github/workflows/dependency-audit.yml` fails the build if a dependency manifest
+      or vendored tree appears without being recorded in
+      `.github/dependency-inventory.json`, and if a GitHub Actions `uses:` is unpinned or
+      un-allow-listed (`docs/adr.md` open item 6 resolved, `docs/adr-phase-9.md`
+      ADR-0043, issues #22/#164/#165). No scanner was found that understands
+      `vcpkg.json`, so the vcpkg-specific advisory check itself remains manual.
 - [x] `0.1.0` published as an unsigned GitHub **pre-release** (issue #65,
       `docs/adr-phase-6.md` ADR-0033) - statically linked x64/ARM64 executables with
       `SHA256SUMS.txt`, release notes stating the build was local (no CI, #21 is open),
