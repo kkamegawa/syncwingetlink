@@ -3417,3 +3417,72 @@ fallback (`winrt::hresult_error` has no `std::exception` base, so neither
 - No C++ source changed; `Debug`/`Release` × `x64`/`ARM64` rebuild was not re-run in this
   session (no build-capable shell available here) — flagged as unverified rather than
   assumed, consistent with the existing 426/426 test count from the prior entry.
+
+## 2026-08-16 — CI on every branch push; release ships zip + offline docs
+
+Work tracked in
+**[#171](https://github.com/kkamegawa/syncwingetlink/issues/171)**.
+
+- `.github/workflows/ci.yml`: `push` now matches every branch (`branches: ['**']`)
+  instead of only `main`; the `tags: v*` push trigger was removed since tag pushes are
+  `release.yml`'s job alone. An initial draft kept `pull_request` for fork-PR
+  buildability, but that doubled the run count on every same-repo PR branch push; the
+  repository owner asked for one run per push, so `pull_request` was dropped entirely
+  (fork PRs currently get no CI run — accepted, since `enforce-owner-only.yml` already
+  blocks merging any non-owner/non-bot commit regardless of CI result, and no branch
+  protection rule exists on `main` to depend on a PR-triggered check). See
+  `docs/adr-phase-9.md` ADR-0044.
+- `.github/workflows/release.yml`: each architecture's release asset changed from a bare
+  `syncwingetlink-<version>-<arch>.exe` to `syncwingetlink-<version>-<arch>.zip`,
+  containing the exe plus a `docs/` folder with `README.md`, `README_ja.md`,
+  `docs/rules.md`, `docs/rules_ja.md`, `docs/troubleshooting.md`, and
+  `docs/troubleshooting_ja.md` (copied flat into `docs/`). The staging step now `throw`s
+  if any of the six documents is missing, instead of silently shipping an incomplete
+  archive. Also fixed a latent bug: both matrix legs previously appended to the same
+  `SHA256SUMS.txt`, which never actually accumulated both lines and produced a same-name
+  artifact collision — checksums are now written per architecture
+  (`SHA256SUMS-<arch>.txt`) during `build` and concatenated into one `SHA256SUMS.txt` in
+  `publish`. Added a top-level `permissions: contents: read` to match the other three
+  workflows. See `docs/adr-phase-9.md` ADR-0045.
+- Updated `README.md` and `README_ja.md` Installation sections for the zip flow (download
+  `.zip`, verify against `SHA256SUMS.txt`, `Expand-Archive`/`unzip`, then move the
+  extracted exe onto `PATH`). Checked off two new items under `docs/TODO.md` M0.
+
+### Verified
+
+- Both workflow YAML files parsed successfully with `js-yaml` (via `npx`) after every
+  edit in this session.
+- The release-asset staging PowerShell logic (doc bundling, missing-doc `throw` guard,
+  per-arch checksum, and the `publish` job's checksum-combine step) was executed
+  end-to-end against a scratch copy of the real repo docs and a stand-in exe, using
+  `pwsh` in the working shell. Confirmed: the zip contains `syncwingetlink.exe` +
+  `docs/` with all six markdown files; removing one doc makes the step `throw` and exit
+  non-zero; the checksum in `SHA256SUMS-<arch>.txt` matches the zip's actual hash; and
+  combining two architectures' checksum files produces one `SHA256SUMS.txt` with both
+  lines and no filename collision.
+- Not exercised: a real MSBuild-produced `syncwingetlink.exe` (no build-capable shell
+  available here) and the real tag-push / `workflow_dispatch` release paths
+  (deliberately not triggered — tag push is irreversible, `workflow_dispatch` creates a
+  real draft release).
+- No C++ source changed; the existing test count is unaffected by this session.
+
+## 2026-08-16 — Drop `ci.yml`'s `pull_request` trigger to stop double-running PR branches
+
+Follow-up to the entry above, same issue
+([#171](https://github.com/kkamegawa/syncwingetlink/issues/171)).
+
+- The repository owner pointed out that a same-repo PR branch was running `ci.yml`
+  twice per push (once for the branch `push`, once for the PR `synchronize` event).
+  Asked to make it one or the other.
+- Removed the `pull_request:` trigger from `.github/workflows/ci.yml` rather than adding
+  an `if:` guard, since `push.branches: ['**']` already covers every same-repo branch and
+  GitHub associates check runs with the commit SHA repo-wide — the push-triggered run
+  still shows up on the PR's checks list without a separate `pull_request` trigger.
+- Trade-off accepted: fork PRs (a push to a fork branch never reaches this repository's
+  Actions) now get no CI run at all. Verified this is low-cost here:
+  `enforce-owner-only.yml` already blocks merging any PR whose commits aren't from the
+  owner or an allow-listed bot, and `gh api repos/.../branches/main/protection` returned
+  404 (`main` has no branch protection / required status checks) as of this session.
+- Revised `docs/adr-phase-9.md` ADR-0044 in place (PR #172 was still open/unmerged at
+  the time, so this amends the same ADR rather than adding a new one) and updated the
+  `docs/TODO.md` M0 wording to match.

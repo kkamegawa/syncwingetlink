@@ -45,29 +45,33 @@ recreates them after user confirmation.
 
 ## Installation
 
-There is no installer and no winget package - `syncwingetlink` is published as a single,
-**unsigned** executable attached to a GitHub release (`docs/adr-phase-6.md` ADR-0033).
-Because it is unsigned, Windows SmartScreen / your antivirus will likely warn on first
-run; verify the download against the published `SHA256SUMS.txt` before running it, then
-place the executable somewhere on your `PATH`.
+There is no installer and no winget package - `syncwingetlink` is published as a
+per-architecture **ZIP archive** attached to a GitHub release
+(`docs/adr-phase-6.md` ADR-0033, `docs/adr-phase-9.md` ADR-0045). The `.exe` inside is
+still **unsigned**, so Windows SmartScreen / your antivirus will likely warn on first
+run; verify the download against the published `SHA256SUMS.txt` before extracting it.
+Each ZIP also bundles a `docs/` folder with this README, the alias-rule reference, and
+the troubleshooting guide (English and Japanese) so they're readable offline.
 
 PowerShell:
 
 ```powershell
 # Replace <version>/<arch> with the release you're installing (x64 or arm64).
-Invoke-WebRequest -Uri "https://github.com/<owner>/syncwingetlink/releases/download/v<version>/syncwingetlink-<version>-<arch>.exe" -OutFile syncwingetlink.exe
+Invoke-WebRequest -Uri "https://github.com/<owner>/syncwingetlink/releases/download/v<version>/syncwingetlink-<version>-<arch>.zip" -OutFile syncwingetlink.zip
 Invoke-WebRequest -Uri "https://github.com/<owner>/syncwingetlink/releases/download/v<version>/SHA256SUMS.txt" -OutFile SHA256SUMS.txt
 
-# Verify the checksum before running it.
-$expected = (Select-String -Path SHA256SUMS.txt -Pattern "syncwingetlink-<version>-<arch>\.exe").Line.Split()[0]
-$actual = (Get-FileHash syncwingetlink.exe -Algorithm SHA256).Hash
-if ($actual -ne $expected) { throw "Checksum mismatch - do not run this file." }
+# Verify the checksum before extracting it.
+$expected = (Select-String -Path SHA256SUMS.txt -Pattern "syncwingetlink-<version>-<arch>\.zip").Line.Split()[0]
+$actual = (Get-FileHash syncwingetlink.zip -Algorithm SHA256).Hash
+if ($actual -ne $expected) { throw "Checksum mismatch - do not extract this file." }
 
-# Move it somewhere on PATH, e.g. the Links folder winget itself uses (create it
+Expand-Archive -Path syncwingetlink.zip -DestinationPath syncwingetlink
+
+# Move the exe somewhere on PATH, e.g. the Links folder winget itself uses (create it
 # first - an absent Links directory is a normal, common state, since it's the exact
 # condition this tool's own `fix` command exists to correct):
 New-Item -ItemType Directory -Force "$env:LOCALAPPDATA\Microsoft\WinGet\Links" | Out-Null
-Move-Item syncwingetlink.exe "$env:LOCALAPPDATA\Microsoft\WinGet\Links\"
+Move-Item syncwingetlink\syncwingetlink.exe "$env:LOCALAPPDATA\Microsoft\WinGet\Links\"
 ```
 
 bash (e.g. WSL or Git Bash, for downloading/verifying only - the executable itself only
@@ -75,11 +79,12 @@ runs on Windows):
 
 ```bash
 # Replace <version>/<arch> with the release you're installing (x64 or arm64).
-curl -LO "https://github.com/<owner>/syncwingetlink/releases/download/v<version>/syncwingetlink-<version>-<arch>.exe"
+curl -LO "https://github.com/<owner>/syncwingetlink/releases/download/v<version>/syncwingetlink-<version>-<arch>.zip"
 curl -LO "https://github.com/<owner>/syncwingetlink/releases/download/v<version>/SHA256SUMS.txt"
 
-# Verify the checksum before running it.
+# Verify the checksum before extracting it.
 sha256sum --ignore-missing -c SHA256SUMS.txt
+unzip syncwingetlink-<version>-<arch>.zip -d syncwingetlink
 ```
 
 ## Usage

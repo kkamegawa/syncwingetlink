@@ -40,6 +40,15 @@ Build system decisions are recorded in [`adr.md`](./adr.md) (ADR-0001 … ADR-00
       an enforced pin-and-allow-list check on GitHub Actions (open item 6 in `adr.md`,
       resolved by `docs/adr-phase-9.md` ADR-0043, issues #22/#164/#165). The vcpkg
       advisory-review procedure itself remains manual; do not claim otherwise
+- [x] Widen `ci.yml` to run on every branch push (previously only `main` and `v*` tags),
+      drop the tag trigger there now that tag pushes are `release.yml`'s job, and drop
+      the `pull_request` trigger so a same-repo PR branch runs CI once per push instead
+      of twice (`docs/adr-phase-9.md` ADR-0044)
+- [x] Change `release.yml` to publish a per-arch ZIP bundling the exe with an offline
+      `docs/` folder (README, alias rules, troubleshooting - English and Japanese),
+      instead of a bare exe; also fixes a `SHA256SUMS.txt` collision where both
+      architectures' matrix legs wrote to the same filename
+      (`docs/adr-phase-9.md` ADR-0045)
 
 ## M1. Paths / model foundation
 - [x] `core/Model.h`: define `InstalledPackage`, `PackageExe`, `LinkStatus{Ok,Missing,Broken,Mismatch}`, `RepairItem`, `AppOptions`
