@@ -3582,3 +3582,76 @@ Continuation of the same session, same issue
   `windows-11-vs2026-arm` CI leg to finish and report a pass/fail with a real test
   count.
 - No C++ source changed.
+
+## 2026-08-16 — First ARM64 CI run fails on a PowerShell array-collapse bug; fixed, action pins refreshed to Node 24, ARM64 goes green
+
+Continuation of the same session, same issue
+([#173](https://github.com/kkamegawa/syncwingetlink/issues/173)).
+
+- Commit `315834f`'s `ci.yml` run
+  ([run 31921634349](https://github.com/kkamegawa/syncwingetlink/actions/runs/31921634349))
+  **failed on both legs**, but usefully: MSBuild itself succeeded natively on
+  `windows-11-vs2026-arm` (`syncwingetlink.exe` and `syncwingetlink.tests.dll` both
+  built clean, 0 warnings/0 errors), so the runner and toolchain choice were confirmed
+  sound. The failure was in the `Test` step's PowerShell, with the same error on both
+  the x64 and ARM64 legs: `& : The term 'C' is not recognized as the name of a
+  cmdlet...`.
+- Root cause: `$vswhereCandidates = @( (Join-Path ...), (Join-Path ...) ) |
+  Where-Object { ... }` collapses to a **scalar string**, not a one-element array, when
+  exactly one candidate passes the filter (the normal case — only one of
+  `$env:ProgramFiles`/`${env:ProgramFiles(x86)}` actually has `vswhere.exe` on either
+  runner). Indexing a scalar string with `[0]` in PowerShell returns its first
+  *character*, not the whole string, so `$vswhere` silently became `"C"` instead of
+  the full path, and `& $vswhere ...` tried to run a command named `C`. This bug was
+  introduced in this session's own rewrite (widening the vswhere search to check both
+  Program Files locations, docs/adr-phase-9.md ADR-0046); the pre-existing
+  `$vstestCandidates` pipeline has the identical latent pattern but happened to never
+  collapse to a scalar in practice, since both vstest.console.exe paths normally
+  coexist in a VS install.
+- Fix: wrap both pipelines in an outer `@(...)` (`@( @(...) | Where-Object {...} )`),
+  which forces array semantics regardless of match count. Applied to both the
+  `vswhereCandidates` and `vstestCandidates` pipelines in `ci.yml` (the second wasn't
+  observed failing, but carries the same risk and was fixed defensively).
+- Separately, the run's log carried a `Node.js 20 is deprecated` warning for
+  `actions/checkout` and `microsoft/setup-msbuild` (GitHub Actions was silently forcing
+  them onto Node 24 already, so this wasn't a functional break, but the owner asked to
+  resolve it properly). Looked up each pinned action's latest release via
+  `gh api repos/<repo>/releases/latest` and confirmed `using: node24` in each
+  `action.yml` before repinning (39-char tag SHAs dereferenced to their underlying
+  commit SHA where the tag was annotated, per
+  `tools/Test-DependencyInventory.ps1`'s 40-char-commit-SHA requirement):
+  - `actions/checkout` `11bd719...` → `3d3c42e5aac5ba805825da76410c181273ba90b1` (v7.0.1)
+  - `microsoft/setup-msbuild` `6fb0222...` → `30375c66a4eea26614e0d39710365f22f8b0af57` (v3)
+  - `actions/upload-artifact` `65c4c4a...` → `043fb46d1a93c77aae656e7c1c64a875d1fc6a0a` (v7.0.1)
+  - `actions/download-artifact` `7a1cd32...` → `3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c` (v8.0.1)
+  - `softprops/action-gh-release` `c95fe14...` → `3d0d9888cb7fd7b750713d6e236d1fcb99157228` (v3.0.2)
+  - Checked `enforce-owner-only.yml`'s `actions/github-script@3a2844b...` too — already
+    the latest `v9.0.0` and already `node24`; left unchanged.
+  - `.github/dependency-inventory.json` needed no edits: it allow-lists action
+    *repositories* only, deliberately without pinned SHAs, so a routine version bump
+    never requires touching it (all five repos were already listed).
+- Applied the fix and the five repins to `ci.yml`, `release.yml`, and
+  `dependency-audit.yml` (the only other workflow using `actions/checkout`'s old pin).
+  Handed the corrected file contents to the repository owner the same way as before
+  (still cannot `Edit` `.github/workflows/**` this session); the owner applied and
+  pushed as commit `714f558` ("update: ci settings and installer manifest").
+- **Result**: [run 31922513915](https://github.com/kkamegawa/syncwingetlink/actions/runs/31922513915)
+  — both legs `success`. `x64 / Release` and `ARM64 / Release` each report
+  **"Total tests: 433 / Passed: 433"** — identical counts, confirming the ARM64 leg
+  discovered and ran the exact same test suite as x64, not a partial or mismatched run.
+  This is the first time ARM64 tests have actually executed in CI for this project.
+- Resolves `docs/adr.md` open item 3 with real evidence (not just the runner's
+  availability). Definition-of-Done lines in `AGENTS.md` §10 and `docs/PLAN.md` §11 for
+  "Builds and runs on Windows 11 24H2 (x64/arm64)" are now checked off, citing this run.
+
+### Deliberately not done in this session
+
+- Did not bump any action pin beyond the five identified above; no other workflow
+  references an outdated action.
+- Did not re-run `release.yml` via `workflow_dispatch` to verify the ARM64 release
+  ZIP end-to-end (as the approved plan's Step 5.6 suggested) — the `ci.yml` evidence
+  above (native ARM64 build + full test pass) was judged sufficient to resolve the
+  open item, since `release.yml`'s staging script is architecture-agnostic PowerShell
+  already exercised in shape by the x64 leg. Left as a follow-up if the owner wants
+  release-asset verification before actually tagging `v0.1.0`.
+- No C++ source changed.

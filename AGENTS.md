@@ -291,8 +291,9 @@ The essentials:
 This excerpt mirrors `docs/PLAN.md` §11, which carries the full evidence for each line;
 see it for issue/ADR citations.
 
-- [ ] Builds and runs on Windows 11 24H2 (x64/arm64) - x64 verified repeatedly; ARM64 is
-      cross-built, not run (`docs/adr.md` open item 3)
+- [x] Builds and runs on Windows 11 24H2 (x64/arm64) - x64 verified repeatedly; ARM64
+      now runs natively in CI on `windows-11-vs2026-arm`, 433/433 tests passing,
+      matching x64 (`docs/adr-phase-9.md` ADR-0046, resolves `docs/adr.md` open item 3)
 - [x] Enumerates portable packages via the COM API, with automatic FS fallback when COM
       is unavailable
 - [x] `scan` classifies missing/broken/ok read-only

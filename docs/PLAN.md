@@ -502,11 +502,14 @@ than invalid UTF-8 or a hard failure.
 
 ## 11. Definition of Done
 
-- [ ] Builds and runs on Windows 11 24H2 (x64/arm64) - `Debug`/`Release` × `x64`/`ARM64`
+- [x] Builds and runs on Windows 11 24H2 (x64/arm64) - `Debug`/`Release` × `x64`/`ARM64`
       all build clean as of every milestone through M9; x64 has been run repeatedly
-      (most recently for `docs/adr-phase-8.md` ADR-0037). ARM64 remains cross-built, not
-      run, per `docs/adr.md` open item 3 - left unchecked until it is actually executed
-      on an ARM64 host.
+      (most recently for `docs/adr-phase-8.md` ADR-0037). ARM64 now runs, not just
+      builds: `docs/adr-phase-9.md` ADR-0046 moved `ci.yml`'s ARM64 leg onto the
+      `windows-11-vs2026-arm` hosted runner, and
+      [run 31922513915](https://github.com/kkamegawa/syncwingetlink/actions/runs/31922513915)
+      reports `ARM64 / Release: Total tests: 433 / Passed: 433` - identical to the x64
+      leg's own 433/433 in the same run, resolving `docs/adr.md` open item 3.
 - [x] Enumerates installed portable packages via the COM API - `WingetComSource` (M2,
       issues #27-#31); see `docs/com-api.md` for the full activation/enumeration
       contract.
