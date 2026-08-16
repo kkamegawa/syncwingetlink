@@ -3532,3 +3532,53 @@ ARM64-CI scope of [#158](https://github.com/kkamegawa/syncwingetlink/issues/158)
   `windows-11-vs2026-arm` leg, with the run URL and ARM64 test count recorded as
   evidence — not asserted ahead of that.
 - No C++ source changed; the existing test count is unaffected by this session.
+
+## 2026-08-16 — Repository owner applies the ARM64 CI workflow edit; fix a winget manifest/release-asset mismatch found in review
+
+Continuation of the same session, same issue
+([#173](https://github.com/kkamegawa/syncwingetlink/issues/173)).
+
+- The repository owner pasted the handed-off `ci.yml`/`release.yml` content into
+  `.github/workflows/` themselves (the agent still cannot `Edit` that path this
+  session) and pushed as commit `315834f` ("update: support arm64 hosted agent").
+  Diffed the pushed files byte-for-byte (modulo CRLF/LF) against what was handed off —
+  identical. `ci.yml`'s ARM64 leg run was confirmed in progress on
+  `windows-11-vs2026-arm` via `gh run list`.
+- The owner also pointed out that `manifests/kkamegawa/syncwingetlink/0.1.0/` (the
+  split installer/locale/version manifest work tracked by issue #159) already exists on
+  `main`, contrary to this session's earlier assumption that #159 was still open work.
+  Confirmed via `git status`/`git log` that the three manifest files are already
+  tracked and clean.
+- While reviewing those manifests, found
+  `kkamegawa.syncwingetlink.installer.yaml` was stale against
+  `docs/adr-phase-9.md` ADR-0045 (already on `main`): it still declared
+  `InstallerType: portable` with `InstallerUrl`s pointing at bare
+  `syncwingetlink-0.1.0-<arch>.exe` files, but ADR-0045 changed the actual release
+  asset to a per-arch `.zip` bundling the exe with docs — that bare-`.exe` URL would
+  never exist once a real `v0.1.0` tag is released, so `winget install` would fail.
+- Fixed the manifest: `InstallerType: zip` with root-level `NestedInstallerType:
+  portable` and `NestedInstallerFiles: [{RelativeFilePath: syncwingetlink.exe,
+  PortableCommandAlias: syncwingetlink}]` (verified against the WinGet
+  `manifest.installer.1.12.0.json` schema — both nested-installer fields are valid at
+  the manifest root as defaults for every `Installers[]` entry). Updated both
+  `InstallerUrl`s to the `.zip` filenames matching `release.yml`'s
+  `syncwingetlink-$version-$assetArch.zip` naming, and dropped the now-redundant
+  per-installer `Commands:` entries (the alias is now carried by
+  `PortableCommandAlias` on the nested file instead).
+- Validated the edited YAML parses correctly with `PyYAML` (`yaml.safe_load` succeeded;
+  the only error encountered was `json.dumps` not knowing how to serialize the
+  already-parsed `date` object, which confirms the parse itself was clean).
+- `InstallerSha256` values remain the `REPLACE_WITH_*_SHA256` placeholders pending a
+  real `v0.1.0` release; unaffected by this fix.
+
+### Deliberately not done in this session
+
+- Did not touch `kkamegawa.syncwingetlink.locale.yaml` or
+  `kkamegawa.syncwingetlink.version.yaml` — neither references the release asset
+  format, so neither was affected by the ADR-0045 drift.
+- Did not open a new ADR for the manifest fix: this brings the manifest into line with
+  the already-recorded ADR-0045 decision rather than making a new design choice.
+- Did not re-check `docs/PLAN.md`/`AGENTS.md` DoD checkboxes yet; still waiting on the
+  `windows-11-vs2026-arm` CI leg to finish and report a pass/fail with a real test
+  count.
+- No C++ source changed.
