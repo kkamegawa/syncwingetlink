@@ -667,7 +667,7 @@ for this change for the specific alternatives considered and declined.
 
 ---
 
-## ADR-0044 — CI runs on every branch push; tag pushes belong to `release.yml` alone
+## ADR-0044 — CI runs on every branch push only; no `pull_request` trigger
 
 - **Date**: 2026-08-16
 - **Affected**: `.github/workflows/ci.yml`
@@ -681,12 +681,12 @@ for this change for the specific alternatives considered and declined.
 2. **The `tags: ['v*']` push trigger is removed from `ci.yml`.** Tag pushes are exclusively
    `release.yml`'s concern (`push: tags: 'v*.*.*'`); `ci.yml` no longer runs a second,
    near-identical build for the same commit when a release tag lands.
-3. **The `pull_request` trigger is kept as-is.** For a same-repository branch, this means
-   a push to an open PR's branch now triggers `ci.yml` twice (once for the branch push,
-   once for the PR synchronize event) — an accepted, minor redundancy. It is kept because
-   `pull_request` is what makes a fork's PR buildable at all (a fork's branch push does
-   not reach this repository's Actions) and is also what GitHub's required-status-check
-   branch protection matches against for PRs.
+3. **The `pull_request` trigger is removed entirely, not kept alongside `push`.** An
+   earlier draft of this ADR kept `pull_request` for fork-PR buildability and
+   required-status-check matching, but that meant every same-repository PR branch ran
+   `ci.yml` twice per push (once for the branch push, once for the PR synchronize event).
+   The repository owner asked for exactly one run per push instead, so `pull_request` was
+   dropped rather than worked around with an `if:` guard.
 
 ### Reason
 
@@ -696,13 +696,27 @@ for this change for the specific alternatives considered and declined.
   duplicated `release.yml`'s own build step for no benefit — `release.yml` already
   performs a `Release` build per architecture and would fail on its own if the build were
   broken.
+- With `push.branches: ['**']` already covering every branch, `pull_request` added no
+  additional coverage for same-repository PRs — it only doubled the run count for the
+  exact same commit. GitHub associates check runs with a commit SHA repo-wide, not with
+  the specific event that produced them, so the `push`-triggered run already appears on
+  the PR's checks list without a `pull_request` trigger.
 
 ### Consequences
 
 - `docs/TODO.md` M0 gains a checked item recording this trigger change.
-- Same-repo PR branches see two `ci.yml` runs per push (branch push + PR synchronize);
-  this is accepted rather than worked around, since removing either trigger would either
-  break fork PRs or break required-status-check matching.
+- Same-repo PR branches now see exactly one `ci.yml` run per push.
+- **Fork PRs no longer get any CI run**, because a push to a fork branch does not reach
+  this repository's Actions and there is no other trigger to catch it. This is an
+  accepted trade-off: `.github/workflows/enforce-owner-only.yml` already blocks merging
+  any PR whose commits aren't authored/committed by the owner or an allow-listed bot, so
+  a fork PR could never be merged regardless of its CI result. No branch protection rule
+  exists on `main` as of this writing (verified via the GitHub API), so there is no
+  required-status-check that a missing fork-PR run could break.
+- If this repository later starts accepting external fork contributions in earnest, this
+  decision should be revisited — re-adding `pull_request` scoped to `if:
+  github.event.pull_request.head.repo.full_name != github.repository` would restore fork
+  coverage without reintroducing the same-repo double-run.
 - No job definitions, permissions, or concurrency settings changed — only `on:`.
 
 ---
