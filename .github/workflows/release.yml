@@ -12,14 +12,18 @@ permissions:
 jobs:
   build:
     name: Build ${{ matrix.platform }} release binary
-    runs-on: windows-latest
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
         include:
           - platform: x64
+            runner: windows-latest
           - platform: ARM64
+            # docs/adr-phase-9.md ADR-0046: matches ci.yml's ARM64 runner choice - the
+            # only hosted image with PlatformToolset v145 (VS2026) on arm64.
+            runner: windows-11-vs2026-arm
 
     steps:
       - name: Check out source

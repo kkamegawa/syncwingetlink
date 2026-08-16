@@ -16,7 +16,7 @@ concurrency:
 jobs:
   build-test:
     name: ${{ matrix.platform }} / ${{ matrix.configuration }}
-    runs-on: windows-latest
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
     strategy:
       fail-fast: false
@@ -24,8 +24,13 @@ jobs:
         include:
           - platform: x64
             configuration: Release
+            runner: windows-latest
           - platform: ARM64
             configuration: Release
+            # docs/adr-phase-9.md ADR-0046: the only hosted runner image that ships
+            # PlatformToolset v145 (VS2026) on arm64. windows-11-arm is VS2022/v143 and
+            # does not satisfy this repo's toolchain requirement.
+            runner: windows-11-vs2026-arm
 
     steps:
       - name: Check out source
@@ -37,14 +42,21 @@ jobs:
       - name: Build ${{ matrix.platform }} / ${{ matrix.configuration }}
         run: msbuild syncwingetlink.sln -m:1 /nr:false -p:Configuration=${{ matrix.configuration }} -p:Platform=${{ matrix.platform }}
 
-      - name: Test x64 binaries
-        if: ${{ matrix.platform == 'x64' }}
+      - name: Test ${{ matrix.platform }} binaries
         shell: powershell
         run: |
-          $vswhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
-          if (-not (Test-Path $vswhere)) {
-            throw "vswhere.exe not found at $vswhere"
+          # docs/adr-phase-9.md ADR-0046: this now runs natively on both platforms -
+          # the ARM64 leg executes on the windows-11-vs2026-arm hosted runner, so this
+          # is a real test run, not a cross-compile-and-skip.
+          $vswhereCandidates = @(
+            (Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"),
+            (Join-Path ${env:ProgramFiles} "Microsoft Visual Studio\Installer\vswhere.exe")
+          ) | Where-Object { $_ -and (Test-Path $_) }
+
+          if ($vswhereCandidates.Count -eq 0) {
+            throw "vswhere.exe not found under Program Files or Program Files (x86)."
           }
+          $vswhere = $vswhereCandidates[0]
 
           $vsInstallPath = & $vswhere -latest -products * -requires Microsoft.VisualStudio.PackageGroup.TestTools.Core -property installationPath
           if (-not $vsInstallPath) {
@@ -63,10 +75,4 @@ jobs:
             throw "vstest.console.exe not found under: $vsInstallPath"
           }
 
-          & $vstestCandidates[0] "build\x64\${{ matrix.configuration }}\syncwingetlink.tests.dll" /Platform:x64 /InIsolation
-
-      - name: ARM64 cross-compile note
-        if: ${{ matrix.platform == 'ARM64' }}
-        shell: powershell
-        run: |
-          Write-Host "ARM64 is cross-compiled on the x64 hosted runner by design; unit tests run only for x64."
+          & $vstestCandidates[0] "build\${{ matrix.platform }}\${{ matrix.configuration }}\syncwingetlink.tests.dll" /Platform:${{ matrix.platform }} /InIsolation
