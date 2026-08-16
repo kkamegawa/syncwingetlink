@@ -34,11 +34,6 @@
       "justification": "Publishes the draft GitHub release with the built assets."
     },
     {
-      "repo": "microsoft/msvc-code-analysis-action",
-      "license": "MIT",
-      "justification": "Runs MSVC static analysis and emits SARIF for Code Scanning upload."
-    },
-    {
       "repo": "github/codeql-action",
       "license": "MIT",
       "justification": "Uploads SARIF results from MSVC code analysis to GitHub Code Scanning."
