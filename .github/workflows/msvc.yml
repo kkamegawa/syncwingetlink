@@ -47,7 +47,7 @@ jobs:
       # EnableMicrosoftCodeAnalysis=true causes MSVC to emit *.sarif files into the
       # per-project intermediate directories (build\obj\**\*.sarif).
       - name: Upload SARIF to GitHub
-        uses: github/codeql-action/upload-sarif@f0489abddd4e5e9dff53ed28a45b1d6f88978a1b
+        uses: github/codeql-action/upload-sarif@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd # v4.37.7
         with:
           sarif_file: build/obj
           category: msvc-code-analysis
