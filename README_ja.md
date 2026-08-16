@@ -39,11 +39,47 @@ winget でポータブルパッケージをインストールすると、本来�
 
 ## インストール
 
-> 準備中。リリースが公開されたら GitHub Releases から単一 exe を取得できます。
+インストーラーや winget パッケージはありません。`syncwingetlink` はアーキテクチャごとの
+**ZIP アーカイブ**として GitHub Releases に公開されます
+（`docs/adr-phase-6.md` ADR-0033、`docs/adr-phase-9.md` ADR-0045）。中の exe は
+**署名なし**のため、初回実行時に Windows SmartScreen やアンチウイルスが警告を出す
+可能性があります。展開する前に公開されている `SHA256SUMS.txt` でハッシュを検証して
+ください。各 ZIP には本 README・エイリアスルールのリファレンス・トラブルシューティング
+ガイド（英語・日本語の両方）を収めた `docs/` フォルダも同梱されており、オフラインでも
+参照できます。
+
+PowerShell:
 
 ```powershell
-# （公開後の例）
-winget install <publisher>.syncwingetlink
+# <version>/<arch> をインストールしたいリリースに置き換えてください（x64 または arm64）。
+Invoke-WebRequest -Uri "https://github.com/<owner>/syncwingetlink/releases/download/v<version>/syncwingetlink-<version>-<arch>.zip" -OutFile syncwingetlink.zip
+Invoke-WebRequest -Uri "https://github.com/<owner>/syncwingetlink/releases/download/v<version>/SHA256SUMS.txt" -OutFile SHA256SUMS.txt
+
+# 展開する前にハッシュを検証してください。
+$expected = (Select-String -Path SHA256SUMS.txt -Pattern "syncwingetlink-<version>-<arch>\.zip").Line.Split()[0]
+$actual = (Get-FileHash syncwingetlink.zip -Algorithm SHA256).Hash
+if ($actual -ne $expected) { throw "Checksum mismatch - do not run this file." }
+
+Expand-Archive -Path syncwingetlink.zip -DestinationPath syncwingetlink
+
+# exe を PATH の通ったフォルダへ移動します。例えば winget 自身が使う Links フォルダ
+# （先に作成しておきます。Links フォルダが存在しないのはよくある正常な状態で、
+# それを直すのがまさにこのツールの `fix` コマンドです）:
+New-Item -ItemType Directory -Force "$env:LOCALAPPDATA\Microsoft\WinGet\Links" | Out-Null
+Move-Item syncwingetlink\syncwingetlink.exe "$env:LOCALAPPDATA\Microsoft\WinGet\Links\"
+```
+
+bash（WSL や Git Bash など。ダウンロード・検証専用 - 実行ファイル自体は
+Windows でのみ動作します）:
+
+```bash
+# <version>/<arch> をインストールしたいリリースに置き換えてください（x64 または arm64）。
+curl -LO "https://github.com/<owner>/syncwingetlink/releases/download/v<version>/syncwingetlink-<version>-<arch>.zip"
+curl -LO "https://github.com/<owner>/syncwingetlink/releases/download/v<version>/SHA256SUMS.txt"
+
+# 展開する前にハッシュを検証してください。
+sha256sum --ignore-missing -c SHA256SUMS.txt
+unzip syncwingetlink-<version>-<arch>.zip -d syncwingetlink
 ```
 
 ## 使い方

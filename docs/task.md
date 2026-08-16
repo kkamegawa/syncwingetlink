@@ -3417,3 +3417,41 @@ fallback (`winrt::hresult_error` has no `std::exception` base, so neither
 - No C++ source changed; `Debug`/`Release` × `x64`/`ARM64` rebuild was not re-run in this
   session (no build-capable shell available here) — flagged as unverified rather than
   assumed, consistent with the existing 426/426 test count from the prior entry.
+
+## 2026-08-16 — CI on every branch push; release ships zip + offline docs
+
+Work tracked in
+**[#171](https://github.com/kkamegawa/syncwingetlink/issues/171)**.
+
+- `.github/workflows/ci.yml`: `push` now matches every branch (`branches: ['**']`)
+  instead of only `main`; the `tags: v*` push trigger was removed since tag pushes are
+  `release.yml`'s job alone. `pull_request` was kept (fork PRs and required-status-check
+  matching depend on it), documented as an accepted redundancy for same-repo PR branches.
+  See `docs/adr-phase-9.md` ADR-0044.
+- `.github/workflows/release.yml`: each architecture's release asset changed from a bare
+  `syncwingetlink-<version>-<arch>.exe` to `syncwingetlink-<version>-<arch>.zip`,
+  containing the exe plus a `docs/` folder with `README.md`, `README_ja.md`,
+  `docs/rules.md`, `docs/rules_ja.md`, `docs/troubleshooting.md`, and
+  `docs/troubleshooting_ja.md` (copied flat into `docs/`). The staging step now `throw`s
+  if any of the six documents is missing, instead of silently shipping an incomplete
+  archive. Also fixed a latent bug: both matrix legs previously appended to the same
+  `SHA256SUMS.txt`, which never actually accumulated both lines and produced a same-name
+  artifact collision — checksums are now written per architecture
+  (`SHA256SUMS-<arch>.txt`) during `build` and concatenated into one `SHA256SUMS.txt` in
+  `publish`. Added a top-level `permissions: contents: read` to match the other three
+  workflows. See `docs/adr-phase-9.md` ADR-0045.
+- Updated `README.md` and `README_ja.md` Installation sections for the zip flow (download
+  `.zip`, verify against `SHA256SUMS.txt`, `Expand-Archive`/`unzip`, then move the
+  extracted exe onto `PATH`). Checked off two new items under `docs/TODO.md` M0.
+
+### Verified
+
+- Both workflow YAML files reviewed by hand for structural correctness (job/step
+  nesting, `${{ }}` expression syntax); no local YAML linter was available in this
+  session, flagged as unverified rather than assumed.
+- The release-asset staging PowerShell was not executed end-to-end in this session (no
+  build-capable Windows shell available here to produce a real `syncwingetlink.exe` to
+  package) — flagged as unverified rather than assumed. The tag-push and
+  `workflow_dispatch` paths that would exercise it were deliberately not triggered
+  (tag push is irreversible; `workflow_dispatch` creates a real draft release).
+- No C++ source changed; the existing test count is unaffected by this session.

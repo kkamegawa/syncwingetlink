@@ -664,3 +664,94 @@ for this change for the specific alternatives considered and declined.
 - The `inventory-guard` job is not yet in `main`'s required status checks; adding it is a
   branch-protection change only the repository owner can make (recorded as a manual
   follow-up in #164, not something an agent can do from a checkout).
+
+---
+
+## ADR-0044 — CI runs on every branch push; tag pushes belong to `release.yml` alone
+
+- **Date**: 2026-08-16
+- **Affected**: `.github/workflows/ci.yml`
+- **Status**: Accepted
+
+### Decision
+
+1. **`ci.yml`'s `push` trigger now matches every branch (`branches: ['**']`)**, replacing
+   the previous `branches: [main]`. A push to any feature/fix/docs branch now builds and
+   tests `x64`/`ARM64` `Release` the same way a push to `main` always did.
+2. **The `tags: ['v*']` push trigger is removed from `ci.yml`.** Tag pushes are exclusively
+   `release.yml`'s concern (`push: tags: 'v*.*.*'`); `ci.yml` no longer runs a second,
+   near-identical build for the same commit when a release tag lands.
+3. **The `pull_request` trigger is kept as-is.** For a same-repository branch, this means
+   a push to an open PR's branch now triggers `ci.yml` twice (once for the branch push,
+   once for the PR synchronize event) — an accepted, minor redundancy. It is kept because
+   `pull_request` is what makes a fork's PR buildable at all (a fork's branch push does
+   not reach this repository's Actions) and is also what GitHub's required-status-check
+   branch protection matches against for PRs.
+
+### Reason
+
+- Before this change, pushing to a feature branch produced no CI feedback at all until a
+  PR was opened; a broken build was only discovered at PR time, not at push time.
+- Running the same `msbuild`/`vstest.console.exe` matrix a second time on every tag push
+  duplicated `release.yml`'s own build step for no benefit — `release.yml` already
+  performs a `Release` build per architecture and would fail on its own if the build were
+  broken.
+
+### Consequences
+
+- `docs/TODO.md` M0 gains a checked item recording this trigger change.
+- Same-repo PR branches see two `ci.yml` runs per push (branch push + PR synchronize);
+  this is accepted rather than worked around, since removing either trigger would either
+  break fork PRs or break required-status-check matching.
+- No job definitions, permissions, or concurrency settings changed — only `on:`.
+
+---
+
+## ADR-0045 — Release assets are per-arch ZIPs bundling the exe with offline docs
+
+- **Date**: 2026-08-16
+- **Affected**: `.github/workflows/release.yml`, `README.md`, `README_ja.md`
+- **Status**: Accepted
+
+### Decision
+
+1. **Each architecture's release asset is now `syncwingetlink-<version>-<arch>.zip`**,
+   not a bare `.exe`. The ZIP contains `syncwingetlink.exe` at its root plus a `docs/`
+   folder holding `README.md`, `README_ja.md`, `docs/rules.md`, `docs/rules_ja.md`,
+   `docs/troubleshooting.md`, and `docs/troubleshooting_ja.md` — copied flat into `docs/`
+   regardless of each file's location in the repository tree, so the two root-level
+   READMEs sit alongside the two docs-folder guides inside the archive.
+2. **The staging step fails the build (`throw`) if any of the six documents is missing**,
+   rather than silently shipping an incomplete archive.
+3. **The SHA256 checksum file is now written per architecture**
+   (`SHA256SUMS-<arch>.txt`) **during `build`, then concatenated into one
+   `SHA256SUMS.txt` in `publish`.** The previous version had both matrix legs append to
+   the same `SHA256SUMS.txt` filename; since each leg runs on its own runner, this never
+   actually accumulated both lines — it produced two same-named artifacts whose upload
+   path collided, and only one nondeterministically survived into the published release.
+   Writing distinct per-arch filenames and combining them in the single-runner `publish`
+   job removes the collision while keeping the release-facing artifact name unchanged.
+4. **`release.yml` gains a top-level `permissions: contents: read`**, matching the other
+   three workflows in `.github/workflows/`; the `publish` job's own `contents: write`
+   remains as the explicit escalation for creating the release.
+5. **This does not revisit ADR-0033.** The binary inside the archive is still unsigned;
+   only the packaging format (bare exe → zip) and its contents (exe → exe + docs) change.
+
+### Reason
+
+- A user who only downloads the release asset had no way to read the alias-rule syntax or
+  the troubleshooting guide without separately visiting the repository; bundling the
+  already-canonical English docs and their Japanese translations makes the release
+  self-contained.
+- The `SHA256SUMS.txt` collision was a latent bug independent of this change's actual
+  goal, discovered while touching the same staging step; fixing it here avoids
+  reintroducing it under the new zip-based flow.
+
+### Consequences
+
+- `README.md` and `README_ja.md`'s Installation sections are rewritten for the zip
+  workflow: download `.zip` instead of `.exe`, verify against `SHA256SUMS.txt`, then
+  `Expand-Archive`/`unzip` before moving the extracted `syncwingetlink.exe` onto `PATH`.
+- `docs/TODO.md` M0 gains a checked item recording this asset-format and checksum-bug fix.
+- `workflow_dispatch` runs still name the asset after the current branch (`ref_name`) when
+  not run from a tag — a pre-existing quirk, unchanged by this ADR.
