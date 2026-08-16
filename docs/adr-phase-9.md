@@ -769,3 +769,89 @@ for this change for the specific alternatives considered and declined.
 - `docs/TODO.md` M0 gains a checked item recording this asset-format and checksum-bug fix.
 - `workflow_dispatch` runs still name the asset after the current branch (`ref_name`) when
   not run from a tag — a pre-existing quirk, unchanged by this ADR.
+
+---
+
+## ADR-0046 — Build and fully test ARM64 on the `windows-11-vs2026-arm` hosted runner
+
+- **Date**: 2026-08-16
+- **Affected**: `.github/workflows/ci.yml`, `.github/workflows/release.yml`,
+  `AGENTS.md`, `.github/skills/cpp-msbuild/SKILL.md`,
+  `.github/PULL_REQUEST_TEMPLATE.md`, `docs/adr.md` (open item 3), `docs/TODO.md`,
+  `docs/PLAN.md`, issue #173, supersedes the ARM64-CI scope of issue #158
+
+### Decision
+
+1. **`ci.yml`'s ARM64 leg now runs on the `windows-11-vs2026-arm` hosted runner**
+   (Windows 11 Arm64 with Visual Studio 2026, currently a preview image per
+   `actions/runner-images`), instead of cross-compiling `ARM64` on the `windows-latest`
+   (x64) runner. The matrix gained a `runner` key so each leg's `runs-on` is
+   matrix-driven; the x64 leg stays on `windows-latest`, unchanged.
+2. **The `Test x64 binaries` step lost both its name's x64-only framing and its
+   `if: matrix.platform == 'x64'` guard.** It now runs for every matrix leg as
+   `Test ${{ matrix.platform }} binaries`, invoking
+   `vstest.console.exe ... /Platform:${{ matrix.platform }}` against
+   `build\${{ matrix.platform }}\${{ matrix.configuration }}\syncwingetlink.tests.dll`.
+   The `ARM64 cross-compile note` step (which only `Write-Host`'d a disclaimer) is
+   removed — there is nothing to disclaim once the leg actually runs tests.
+3. **`vswhere.exe` discovery now also checks `$env:ProgramFiles`, not only
+   `${env:ProgramFiles(x86)}`**, since it was unconfirmed at authoring time whether the
+   Visual Studio Installer on an arm64 Windows image is installed under the x86
+   Program Files directory (as on x64 hosts) or the native one. Whichever install
+   layout the runner image actually ships is picked up automatically.
+4. **`release.yml`'s ARM64 leg also moves to `windows-11-vs2026-arm`** via the same
+   matrix `runner` key, so the shipped ARM64 binary is a native build rather than an
+   x64-hosted cross-compile. The staging/zip/checksum steps are architecture-agnostic
+   PowerShell and needed no changes.
+5. **No `continue-on-error`.** A `windows-11-vs2026-arm` outage or capacity shortfall
+   fails the ARM64 leg like any other failure; `fail-fast: false` (already set) still
+   lets the x64 leg finish and report independently.
+6. **No new GitHub Action was introduced**, so `.github/dependency-inventory.json`'s
+   `githubActions` allow-list and the pin check in
+   `tools/Test-DependencyInventory.ps1` needed no changes — only a `runs-on` label
+   changed, not a `uses:` reference.
+
+### Reason
+
+- `docs/adr.md`'s "Open items carried forward" item 3 held that ARM64 test *execution*
+  needs an ARM64 host, and that CI must document ARM64 as build-only unless a
+  `windows-11-arm`-class runner is confirmed available. That was re-checked and found
+  outdated: `actions/runner-images` now lists `windows-11-vs2026-arm`, and it is usable
+  on private repositories (this one is private as of this ADR), not gated to public
+  repos only.
+- `windows-11-arm` (the older, non-`vs2026` label) ships Visual Studio 2022, whose
+  platform toolset is `v143`. This repo's `Directory.Build.props` pins
+  `PlatformToolset` to `v145`, which VS2022 does not provide — so `windows-11-arm`
+  would not have satisfied the toolchain requirement even if chosen.
+  `windows-11-vs2026-arm` is therefore the only currently-listed ARM64 image this
+  project can build on, preview status notwithstanding.
+- Leaving ARM64 as permanently build-only was a scope limitation carried from M0, not a
+  design goal; once a compliant runner exists, running the real test suite there is
+  strictly better evidence than a cross-compile-only claim, matching the "no dependency
+  gap silently guessed at" principle in `AGENTS.md` §2.
+
+### Consequences
+
+- `docs/adr.md` open item 3 is resolved. `AGENTS.md` §10 and `docs/PLAN.md` §11's
+  Definition-of-Done line for "Builds and runs on Windows 11 24H2 (x64/arm64)" can move
+  to `[x]` once a `ci.yml` run is observed green on both legs — recorded with the run
+  URL and ARM64 test count in `docs/task.md`, not asserted ahead of that evidence.
+- **The "cross-built, not run" disclosure is now scoped to local x64 dev machines
+  only.** `AGENTS.md` §4 and the `cpp-msbuild` skill were updated so an agent working
+  locally still reports ARM64 that way, but does not misapply the same disclaimer to a
+  CI run that actually executed on `windows-11-vs2026-arm`.
+- A sustained `windows-11-vs2026-arm` outage, quota exhaustion, or the image's
+  preview-to-GA transition changing its label would now break CI outright (by design,
+  per the no-`continue-on-error` decision above) rather than degrade silently. If this
+  proves too disruptive in practice, revisit with a new ADR rather than quietly adding
+  `continue-on-error`.
+- `windows-latest` currently resolves to Windows Server 2025 with VS2026 available
+  (`windows-2025-vs2026`). If a future image rotation drops VS2026 from
+  `windows-latest`, the x64 leg should be pinned explicitly to `windows-2025-vs2026`;
+  not done here since the x64 leg is unaffected and currently green.
+- ADR-0029's x64-only hardening flags (`/guard:ehcont`, `/CETCOMPAT`, both conditioned
+  on `'$(Platform)' == 'x64'` in `props/syncwingetlink.common.props`) are untouched and
+  do not apply to the ARM64 leg regardless of which runner builds it.
+- Supersedes the ARM64-CI portion of issue #158 ("Keep ARM64 as cross-compile only in
+  CI / Keep unit tests x64-only"); #158's winget-manifest-splitting scope (issue #159)
+  is unaffected and #158 remains open for that.

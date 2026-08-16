@@ -4,6 +4,11 @@ InstallerLocale: en-US
 Platform:
   - Windows.Desktop
 MinimumOSVersion: 10.0.26100.0
+InstallerType: zip
+NestedInstallerType: portable
+NestedInstallerFiles:
+  - RelativeFilePath: syncwingetlink.exe
+    PortableCommandAlias: syncwingetlink
 InstallModes:
   - silent
   - silentWithProgress
@@ -11,18 +16,12 @@ InstallModes:
 ReleaseDate: 2026-08-15
 Installers:
   - Architecture: x64
-    InstallerType: portable
     Scope: user
-    InstallerUrl: https://github.com/kkamegawa/syncwingetlink/releases/download/v0.1.0/syncwingetlink-0.1.0-x64.exe
+    InstallerUrl: https://github.com/kkamegawa/syncwingetlink/releases/download/v0.1.0/syncwingetlink-0.1.0-x64.zip
     InstallerSha256: REPLACE_WITH_X64_SHA256
-    Commands:
-      - syncwingetlink
   - Architecture: arm64
-    InstallerType: portable
     Scope: user
-    InstallerUrl: https://github.com/kkamegawa/syncwingetlink/releases/download/v0.1.0/syncwingetlink-0.1.0-arm64.exe
+    InstallerUrl: https://github.com/kkamegawa/syncwingetlink/releases/download/v0.1.0/syncwingetlink-0.1.0-arm64.zip
     InstallerSha256: REPLACE_WITH_ARM64_SHA256
-    Commands:
-      - syncwingetlink
 ManifestType: installer
 ManifestVersion: 1.12.0

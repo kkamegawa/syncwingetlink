@@ -153,12 +153,17 @@ vstest.console.exe build\x64\Debug\syncwingetlink.tests.dll /Platform:x64
 - Requires **Visual Studio 2026** (platform toolset `v145`). VS2022 ships `v143` and
   cannot build this solution.
 - Output goes to `build\<Platform>\<Configuration>\`, not MSBuild's default location.
-- ARM64 can be cross-built from x64, but ARM64 tests only *run* on an ARM64 host. Say
-  "cross-built, not run" rather than claiming ARM64 was tested.
+- ARM64 can be cross-built from an x64 dev machine, but ARM64 tests only *run* on an
+  ARM64 host. On a local x64 machine, say "cross-built, not run" rather than claiming
+  ARM64 was tested. In CI, the ARM64 leg runs natively on the `windows-11-vs2026-arm`
+  hosted runner and executes the full test suite (`docs/adr-phase-9.md` ADR-0046) — do
+  not describe a green CI run as "cross-built, not run".
 - If a full build is not possible locally, **confirm the tests pass** and note anything
   unverified in the PR.
-- **CI does not exist yet.** `.github/workflows/` has no build workflow; it is an open
-  item in `docs/TODO.md` M0. Do not assume a change is validated by CI.
+- **CI exists**: `.github/workflows/ci.yml` builds and tests `x64`/`ARM64` on every
+  branch push; `release.yml` builds release ZIPs on tag push; `dependency-audit.yml`
+  enforces the dependency-inventory tripwire; `enforce-owner-only.yml` gates PR merges.
+  Check the workflow files before assuming a change is or isn't validated by CI.
 
 ---
 
@@ -286,8 +291,9 @@ The essentials:
 This excerpt mirrors `docs/PLAN.md` §11, which carries the full evidence for each line;
 see it for issue/ADR citations.
 
-- [ ] Builds and runs on Windows 11 24H2 (x64/arm64) - x64 verified repeatedly; ARM64 is
-      cross-built, not run (`docs/adr.md` open item 3)
+- [x] Builds and runs on Windows 11 24H2 (x64/arm64) - x64 verified repeatedly; ARM64
+      now runs natively in CI on `windows-11-vs2026-arm`, 433/433 tests passing,
+      matching x64 (`docs/adr-phase-9.md` ADR-0046, resolves `docs/adr.md` open item 3)
 - [x] Enumerates portable packages via the COM API, with automatic FS fallback when COM
       is unavailable
 - [x] `scan` classifies missing/broken/ok read-only

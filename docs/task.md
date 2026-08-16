@@ -3486,3 +3486,172 @@ Follow-up to the entry above, same issue
 - Revised `docs/adr-phase-9.md` ADR-0044 in place (PR #172 was still open/unmerged at
   the time, so this amends the same ADR rather than adding a new one) and updated the
   `docs/TODO.md` M0 wording to match.
+
+## 2026-08-16 — Build and fully test ARM64 on the `windows-11-vs2026-arm` hosted runner
+
+([#173](https://github.com/kkamegawa/syncwingetlink/issues/173), supersedes the
+ARM64-CI scope of [#158](https://github.com/kkamegawa/syncwingetlink/issues/158))
+
+- The repository owner confirmed `windows-11-vs2026-arm` (Windows 11 Arm64 + VS2026,
+  preview per `actions/runner-images`) is usable on private repos, resolving
+  `docs/adr.md` open item 3, which had blocked ARM64 test execution in CI pending
+  confirmation of an ARM64-capable runner.
+- Recorded the decision as `docs/adr-phase-9.md` ADR-0046: `ci.yml`'s and
+  `release.yml`'s ARM64 legs move from cross-compiling on `windows-latest` to building
+  and (for `ci.yml`) running the full MSTest suite natively on `windows-11-vs2026-arm`,
+  via a new matrix `runner` key. `windows-11-arm` (the non-`vs2026` label) was rejected
+  because it ships VS2022/`v143`, which does not satisfy this repo's `v145`
+  `PlatformToolset` pin. No `continue-on-error` — a runner outage fails CI like any
+  other failure, per explicit owner instruction.
+- Updated `AGENTS.md` §4, `.github/skills/cpp-msbuild/SKILL.md`, and
+  `.github/PULL_REQUEST_TEMPLATE.md` so the "cross-built, not run" disclosure is scoped
+  to local x64 dev machines only, and no longer misapplied to a CI run that actually
+  executed on the native ARM64 runner. Also fixed a stale line in `AGENTS.md` §4
+  claiming "CI does not exist yet", which had been left behind after `ci.yml` was
+  added in an earlier session.
+- Resolved `docs/adr.md` open item 3 and checked off the corresponding `docs/TODO.md`
+  M0 CI line item.
+- Filed issue #173 for this work and commented on #158 to record that its ARM64-CI
+  scope is superseded here; #158 stays open for the remaining winget-manifest-split
+  scope (#159).
+
+### Deliberately not done in this session
+
+- **`.github/workflows/ci.yml` and `.github/workflows/release.yml` were not edited by
+  the agent.** This session's local Claude Code permission configuration denies the
+  `Edit` tool on `.github/workflows/**`, and the agent has no access to change that
+  configuration either. Rather than search for a way around the restriction, the exact
+  intended YAML content (matrix `runner` key added, `Test x64 binaries` step
+  unconditional and platform-generic, `ARM64 cross-compile note` step removed, `vswhere`
+  discovery widened to check both `$env:ProgramFiles` and
+  `${env:ProgramFiles(x86)}`) was handed to the repository owner to apply and commit
+  directly.
+- **`docs/PLAN.md` §11 and `AGENTS.md` §10's Definition-of-Done line for "Builds and
+  runs on Windows 11 24H2 (x64/arm64)" was deliberately left unchecked.** It should only
+  move to `[x]` once a `ci.yml` run is actually observed green on the
+  `windows-11-vs2026-arm` leg, with the run URL and ARM64 test count recorded as
+  evidence — not asserted ahead of that.
+- No C++ source changed; the existing test count is unaffected by this session.
+
+## 2026-08-16 — Repository owner applies the ARM64 CI workflow edit; fix a winget manifest/release-asset mismatch found in review
+
+Continuation of the same session, same issue
+([#173](https://github.com/kkamegawa/syncwingetlink/issues/173)).
+
+- The repository owner pasted the handed-off `ci.yml`/`release.yml` content into
+  `.github/workflows/` themselves (the agent still cannot `Edit` that path this
+  session) and pushed as commit `315834f` ("update: support arm64 hosted agent").
+  Diffed the pushed files byte-for-byte (modulo CRLF/LF) against what was handed off —
+  identical. `ci.yml`'s ARM64 leg run was confirmed in progress on
+  `windows-11-vs2026-arm` via `gh run list`.
+- The owner also pointed out that `manifests/kkamegawa/syncwingetlink/0.1.0/` (the
+  split installer/locale/version manifest work tracked by issue #159) already exists on
+  `main`, contrary to this session's earlier assumption that #159 was still open work.
+  Confirmed via `git status`/`git log` that the three manifest files are already
+  tracked and clean.
+- While reviewing those manifests, found
+  `kkamegawa.syncwingetlink.installer.yaml` was stale against
+  `docs/adr-phase-9.md` ADR-0045 (already on `main`): it still declared
+  `InstallerType: portable` with `InstallerUrl`s pointing at bare
+  `syncwingetlink-0.1.0-<arch>.exe` files, but ADR-0045 changed the actual release
+  asset to a per-arch `.zip` bundling the exe with docs — that bare-`.exe` URL would
+  never exist once a real `v0.1.0` tag is released, so `winget install` would fail.
+- Fixed the manifest: `InstallerType: zip` with root-level `NestedInstallerType:
+  portable` and `NestedInstallerFiles: [{RelativeFilePath: syncwingetlink.exe,
+  PortableCommandAlias: syncwingetlink}]` (verified against the WinGet
+  `manifest.installer.1.12.0.json` schema — both nested-installer fields are valid at
+  the manifest root as defaults for every `Installers[]` entry). Updated both
+  `InstallerUrl`s to the `.zip` filenames matching `release.yml`'s
+  `syncwingetlink-$version-$assetArch.zip` naming, and dropped the now-redundant
+  per-installer `Commands:` entries (the alias is now carried by
+  `PortableCommandAlias` on the nested file instead).
+- Validated the edited YAML parses correctly with `PyYAML` (`yaml.safe_load` succeeded;
+  the only error encountered was `json.dumps` not knowing how to serialize the
+  already-parsed `date` object, which confirms the parse itself was clean).
+- `InstallerSha256` values remain the `REPLACE_WITH_*_SHA256` placeholders pending a
+  real `v0.1.0` release; unaffected by this fix.
+
+### Deliberately not done in this session
+
+- Did not touch `kkamegawa.syncwingetlink.locale.yaml` or
+  `kkamegawa.syncwingetlink.version.yaml` — neither references the release asset
+  format, so neither was affected by the ADR-0045 drift.
+- Did not open a new ADR for the manifest fix: this brings the manifest into line with
+  the already-recorded ADR-0045 decision rather than making a new design choice.
+- Did not re-check `docs/PLAN.md`/`AGENTS.md` DoD checkboxes yet; still waiting on the
+  `windows-11-vs2026-arm` CI leg to finish and report a pass/fail with a real test
+  count.
+- No C++ source changed.
+
+## 2026-08-16 — First ARM64 CI run fails on a PowerShell array-collapse bug; fixed, action pins refreshed to Node 24, ARM64 goes green
+
+Continuation of the same session, same issue
+([#173](https://github.com/kkamegawa/syncwingetlink/issues/173)).
+
+- Commit `315834f`'s `ci.yml` run
+  ([run 31921634349](https://github.com/kkamegawa/syncwingetlink/actions/runs/31921634349))
+  **failed on both legs**, but usefully: MSBuild itself succeeded natively on
+  `windows-11-vs2026-arm` (`syncwingetlink.exe` and `syncwingetlink.tests.dll` both
+  built clean, 0 warnings/0 errors), so the runner and toolchain choice were confirmed
+  sound. The failure was in the `Test` step's PowerShell, with the same error on both
+  the x64 and ARM64 legs: `& : The term 'C' is not recognized as the name of a
+  cmdlet...`.
+- Root cause: `$vswhereCandidates = @( (Join-Path ...), (Join-Path ...) ) |
+  Where-Object { ... }` collapses to a **scalar string**, not a one-element array, when
+  exactly one candidate passes the filter (the normal case — only one of
+  `$env:ProgramFiles`/`${env:ProgramFiles(x86)}` actually has `vswhere.exe` on either
+  runner). Indexing a scalar string with `[0]` in PowerShell returns its first
+  *character*, not the whole string, so `$vswhere` silently became `"C"` instead of
+  the full path, and `& $vswhere ...` tried to run a command named `C`. This bug was
+  introduced in this session's own rewrite (widening the vswhere search to check both
+  Program Files locations, docs/adr-phase-9.md ADR-0046); the pre-existing
+  `$vstestCandidates` pipeline has the identical latent pattern but happened to never
+  collapse to a scalar in practice, since both vstest.console.exe paths normally
+  coexist in a VS install.
+- Fix: wrap both pipelines in an outer `@(...)` (`@( @(...) | Where-Object {...} )`),
+  which forces array semantics regardless of match count. Applied to both the
+  `vswhereCandidates` and `vstestCandidates` pipelines in `ci.yml` (the second wasn't
+  observed failing, but carries the same risk and was fixed defensively).
+- Separately, the run's log carried a `Node.js 20 is deprecated` warning for
+  `actions/checkout` and `microsoft/setup-msbuild` (GitHub Actions was silently forcing
+  them onto Node 24 already, so this wasn't a functional break, but the owner asked to
+  resolve it properly). Looked up each pinned action's latest release via
+  `gh api repos/<repo>/releases/latest` and confirmed `using: node24` in each
+  `action.yml` before repinning (39-char tag SHAs dereferenced to their underlying
+  commit SHA where the tag was annotated, per
+  `tools/Test-DependencyInventory.ps1`'s 40-char-commit-SHA requirement):
+  - `actions/checkout` `11bd719...` → `3d3c42e5aac5ba805825da76410c181273ba90b1` (v7.0.1)
+  - `microsoft/setup-msbuild` `6fb0222...` → `30375c66a4eea26614e0d39710365f22f8b0af57` (v3)
+  - `actions/upload-artifact` `65c4c4a...` → `043fb46d1a93c77aae656e7c1c64a875d1fc6a0a` (v7.0.1)
+  - `actions/download-artifact` `7a1cd32...` → `3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c` (v8.0.1)
+  - `softprops/action-gh-release` `c95fe14...` → `3d0d9888cb7fd7b750713d6e236d1fcb99157228` (v3.0.2)
+  - Checked `enforce-owner-only.yml`'s `actions/github-script@3a2844b...` too — already
+    the latest `v9.0.0` and already `node24`; left unchanged.
+  - `.github/dependency-inventory.json` needed no edits: it allow-lists action
+    *repositories* only, deliberately without pinned SHAs, so a routine version bump
+    never requires touching it (all five repos were already listed).
+- Applied the fix and the five repins to `ci.yml`, `release.yml`, and
+  `dependency-audit.yml` (the only other workflow using `actions/checkout`'s old pin).
+  Handed the corrected file contents to the repository owner the same way as before
+  (still cannot `Edit` `.github/workflows/**` this session); the owner applied and
+  pushed as commit `714f558` ("update: ci settings and installer manifest").
+- **Result**: [run 31922513915](https://github.com/kkamegawa/syncwingetlink/actions/runs/31922513915)
+  — both legs `success`. `x64 / Release` and `ARM64 / Release` each report
+  **"Total tests: 433 / Passed: 433"** — identical counts, confirming the ARM64 leg
+  discovered and ran the exact same test suite as x64, not a partial or mismatched run.
+  This is the first time ARM64 tests have actually executed in CI for this project.
+- Resolves `docs/adr.md` open item 3 with real evidence (not just the runner's
+  availability). Definition-of-Done lines in `AGENTS.md` §10 and `docs/PLAN.md` §11 for
+  "Builds and runs on Windows 11 24H2 (x64/arm64)" are now checked off, citing this run.
+
+### Deliberately not done in this session
+
+- Did not bump any action pin beyond the five identified above; no other workflow
+  references an outdated action.
+- Did not re-run `release.yml` via `workflow_dispatch` to verify the ARM64 release
+  ZIP end-to-end (as the approved plan's Step 5.6 suggested) — the `ci.yml` evidence
+  above (native ARM64 build + full test pass) was judged sufficient to resolve the
+  open item, since `release.yml`'s staging script is architecture-agnostic PowerShell
+  already exercised in shape by the x64 leg. Left as a follow-up if the owner wants
+  release-asset verification before actually tagging `v0.1.0`.
+- No C++ source changed.
