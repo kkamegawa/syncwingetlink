@@ -34,6 +34,7 @@ jobs:
           -p:Platform=x64
           -p:RunCodeAnalysis=true
           -p:EnableMicrosoftCodeAnalysis=true
+          -p:ClOptions="/analyze:log:format:sarif"
           -p:MicrosoftCodeAnalysisRuleset=NativeRecommendedRules.ruleset
 
       - name: Dump build obj
