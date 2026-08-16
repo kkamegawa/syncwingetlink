@@ -32,6 +32,16 @@
       "repo": "softprops/action-gh-release",
       "license": "MIT",
       "justification": "Publishes the draft GitHub release with the built assets."
+    },
+    {
+      "repo": "microsoft/msvc-code-analysis-action",
+      "license": "MIT",
+      "justification": "Runs MSVC static analysis and emits SARIF for Code Scanning upload."
+    },
+    {
+      "repo": "github/codeql-action",
+      "license": "MIT",
+      "justification": "Uploads SARIF results from MSVC code analysis to GitHub Code Scanning."
     }
   ],
   "_githubActions_comment": "Allow-listed action REPOSITORIES only, deliberately without pinned SHAs here -- tools/Test-DependencyInventory.ps1 checks the SHA pin separately by reading each workflow file, so Dependabot's routine SHA bumps never require touching this file. Adding a new repo here is the actual review checkpoint; keeping it in step with the workflow's SHA is Dependabot's job.",

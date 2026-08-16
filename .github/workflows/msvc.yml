@@ -16,10 +16,6 @@ on:
   schedule:
     - cron: '41 16 * * 1'
 
-env:
-  # Path to the CMake build directory.
-  build: '${{ github.workspace }}/build'
-
 permissions:
   contents: read
 
@@ -36,19 +32,23 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Configure CMake
-        run: cmake -B ${{ env.build }}
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@30375c66a4eea26614e0d39710365f22f8b0af57 # v3
 
-      # Build is not required unless generated source files are used
-      # - name: Build CMake
-      #   run: cmake --build ${{ env.build }}
+      - name: Build with MSVC Code Analysis enabled
+        run: >
+          msbuild syncwingetlink.sln -m:1 /nr:false
+          -p:Configuration=Debug
+          -p:Platform=x64
+          -p:EnableMicrosoftCodeAnalysis=true
+          -p:MicrosoftCodeAnalysisRuleset=NativeRecommendedRules.ruleset
 
       - name: Initialize MSVC Code Analysis
         uses: microsoft/msvc-code-analysis-action@04825f6d9e00f87422d6bf04e1a38b1f3ed60d99
         # Provide a unique ID to access the sarif output path
         id: run-analysis
         with:
-          cmakeBuildDirectory: ${{ env.build }}
+          buildListFile: '**/*.nativecodeanalysis.xml'
           # Ruleset file that will determine what checks will be run
           ruleset: NativeRecommendedRules.ruleset
 
