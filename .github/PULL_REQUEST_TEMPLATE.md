@@ -25,7 +25,8 @@ Thanks for your PR! Please fill in the sections below.
 - [ ] `msbuild syncwingetlink.sln -p:Configuration=Debug -p:Platform=x64` succeeds
 - [ ] `vstest.console.exe build\x64\Debug\syncwingetlink.tests.dll` passes
 - [ ] Added MSTest unit tests for `[core]` changes
-- [ ] ARM64 configuration builds (note if only cross-built, not run)
+- [ ] ARM64 configuration builds locally (note if only cross-built, not run — CI's
+      `windows-11-vs2026-arm` leg covers the native ARM64 test run separately)
 
 ## Checklist
 

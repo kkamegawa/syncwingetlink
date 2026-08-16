@@ -431,10 +431,14 @@ These are not decisions yet. They are recorded so they are not silently guessed 
 2. ~~**NuGet reference style for native projects.**~~ **Moot as of 2026-07-25.** ADR-0007
    adopted vcpkg and dropped NuGet, and the SDK turned out to supply C++/WinRT, so no
    package reference of either kind is currently needed.
-3. **ARM64 test execution.** Cross-*building* ARM64 is confirmed possible from an x64
-   host. *Running* ARM64 tests needs an ARM64 host — in CI, a `windows-11-arm` runner.
-   If that runner is unavailable, ARM64 becomes build-only and this must be stated
-   honestly in `AGENTS.md` §4 rather than implied to be tested.
+3. ~~**ARM64 test execution.**~~ **Resolved 2026-08-16.** The `windows-11-vs2026-arm`
+   hosted runner (preview) is available, including on private repositories, and is the
+   only ARM64 runner image that ships the `v145` (VS2026) toolset this repo requires
+   (`windows-11-arm` is VS2022/`v143` and does not qualify). `ci.yml`'s ARM64 leg now
+   builds and runs `vstest.console.exe /Platform:ARM64` natively on that runner instead
+   of cross-compiling on `windows-latest` and skipping tests. See
+   `docs/adr-phase-9.md` ADR-0046, issue #173. Local x64 dev machines still cannot run
+   ARM64 tests and must keep saying "cross-built, not run" for local verification.
 4. ~~**Localized documents are drifting.**~~ **Resolved 2026-07-25.** `README_ja.md`,
    `PLAN_ja.md`, and `TODO_ja.md` were brought in line with their English counterparts
    under an explicit, one-off authorisation from the maintainer that overrode the standing

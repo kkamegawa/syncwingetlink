@@ -75,8 +75,12 @@ vstest.console.exe build\x64\Debug\<YourProject>.tests.dll /Platform:x64
 - **Output location**: `build\<Platform>\<Configuration>\`, redirected by
   `Directory.Build.props` — not MSBuild's default `<Platform>\<Configuration>\`.
 - **Configurations**: `Debug|Release` × `x64|ARM64`. ARM64 can be **cross-built** from an
-  x64 host, but ARM64 tests only *run* on an ARM64 host. If you only cross-built, say
-  "cross-built, not run" rather than claiming ARM64 was tested.
+  x64 host, but ARM64 tests only *run* on an ARM64 host. On a local x64 dev machine, say
+  "cross-built, not run" rather than claiming ARM64 was tested. This does **not** apply
+  to CI: if `.github/workflows/` runs the ARM64 leg on a native ARM64 hosted runner
+  (e.g. `windows-11-vs2026-arm`) and it executes the test suite there, that is a real
+  test run and should be reported as such — check the workflow's `runs-on` for the
+  ARM64 matrix leg rather than assuming build-only.
 - **Shipping builds** link the CRT statically via `-p:StaticRuntime=true`. Check the
   project's ADR for the authoritative decision on CRT linkage. If the decision is marked
   unverified, treat the current setting as the intended default, flag it explicitly in the

@@ -3486,3 +3486,49 @@ Follow-up to the entry above, same issue
 - Revised `docs/adr-phase-9.md` ADR-0044 in place (PR #172 was still open/unmerged at
   the time, so this amends the same ADR rather than adding a new one) and updated the
   `docs/TODO.md` M0 wording to match.
+
+## 2026-08-16 — Build and fully test ARM64 on the `windows-11-vs2026-arm` hosted runner
+
+([#173](https://github.com/kkamegawa/syncwingetlink/issues/173), supersedes the
+ARM64-CI scope of [#158](https://github.com/kkamegawa/syncwingetlink/issues/158))
+
+- The repository owner confirmed `windows-11-vs2026-arm` (Windows 11 Arm64 + VS2026,
+  preview per `actions/runner-images`) is usable on private repos, resolving
+  `docs/adr.md` open item 3, which had blocked ARM64 test execution in CI pending
+  confirmation of an ARM64-capable runner.
+- Recorded the decision as `docs/adr-phase-9.md` ADR-0046: `ci.yml`'s and
+  `release.yml`'s ARM64 legs move from cross-compiling on `windows-latest` to building
+  and (for `ci.yml`) running the full MSTest suite natively on `windows-11-vs2026-arm`,
+  via a new matrix `runner` key. `windows-11-arm` (the non-`vs2026` label) was rejected
+  because it ships VS2022/`v143`, which does not satisfy this repo's `v145`
+  `PlatformToolset` pin. No `continue-on-error` — a runner outage fails CI like any
+  other failure, per explicit owner instruction.
+- Updated `AGENTS.md` §4, `.github/skills/cpp-msbuild/SKILL.md`, and
+  `.github/PULL_REQUEST_TEMPLATE.md` so the "cross-built, not run" disclosure is scoped
+  to local x64 dev machines only, and no longer misapplied to a CI run that actually
+  executed on the native ARM64 runner. Also fixed a stale line in `AGENTS.md` §4
+  claiming "CI does not exist yet", which had been left behind after `ci.yml` was
+  added in an earlier session.
+- Resolved `docs/adr.md` open item 3 and checked off the corresponding `docs/TODO.md`
+  M0 CI line item.
+- Filed issue #173 for this work and commented on #158 to record that its ARM64-CI
+  scope is superseded here; #158 stays open for the remaining winget-manifest-split
+  scope (#159).
+
+### Deliberately not done in this session
+
+- **`.github/workflows/ci.yml` and `.github/workflows/release.yml` were not edited by
+  the agent.** This session's local Claude Code permission configuration denies the
+  `Edit` tool on `.github/workflows/**`, and the agent has no access to change that
+  configuration either. Rather than search for a way around the restriction, the exact
+  intended YAML content (matrix `runner` key added, `Test x64 binaries` step
+  unconditional and platform-generic, `ARM64 cross-compile note` step removed, `vswhere`
+  discovery widened to check both `$env:ProgramFiles` and
+  `${env:ProgramFiles(x86)}`) was handed to the repository owner to apply and commit
+  directly.
+- **`docs/PLAN.md` §11 and `AGENTS.md` §10's Definition-of-Done line for "Builds and
+  runs on Windows 11 24H2 (x64/arm64)" was deliberately left unchecked.** It should only
+  move to `[x]` once a `ci.yml` run is actually observed green on the
+  `windows-11-vs2026-arm` leg, with the run URL and ARM64 test count recorded as
+  evidence — not asserted ahead of that.
+- No C++ source changed; the existing test count is unaffected by this session.

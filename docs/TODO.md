@@ -29,9 +29,13 @@ Build system decisions are recorded in [`adr.md`](./adr.md) (ADR-0001 … ADR-00
       (open item 1 in `adr.md`). Do not implement `WingetComSource` until this is settled
 - [ ] Add `vcpkg.json` **only if** a native dependency actually becomes necessary
       (ADR-0007); pin `builtin-baseline` and match the triplet to `StaticRuntime`
-- [ ] CI (GitHub Actions): `msbuild` + `vstest.console.exe`, x64 and ARM64.
-      Confirm whether a `windows-11-arm` runner is available; if not, ARM64 is
-      build-only and must be documented as such (open item 3 in `adr.md`)
+- [x] CI (GitHub Actions): `msbuild` + `vstest.console.exe`, x64 and ARM64. The
+      `windows-11-vs2026-arm` hosted runner (preview) is available, including on
+      private repositories, and satisfies the `v145`/VS2026 toolchain requirement
+      that `windows-11-arm` (VS2022/`v143`) does not. `ci.yml`'s ARM64 leg now builds
+      and runs the full test suite natively on that runner instead of build-only
+      cross-compiling on `windows-latest` (resolves open item 3 in `adr.md`,
+      `docs/adr-phase-9.md` ADR-0046, issue #173)
 - [x] Evaluate a vulnerability scanner that understands vcpkg — evaluated OSV-Scanner;
       it does not support `vcpkg.json` (no scanner does, as of this check). Rather than
       claim coverage that doesn't exist, wired in a CI tripwire
