@@ -3718,15 +3718,22 @@ Three separate things combined:
   row is shown, not offered.
 - **`Ok` candidates are still not listed.** A healthy inventory would bury the rows that
   matter (20 of 21 entries, in the reported case).
-- `tests/DispatchTests.cpp` is unchanged — `runTuiChecklistIfRequested()` lives in an
-  anonymous namespace and is not unit-testable, as that file's own header comment
-  records. The wiring is covered by the manual checks recorded below.
+- **`runTuiChecklistIfRequested()` and `runFix()` stay untested by unit tests** — both
+  live in an anonymous namespace and need a real console, filesystem, and package
+  source, as `tests/DispatchTests.cpp`'s own header comment records. They are covered by
+  the manual checks recorded below. What *is* now covered directly is the status→row
+  mapping those functions consume: `checklistRowKindFor()` was extracted and exported in
+  the second review round (see below), and `tests/DispatchTests.cpp` gains
+  `ChecklistRowKindForTests` for it.
 
 ### Verification
 
 - `Debug|Release` × `x64`/`ARM64` all build clean under `/W4 /WX`. ARM64 was
   **cross-built, not run** — this is an x64 host; CI runs ARM64 natively per ADR-0046.
-- `vstest.console.exe`: **446/448** for `Debug|x64` and `Release|x64`. The 2 failures are
+- `vstest.console.exe`: **450/452** for `Debug|x64` and `Release|x64` — the final count
+  for this branch, after the second review round added `ChecklistRowKindForTests`. (It
+  was 446/448 before that round; the number is restated here rather than left at the
+  earlier value, so this entry reports one result.) The 2 failures are
   the pre-existing `IntegrationTests` symlink cases
   (`dummyTreeReachesOkThroughScanFixRescan`,
   `nonAsciiDummyTreeReachesOkThroughScanFixRescan`), which need Developer Mode or
@@ -3764,5 +3771,5 @@ the load-bearing half of ADR-0047 and previously had no direct test at all; it n
 `ChecklistRowKindForTests`. No behavior changed: `runTuiChecklistIfRequested()` calls
 the helper instead of spelling the policy out, so the two cannot drift.
 
-Test count after this change: **450/452** for `Debug|x64`, with the same two
-pre-existing `IntegrationTests` symlink failures.
+This is what took the branch from 446/448 to the **450/452** recorded in the
+Verification section above; the two failures are unchanged.
