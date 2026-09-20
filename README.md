@@ -1,5 +1,9 @@
 # syncwingetlink
 
+<p align="center">
+  <img src="./docs/images/synwingetlink_thumbnail.png" alt="syncwingetlink: automatically fix winget links in your terminal" width="720">
+</p>
+
 > A native CLI tool that detects and recreates the command-alias symlinks winget is supposed to create for portable packages (Windows 11 24H2+).
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
