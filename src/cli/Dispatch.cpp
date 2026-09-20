@@ -616,30 +616,22 @@ struct TuiRunResult
         return {};
     }
 
-    // This loop is the single place that decides what a checklist row means
-    // (docs/adr-phase-10.md ADR-0047); tui::ChecklistModel itself never interprets a
-    // LinkStatus.
-    //
-    //   Missing/Broken -> selectable: checking one is consent to repair it.
-    //   Mismatch       -> shown, never selectable: repairLink() always refuses these
-    //                     (ADR-0014), but the user still has to know they are there -
-    //                     silently hiding the one candidate that needs manual attention
-    //                     is what made `fix --tui` look broken in issue #179.
-    //   Ok             -> not shown at all: nothing to decide, and a healthy inventory
-    //                     would otherwise bury the rows that matter.
+    // checklistRowKindFor() (Dispatch.h) holds the policy - Missing/Broken selectable,
+    // Mismatch informational, Ok not listed (docs/adr-phase-10.md ADR-0047). Keeping it
+    // out of this function is what lets it be tested without a console, a filesystem,
+    // or a package source.
     std::vector<tui::ChecklistCandidate> rows;
     for (const RepairItem& item : candidates.nonCollisionItems)
     {
-        switch (item.status)
+        switch (checklistRowKindFor(item.status))
         {
-        case LinkStatus::Missing:
-        case LinkStatus::Broken:
+        case ChecklistRowKind::Selectable:
             rows.push_back(tui::ChecklistCandidate{item, /* selectable */ true});
             break;
-        case LinkStatus::Mismatch:
+        case ChecklistRowKind::Informational:
             rows.push_back(tui::ChecklistCandidate{item, /* selectable */ false});
             break;
-        case LinkStatus::Ok:
+        case ChecklistRowKind::NotListed:
             break;
         }
     }
@@ -988,6 +980,27 @@ void printVersion(Console& console)
     console.writeLine(std::wstring(L"syncwingetlink ") + kVersion);
 }
 } // namespace
+
+ChecklistRowKind checklistRowKindFor(LinkStatus status) noexcept
+{
+    switch (status)
+    {
+    case LinkStatus::Missing:
+    case LinkStatus::Broken:
+        // Checking one of these is consent to create or replace the link.
+        return ChecklistRowKind::Selectable;
+    case LinkStatus::Mismatch:
+        // repairLink() always refuses a Mismatch (docs/adr-phase-3.md ADR-0014), but
+        // the user still has to know it is there - silently hiding the one candidate
+        // needing manual attention is what made `fix --tui` look broken in issue #179.
+        return ChecklistRowKind::Informational;
+    case LinkStatus::Ok:
+        return ChecklistRowKind::NotListed;
+    }
+    // Unreachable for a LinkStatus produced by inspectLink(). Listing an unknown state
+    // as actionable would be the worse failure, so an unrecognized value is not listed.
+    return ChecklistRowKind::NotListed;
+}
 
 std::optional<ExitCode> exitCodeAfterElevationDeclined(bool useTui) noexcept
 {
