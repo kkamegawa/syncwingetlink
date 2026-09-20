@@ -88,7 +88,8 @@ struct ReportRow
     std::wstring target;
 };
 
-[[nodiscard]] ReportRow toReportRow(const RepairItem& item)
+[[nodiscard]] ReportRow toReportRow(const RepairItem& item,
+                                    const PathDisplayOptions& pathOptions)
 {
     std::wstring packageId = sanitizeForDisplay(item.packageId);
     if (packageId.empty())
@@ -99,13 +100,16 @@ struct ReportRow
         std::move(packageId),
         std::wstring(linkStatusDisplayName(item.status)),
         sanitizeForDisplay(item.alias),
-        sanitizeForDisplay(item.executable.path.native()),
+        formatPathForDisplay(item.executable.path, pathOptions),
     };
 }
 
 // Ordinal case-insensitive by alias, tie-broken by executable path (same comparison) -
 // a stable, deterministic ordering even for candidates that share an alias (an alias
 // collision, core/LinkInspector.h detectAliasCollisions()).
+//
+// Deliberately the *real* path, never the display form: --showspecialfolder must not
+// be able to reorder a report (docs/adr-phase-10.md ADR-0048).
 [[nodiscard]] bool lessByAliasThenPath(const RepairItem& a, const RepairItem& b) noexcept
 {
     const int aliasComparison = compareOrdinalCaseInsensitive(a.alias, b.alias);
@@ -216,7 +220,8 @@ std::size_t displayWidth(std::wstring_view text) noexcept
     return width;
 }
 
-std::vector<ReportLine> formatGroupedReport(std::span<const RepairItem> items, ReportMode mode)
+std::vector<ReportLine> formatGroupedReport(std::span<const RepairItem> items, ReportMode mode,
+                                            const PathDisplayOptions& pathOptions)
 {
     std::vector<ReportRow> ngRows;
     std::vector<ReportRow> okRows;
@@ -238,12 +243,12 @@ std::vector<ReportLine> formatGroupedReport(std::span<const RepairItem> items, R
         ngRows.reserve(ngItems.size());
         for (const RepairItem* item : ngItems)
         {
-            ngRows.push_back(toReportRow(*item));
+            ngRows.push_back(toReportRow(*item, pathOptions));
         }
         okRows.reserve(okItems.size());
         for (const RepairItem* item : okItems)
         {
-            okRows.push_back(toReportRow(*item));
+            okRows.push_back(toReportRow(*item, pathOptions));
         }
     }
 

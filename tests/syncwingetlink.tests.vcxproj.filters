@@ -45,6 +45,9 @@
     <ClCompile Include="PackageFilterTests.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
+    <ClCompile Include="PathDisplayTests.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
     <ClCompile Include="PackageSourceErrorTests.cpp">
       <Filter>Tests</Filter>
     </ClCompile>

@@ -112,5 +112,9 @@ struct AppOptions
     bool failOnMissing{false};
     bool noColor{false};
     bool silent{false};
+    // --showspecialfolder / -s: print %LOCALAPPDATA%-style folder names instead of
+    // the real user-profile path, so console output and --json documents can be
+    // shared without redacting the account name (docs/adr-phase-10.md ADR-0048).
+    bool showSpecialFolders{false};
 };
 } // namespace syncwingetlink

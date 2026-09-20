@@ -49,6 +49,7 @@
     <ClCompile Include="JsonTests.cpp" />
     <ClCompile Include="LinkInspectorTests.cpp" />
     <ClCompile Include="PackageFilterTests.cpp" />
+    <ClCompile Include="PathDisplayTests.cpp" />
     <ClCompile Include="PackageSourceErrorTests.cpp" />
     <ClCompile Include="PackageSourceFactoryTests.cpp" />
     <ClCompile Include="RepairBatchTests.cpp" />

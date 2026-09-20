@@ -2,6 +2,8 @@
 
 #pragma once
 
+#include "PathDisplay.h"
+
 #include "core/Model.h"
 #include "core/SymlinkService.h"
 
@@ -30,16 +32,22 @@ namespace syncwingetlink::cli
 // escapeJsonString(text), wrapped in double quotes.
 [[nodiscard]] std::string toJsonString(std::wstring_view text);
 
-// escapeJsonString(cli::sanitizeForDisplay(path.native())), wrapped in double quotes -
-// every path this module serializes goes through the same sanitize-then-escape
+// escapeJsonString(cli::formatPathForDisplay(path, options)), wrapped in double quotes -
+// every path this module serializes goes through the same abbreviate-sanitize-escape
 // boundary as every other untrusted string field (see toJson(const RepairItem&)),
-// so a caller using this function directly can never forget the sanitize step.
+// so a caller using this function directly can never forget a step.
+//
+// When options.showSpecialFolders is set, the serialized path carries a %LOCALAPPDATA%-
+// style prefix rather than the real one (docs/adr-phase-10.md ADR-0048): pasting a
+// document verbatim was judged worth more than keeping every path directly openable, and
+// a consumer that needs the real path expands the environment variable itself.
 //
 // Named distinctly from toJsonString(std::wstring_view) rather than overloaded on it:
 // std::filesystem::path's converting constructor makes a std::wstring an equally viable
 // implicit argument for either overload, which is an unresolvable ambiguity, not merely
 // a style preference.
-[[nodiscard]] std::string toJsonPathString(const std::filesystem::path& path);
+[[nodiscard]] std::string toJsonPathString(const std::filesystem::path& path,
+                                           const PathDisplayOptions& options = {});
 
 [[nodiscard]] std::string toJsonBool(bool value);
 
@@ -55,11 +63,13 @@ namespace syncwingetlink::cli
 //     "entryKind": "None" | "RegularFile" | "SymbolicLink" | "OtherReparsePoint",
 //     "existingTarget": "<path>" | null
 //   }
-[[nodiscard]] std::string toJson(const RepairItem& item);
+[[nodiscard]] std::string toJson(const RepairItem& item,
+                                 const PathDisplayOptions& options = {});
 
 // Renders one AliasCollision as a JSON object:
 //   { "alias": "<name>.exe", "executables": ["<path>", ...] }
-[[nodiscard]] std::string toJson(const AliasCollision& collision);
+[[nodiscard]] std::string toJson(const AliasCollision& collision,
+                                 const PathDisplayOptions& options = {});
 
 // Renders the result of one repairLink() call as a JSON object. verifiedItem is the
 // post-creation re-inspection, present only when outcome is Created or ReplacedBroken.
@@ -70,7 +80,8 @@ namespace syncwingetlink::cli
 //                "SkippedOk" | "RefusedMismatch",
 //     "verifiedItem": <RepairItem> | null
 //   }
-[[nodiscard]] std::string toJson(const SymlinkRepairResult& result);
+[[nodiscard]] std::string toJson(const SymlinkRepairResult& result,
+                                 const PathDisplayOptions& options = {});
 
 // Full `scan` output: {"schemaVersion":1,"command":"scan","repairItems":[...],
 // "collisions":[...]}. schemaVersion follows rules.json's own precedent (docs/rules.md)
@@ -80,7 +91,8 @@ namespace syncwingetlink::cli
 // module's (docs/adr-phase-5.md's security contract, "the `--json` stream purity"
 // rule).
 [[nodiscard]] std::string toJsonScanResult(const std::vector<RepairItem>& repairItems,
-                                          const std::vector<AliasCollision>& collisions);
+                                           const std::vector<AliasCollision>& collisions,
+                                           const PathDisplayOptions& options = {});
 
 // Full `fix` output: {"schemaVersion":1,"command":"fix","results":[...],
 // "collisions":[...]}. collisions here are the candidates dispatch excluded from
@@ -88,5 +100,6 @@ namespace syncwingetlink::cli
 // ADR-0021's collision-exclusion note) - they never appear inside `results`.
 [[nodiscard]] std::string
 toJsonFixResult(const std::vector<SymlinkRepairResult>& results,
-                const std::vector<AliasCollision>& collisions);
+                const std::vector<AliasCollision>& collisions,
+                const PathDisplayOptions& options = {});
 } // namespace syncwingetlink::cli

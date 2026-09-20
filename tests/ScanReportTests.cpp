@@ -42,6 +42,22 @@ namespace
 {
     return !text.empty() && text.find_first_not_of(L'-') == std::wstring::npos;
 }
+
+// The real %LOCALAPPDATA% root on whatever host is running these tests, or an empty
+// string if the shell declined to report it. Building the fixture from the live table
+// keeps the --showspecialfolder assertions below host-independent without hard-coding
+// any profile path.
+[[nodiscard]] std::wstring liveLocalAppDataRoot()
+{
+    for (const KnownFolderMapping& mapping : knownFolderMappings())
+    {
+        if (mapping.variable == L"%LOCALAPPDATA%")
+        {
+            return mapping.root;
+        }
+    }
+    return {};
+}
 } // namespace
 
 TEST_CLASS(DisplayWidthTests)
@@ -265,6 +281,70 @@ public:
         const std::wstring joined = joinLines(formatGroupedReport(items, ReportMode::Scan));
 
         Assert::IsTrue(joined.find(L"- ") != std::wstring::npos);
+    }
+};
+
+// docs/adr-phase-10.md ADR-0048: --showspecialfolder rewrites the target column only.
+TEST_CLASS(GroupedReportPathDisplayTests)
+{
+public:
+    TEST_METHOD(theTargetColumnIsAbbreviatedWhenTheOptionIsSet)
+    {
+        const std::wstring root = liveLocalAppDataRoot();
+        if (root.empty())
+        {
+            return; // Nothing to abbreviate against on this host.
+        }
+
+        const std::wstring target = root + LR"(\Microsoft\WinGet\Packages\t\tool.exe)";
+        const std::vector<RepairItem> items = {
+            makeItem(L"Pkg.Tool", LinkStatus::Missing, L"tool.exe", target),
+        };
+
+        const std::wstring joined = joinLines(
+            formatGroupedReport(items, ReportMode::Scan, PathDisplayOptions{true}));
+
+        Assert::IsTrue(joined.find(L"%LOCALAPPDATA%") != std::wstring::npos);
+        Assert::IsTrue(joined.find(root) == std::wstring::npos);
+    }
+
+    TEST_METHOD(theTargetColumnKeepsTheRealPathByDefault)
+    {
+        const std::wstring root = liveLocalAppDataRoot();
+        if (root.empty())
+        {
+            return;
+        }
+
+        const std::wstring target = root + LR"(\Microsoft\WinGet\Packages\t\tool.exe)";
+        const std::vector<RepairItem> items = {
+            makeItem(L"Pkg.Tool", LinkStatus::Missing, L"tool.exe", target),
+        };
+
+        const std::wstring joined = joinLines(formatGroupedReport(items, ReportMode::Scan));
+
+        Assert::IsTrue(joined.find(root) != std::wstring::npos);
+        Assert::IsTrue(joined.find(L"%LOCALAPPDATA%") == std::wstring::npos);
+    }
+
+    // Sorting uses the real executable path, so abbreviating can never reorder a report.
+    TEST_METHOD(rowOrderIsIdenticalWithAndWithoutTheOption)
+    {
+        const std::vector<RepairItem> items = {
+            makeItem(L"Pkg.C", LinkStatus::Missing, L"c.exe", LR"(C:\pkg\c.exe)"),
+            makeItem(L"Pkg.A", LinkStatus::Broken, L"a.exe", LR"(C:\pkg\a.exe)"),
+            makeItem(L"Pkg.B", LinkStatus::Mismatch, L"b.exe", LR"(C:\pkg\b.exe)"),
+            makeItem(L"Pkg.D", LinkStatus::Ok, L"d.exe", LR"(C:\pkg\d.exe)"),
+        };
+
+        const std::vector<ReportLine> plain = formatGroupedReport(items, ReportMode::Scan);
+        const std::vector<ReportLine> abbreviated =
+            formatGroupedReport(items, ReportMode::Scan, PathDisplayOptions{true});
+
+        Assert::AreEqual(plain.size(), abbreviated.size());
+        // None of these paths lives under a known folder, so the rendered tables must be
+        // identical - order included.
+        Assert::AreEqual(joinLines(plain), joinLines(abbreviated));
     }
 };
 } // namespace syncwingetlink::tests

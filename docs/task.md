@@ -3773,3 +3773,136 @@ the helper instead of spelling the policy out, so the two cannot drift.
 
 This is what took the branch from 446/448 to the **450/452** recorded in the
 Verification section above; the two failures are unchanged.
+---
+
+## 2026-09-20 — `--showspecialfolder`/`-s`: print `%LOCALAPPDATA%` instead of the real user-profile path
+
+**Issue**: [#180](https://github.com/kkamegawa/syncwingetlink/issues/180)
+**ADR**: `docs/adr-phase-10.md` ADR-0048
+**Wiki**: `plan/syncwingetlink/tui-mismatch-and-path-abbreviation` (EN + JA), part 2
+**Branch**: `feature/180-showspecialfolder` (stacked on
+`fix/179-tui-shows-mismatch-candidates`)
+
+### Motivation
+
+Every path the tool printed carried the real user profile directory, so a screenshot of a
+`scan` table or a `--tui` checklist leaked the account name and had to be redacted by
+hand before it could be attached to an issue.
+
+### What changed
+
+- `src/cli/PathDisplay.{h,cpp}` (new): `PathDisplayOptions`, `KnownFolderMapping`,
+  `abbreviateKnownFolders()`, `knownFolderMappings()`, `formatPathForDisplay()`.
+  Registered in `syncwingetlink.core.vcxproj` **and** its `.filters`.
+- `core::AppOptions::showSpecialFolders`; `cli::ArgParser` accepts
+  `--showspecialfolder` / `-s` (neither short form collided - only `-h` and `-y` existed).
+- The setting is threaded as a defaulted trailing parameter through
+  `formatGroupedReport()`, every `cli::Json` serializer, and `tui::runChecklist()`.
+  `cli::Dispatch::pathDisplayOptionsFor()` is the single place `AppOptions` becomes one.
+  No global state - a process-wide flag would have made these otherwise-pure functions
+  order-dependent under the unit tests.
+- Five console sites and both JSON documents now print through
+  `formatPathForDisplay()`: the grouped report's target column, the `--tui` checklist row,
+  the two `--verbose` directory diagnostics, the "could not derive a valid alias" warning,
+  and `toJsonPathString()`.
+- Tests: `tests/PathDisplayTests.cpp` (new, 18 cases, registered in both test project
+  files) plus new cases in `ArgParserTests`, `JsonTests`, `ScanReportTests` and
+  `TuiAppTests`.
+- Docs: `docs/adr-phase-10.md` ADR-0048, `docs/PLAN.md` (synopsis, a new
+  §`--showspecialfolder` section, and a §8 note on the JSON schema), `README.md` options
+  table, `docs/TODO.md`.
+
+### Decisions worth remembering
+
+- **Only three folders** - `%LOCALAPPDATA%`, `%APPDATA%`, `%USERPROFILE%`. Those are the
+  ones whose real form carries the account name; `%PROGRAMFILES%` and friends identify
+  nobody.
+- **`--json` is abbreviated too** (the owner's call): pasting a document verbatim beats
+  keeping every path directly openable, and a consumer expands the variable itself.
+- **Sorting still uses the real path**, so the flag can never reorder a report. Column
+  widths *are* measured on the rendered text, so an abbreviated table still lines up.
+- **`sanitizeForDisplay()` stays last**, after abbreviation - covered by a test, since an
+  abbreviated path must not be able to smuggle a control sequence into a terminal.
+- `abbreviateKnownFolders()` takes the folder table as a parameter so the matching rules
+  are testable against a synthetic table on any host; `knownFolderMappings()` is the
+  separate cached accessor that queries `SHGetKnownFolderPath`.
+
+### Verification
+
+- `Debug|Release` × `x64` built and tested; `Debug|Release` × `ARM64` cross-built only
+  (not run - this is an x64 host; CI runs ARM64 natively per ADR-0046).
+- `vstest.console.exe`: **495/497** for `Debug|x64` and `Release|x64` — the final count
+  for this branch. It reached 476/478 at first implementation and 491/493 after the
+  review fixes below; the remaining 4 arrived with the base branch's
+  `ChecklistRowKindForTests`. The 2 failures throughout are the pre-existing
+  `IntegrationTests` symlink cases (`dummyTreeReachesOkThroughScanFixRescan`,
+  `nonAsciiDummyTreeReachesOkThroughScanFixRescan`), which need Developer Mode or
+  elevation to create a symlink; confirmed by `git stash`-ing every change and re-running
+  them on the unmodified tree, where they fail identically.
+- Manual, read-only, against the real `Links`/`Packages` on the reporting host:
+  - `scan --source fs -s` — target column renders `%LOCALAPPDATA%\...`; the one
+    `Mismatch` (`GitHub.Copilot.Prerelease` / `copilot.exe`) and all 20 `Ok` rows line up.
+  - `scan --source fs --json -s` — `executable`, `linkPath` and `existingTarget` all
+    abbreviated; `scan --source fs --json` without the flag still emits the real paths.
+  - `scan --source fs --verbose -s` — both directory diagnostics abbreviated.
+  - `fix --tui --dry-run -s --source fs < /dev/null` — the non-interactive fallback
+    warning fires and, thanks to #179's preview fix, the grouped preview is now printed
+    (before that change a fallback showed nothing at all).
+- **The live checklist was confirmed by the reporting user**, on a build of this branch
+  stacked on #179, against the real inventory: the single row rendered as
+  `> [-] (Mismatch) copilot.exe -> %LOCALAPPDATA%\Microsoft\WinGet\Packages\...\copilot.exe
+  [cannot repair]`, with no account name anywhere on screen. That covers both the
+  `[cannot repair]` rendering from #179 and this change's abbreviation inside the TUI -
+  neither of which the implementation session could exercise itself, for lack of a real
+  console.
+### Review follow-up (PR #182)
+
+Copilot's review found two real gaps in the first implementation, both now fixed with
+tests:
+
+1. **Extended-length paths bypassed abbreviation.** `ArgParser::validatePathOverride()`
+   accepts a `\\?\`-prefixed `--links-dir`/`--packages-dir`/`--rules` verbatim (it
+   rejects only `\.\` device paths), and `paths::getLinksDirectory()` returns an
+   override unchanged, while `SHGetKnownFolderPath` always reports the ordinary form.
+   The prefix comparison therefore failed and `-s --verbose` still printed the account
+   name. `abbreviateKnownFolders()` now matches against
+   `paths::fromExtendedLengthPath()`'s output. A path that matches nothing is still
+   returned byte-for-byte, `\\?\` included - normalizing a path the function was not
+   asked to rewrite is not its job. My original header comment claimed this could not
+   arise because model paths are already non-extended; that reasoning was sound for the
+   scan pipeline and simply missed the override route.
+2. **Error diagnostics still leaked the profile path.** `LinkInspector`,
+   `SymlinkService` and `RuleSetSelector` all format exception messages in `core/` with
+   a real path embedded mid-sentence, and `cli::Dispatch` printed them straight through
+   `utf8ToWide()`. Abbreviating every ordinary path and then leaking the account name
+   the moment anything failed defeats the option exactly when output gets pasted into an
+   issue. New `abbreviateKnownFoldersInText()` / `formatDiagnosticForDisplay()`
+   substitute every occurrence inside a message; `cli::Dispatch::diagnosticText()` routes
+   five of the six `catch` handlers plus the `--source auto` degrade reason through it.
+   The `ArgParseError` handler is left alone - it runs before `parseArguments()`
+   returned, so no `-s` has been observed yet, and the message usually names the very
+   argument that failed to parse.
+
+The in-text boundary rule accepts a quote as well as a separator or end-of-string, since
+this codebase's diagnostics wrap a path in `'...'`. The trade-off, recorded in ADR-0048:
+a directory whose own name begins with an apostrophe immediately after a known-folder
+root would be abbreviated one component early.
+
+**Verified after the fix** (`Debug|x64`, plus the four-configuration build):
+
+- `vstest.console.exe`: 15 new cases (4 extended-length, 8 in-text, 3
+  `formatDiagnosticForDisplay`), taking the branch from 476/478 to 491/493 at the time,
+  and to the **495/497** recorded in the Verification section above once the base
+  branch's `ChecklistRowKindForTests` merged in. The same 2 pre-existing
+  `IntegrationTests` symlink failures remain throughout.
+- Live, read-only, driven from PowerShell so the `\\?\` argument survives the shell:
+
+  | Command | Result |
+  |---|---|
+  | `scan --verbose --links-dir \\?\%LOCALAPPDATA%\...\Links` | `\\?\C:\Users\<name>\AppData\Local\...` — the leak |
+  | `scan --verbose -s --links-dir \\?\%LOCALAPPDATA%\...\Links` | `%LOCALAPPDATA%\Microsoft\WinGet\Links` |
+  | `scan --rules %LOCALAPPDATA%\<missing>\rules.json` | `could not open rules file for reading: C:\Users\<name>\...` — the leak |
+  | `scan -s --rules %LOCALAPPDATA%\<missing>\rules.json` | `could not open rules file for reading: %LOCALAPPDATA%\...` |
+
+  Both leaking rows are the pre-fix behavior, reproduced by omitting `-s` on the fixed
+  build.

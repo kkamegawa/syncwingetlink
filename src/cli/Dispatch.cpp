@@ -5,6 +5,7 @@
 #include "ArgParser.h"
 #include "Console.h"
 #include "Json.h"
+#include "PathDisplay.h"
 #include "ScanReport.h"
 #include "Version.h"
 
@@ -141,6 +142,27 @@ BOOL WINAPI consoleCtrlHandler(DWORD ctrlType)
         return L"not attempted";
     }
     return L"unknown";
+}
+
+// The one place AppOptions turns into the presentation layer's path-display setting.
+// cli::ScanReport, cli::Json and tui::TuiApp all take it as a parameter rather than
+// reading a global, so each of them stays independently testable.
+[[nodiscard]] PathDisplayOptions pathDisplayOptionsFor(const AppOptions& options) noexcept
+{
+    return PathDisplayOptions{options.showSpecialFolders};
+}
+
+// core/ formats its exception messages (as UTF-8) long before this layer decides how to
+// display them, and several of them embed a real path mid-sentence - e.g.
+// "CreateSymbolicLinkW failed for 'C:\Users\...\Links\tool.exe' (Win32 error 5)" from
+// SymlinkService, plus LinkInspector's and RuleSetSelector's equivalents. Without this,
+// --showspecialfolder would abbreviate every ordinary path the tool prints and then leak
+// the account name the moment anything went wrong, which is precisely when output gets
+// pasted into an issue. See docs/adr-phase-10.md ADR-0048.
+[[nodiscard]] std::wstring diagnosticText(std::string_view utf8Message,
+                                          const AppOptions& options)
+{
+    return formatDiagnosticForDisplay(utf8ToWide(utf8Message), pathDisplayOptionsFor(options));
 }
 
 enum class UiLanguage
@@ -349,7 +371,8 @@ void reportVerboseDiagnostics(const AppOptions& options, Console& console,
     }
 
     console.writeLine(std::format(L"verbose: effective Links directory: {}",
-                                  sanitizeForDisplay(linksDirectory.native())),
+                                  formatPathForDisplay(linksDirectory,
+                                                       pathDisplayOptionsFor(options))),
                       ConsoleStream::Error, MessageImportance::Diagnostic);
 
     // Unlike linksDirectory above (already resolved unconditionally by the caller for
@@ -365,7 +388,8 @@ void reportVerboseDiagnostics(const AppOptions& options, Console& console,
         const std::filesystem::path packagesDirectory =
             paths::getPackagesDirectory(options.packagesDirectory);
         console.writeLine(std::format(L"verbose: effective Packages directory: {}",
-                                      sanitizeForDisplay(packagesDirectory.native())),
+                                      formatPathForDisplay(packagesDirectory,
+                                                           pathDisplayOptionsFor(options))),
                           ConsoleStream::Error, MessageImportance::Diagnostic);
     }
     catch (const std::exception&)
@@ -436,10 +460,10 @@ void reportVerboseDiagnostics(const AppOptions& options, Console& console,
 {
     bool sourceDegradedToFileSystem = false;
     std::wstring degradeReason;
-    const auto onDegrade = [&console, &sourceDegradedToFileSystem,
+    const auto onDegrade = [&console, &options, &sourceDegradedToFileSystem,
                             &degradeReason](const PackageSourceError& error) {
         sourceDegradedToFileSystem = true;
-        degradeReason = utf8ToWide(error.what());
+        degradeReason = diagnosticText(error.what(), options);
         console.writeLine(std::format(L"warning: --source auto fell back to a filesystem "
                                       L"scan: {}",
                                       degradeReason),
@@ -469,7 +493,9 @@ void reportVerboseDiagnostics(const AppOptions& options, Console& console,
             {
                 console.writeLine(std::format(L"warning: could not derive a valid alias "
                                               L"for {}",
-                                              sanitizeForDisplay(executable.path.native())),
+                                              formatPathForDisplay(
+                                                  executable.path,
+                                                  pathDisplayOptionsFor(options))),
                                   ConsoleStream::Error);
                 continue;
             }
@@ -532,11 +558,13 @@ void writeJsonDocument(Console& console, const std::string& json)
 
     if (options.jsonOutput)
     {
-        writeJsonDocument(console, toJsonScanResult(candidates.allItems, candidates.collisions));
+        writeJsonDocument(console, toJsonScanResult(candidates.allItems, candidates.collisions,
+                                                    pathDisplayOptionsFor(options)));
     }
     else
     {
-        for (const ReportLine& line : formatGroupedReport(candidates.allItems, ReportMode::Scan))
+        for (const ReportLine& line : formatGroupedReport(candidates.allItems, ReportMode::Scan,
+                                                          pathDisplayOptionsFor(options)))
         {
             console.writeLine(line.text, ConsoleStream::Output, line.importance);
         }
@@ -647,7 +675,8 @@ struct TuiRunResult
     }
 
     tui::ChecklistModel model(std::move(rows));
-    const tui::ChecklistRunResult checklistResult = tui::runChecklist(*session, model);
+    const tui::ChecklistRunResult checklistResult =
+        tui::runChecklist(*session, model, pathDisplayOptionsFor(options));
     // Fold the terminal back before this function's caller writes anything else -
     // progress lines and the final summary must land on the restored, normal screen,
     // not the checklist's alternate one.
@@ -730,7 +759,8 @@ void printBatchSummary(Console& console, const RepairBatchSummary& summary)
     if (!options.jsonOutput && tuiResult.outcome == TuiRunOutcome::NotRun)
     {
         for (const ReportLine& line :
-             formatGroupedReport(candidates.allItems, ReportMode::FixPreview))
+             formatGroupedReport(candidates.allItems, ReportMode::FixPreview,
+                                 pathDisplayOptionsFor(options)))
         {
             console.writeLine(line.text, ConsoleStream::Output, line.importance);
         }
@@ -848,7 +878,8 @@ void printBatchSummary(Console& console, const RepairBatchSummary& summary)
                 jsonResults.push_back(*item.repairResult);
             }
         }
-        writeJsonDocument(console, toJsonFixResult(jsonResults, candidates.collisions));
+        writeJsonDocument(console, toJsonFixResult(jsonResults, candidates.collisions,
+                                                   pathDisplayOptionsFor(options)));
     }
 
     return toExitCode(exitCodeFor(batchResult.summary));
@@ -922,6 +953,9 @@ void printHelp(Console& console)
         L"  --no-color             disable colored/VT output regardless of TTY",
         L"                         state (also honors the NO_COLOR environment",
         L"                         variable)",
+        L"  -s, --showspecialfolder",
+        L"                         print %LOCALAPPDATA%/%APPDATA%/%USERPROFILE% instead",
+        L"                         of the real path (console output and --json alike)",
         L"  --silent               do not ask whether to restart elevated; print only",
         L"                         the startup permission message",
         L"  --version              print the version number and exit",
@@ -1076,19 +1110,19 @@ int run(const std::vector<std::wstring>& args)
     }
     catch (const PackageSourceError& error)
     {
-        console.writeLine(utf8ToWide(error.what()), ConsoleStream::Error);
+        console.writeLine(diagnosticText(error.what(), options), ConsoleStream::Error);
         console.writeLine(std::wstring(L"hint: ") + utf8ToWide(remediationFor(error.kind())),
                           ConsoleStream::Error);
         return static_cast<int>(exitCodeFor(error.kind()));
     }
     catch (const RuleSetError& error)
     {
-        console.writeLine(utf8ToWide(error.what()), ConsoleStream::Error);
+        console.writeLine(diagnosticText(error.what(), options), ConsoleStream::Error);
         return static_cast<int>(exitCodeFor(error.kind()));
     }
     catch (const SymlinkServiceError& error)
     {
-        console.writeLine(utf8ToWide(error.what()), ConsoleStream::Error);
+        console.writeLine(diagnosticText(error.what(), options), ConsoleStream::Error);
         return static_cast<int>(exitCodeFor(error.kind()));
     }
     catch (const LinkInspectionError& error)
@@ -1099,7 +1133,7 @@ int run(const std::vector<std::wstring>& args)
         // falls into the same generic-failure bucket (exit code 3) the std::exception
         // catch-all below uses for every other condition this dispatch layer did not
         // anticipate closely enough to give its own exit code.
-        console.writeLine(utf8ToWide(error.what()), ConsoleStream::Error);
+        console.writeLine(diagnosticText(error.what(), options), ConsoleStream::Error);
         return static_cast<int>(ExitCode::ArgumentError);
     }
     catch (const std::exception& error)
@@ -1109,7 +1143,7 @@ int run(const std::vector<std::wstring>& args)
         // code 3 is the closest documented fit ("argument/config error") for a
         // condition this dispatch layer did not anticipate closely enough to name -
         // see docs/adr-phase-5.md ADR-0024.
-        console.writeLine(utf8ToWide(error.what()), ConsoleStream::Error);
+        console.writeLine(diagnosticText(error.what(), options), ConsoleStream::Error);
         return static_cast<int>(ExitCode::ArgumentError);
     }
 }

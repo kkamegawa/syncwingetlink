@@ -100,13 +100,14 @@ void appendUtf8(std::string& out, char32_t codepoint)
     return L"Unknown";
 }
 
-[[nodiscard]] std::string toJsonOptionalPath(const std::optional<std::filesystem::path>& path)
+[[nodiscard]] std::string toJsonOptionalPath(const std::optional<std::filesystem::path>& path,
+                                             const PathDisplayOptions& options)
 {
     if (!path.has_value())
     {
         return "null";
     }
-    return toJsonPathString(*path);
+    return toJsonPathString(*path, options);
 }
 
 [[nodiscard]] std::string joinJsonArray(const std::vector<std::string>& elements)
@@ -203,9 +204,10 @@ std::string toJsonString(std::wstring_view text)
     return "\"" + escapeJsonString(text) + "\"";
 }
 
-std::string toJsonPathString(const std::filesystem::path& path)
+std::string toJsonPathString(const std::filesystem::path& path,
+                             const PathDisplayOptions& options)
 {
-    return toJsonString(sanitizeForDisplay(path.native()));
+    return toJsonString(formatPathForDisplay(path, options));
 }
 
 std::string toJsonBool(bool value)
@@ -213,26 +215,26 @@ std::string toJsonBool(bool value)
     return value ? "true" : "false";
 }
 
-std::string toJson(const RepairItem& item)
+std::string toJson(const RepairItem& item, const PathDisplayOptions& options)
 {
     std::string json = "{";
-    json += "\"executable\":" + toJsonPathString(item.executable.path);
+    json += "\"executable\":" + toJsonPathString(item.executable.path, options);
     json += ",\"alias\":" + toJsonString(sanitizeForDisplay(item.alias));
-    json += ",\"linkPath\":" + toJsonPathString(item.linkPath);
+    json += ",\"linkPath\":" + toJsonPathString(item.linkPath, options);
     json += ",\"status\":" + toJsonString(linkStatusName(item.status));
     json += ",\"entryKind\":" + toJsonString(linkEntryKindName(item.entryKind));
-    json += ",\"existingTarget\":" + toJsonOptionalPath(item.existingTarget);
+    json += ",\"existingTarget\":" + toJsonOptionalPath(item.existingTarget, options);
     json += "}";
     return json;
 }
 
-std::string toJson(const AliasCollision& collision)
+std::string toJson(const AliasCollision& collision, const PathDisplayOptions& options)
 {
     std::vector<std::string> executables;
     executables.reserve(collision.executables.size());
     for (const PackageExe& executable : collision.executables)
     {
-        executables.push_back(toJsonPathString(executable.path));
+        executables.push_back(toJsonPathString(executable.path, options));
     }
 
     std::string json = "{\"alias\":" + toJsonString(sanitizeForDisplay(collision.alias));
@@ -241,31 +243,32 @@ std::string toJson(const AliasCollision& collision)
     return json;
 }
 
-std::string toJson(const SymlinkRepairResult& result)
+std::string toJson(const SymlinkRepairResult& result, const PathDisplayOptions& options)
 {
-    std::string json = "{\"item\":" + toJson(result.preActionItem);
+    std::string json = "{\"item\":" + toJson(result.preActionItem, options);
     json += ",\"outcome\":" + toJsonString(symlinkRepairOutcomeName(result.outcome));
     json += ",\"verifiedItem\":";
-    json += result.postActionItem.has_value() ? toJson(*result.postActionItem) : "null";
+    json += result.postActionItem.has_value() ? toJson(*result.postActionItem, options) : "null";
     json += "}";
     return json;
 }
 
 std::string toJsonScanResult(const std::vector<RepairItem>& repairItems,
-                             const std::vector<AliasCollision>& collisions)
+                             const std::vector<AliasCollision>& collisions,
+                             const PathDisplayOptions& options)
 {
     std::vector<std::string> items;
     items.reserve(repairItems.size());
     for (const RepairItem& item : repairItems)
     {
-        items.push_back(toJson(item));
+        items.push_back(toJson(item, options));
     }
 
     std::vector<std::string> collisionEntries;
     collisionEntries.reserve(collisions.size());
     for (const AliasCollision& collision : collisions)
     {
-        collisionEntries.push_back(toJson(collision));
+        collisionEntries.push_back(toJson(collision, options));
     }
 
     std::string json = R"({"schemaVersion":1,"command":"scan","repairItems":)";
@@ -276,20 +279,21 @@ std::string toJsonScanResult(const std::vector<RepairItem>& repairItems,
 }
 
 std::string toJsonFixResult(const std::vector<SymlinkRepairResult>& results,
-                           const std::vector<AliasCollision>& collisions)
+                            const std::vector<AliasCollision>& collisions,
+                            const PathDisplayOptions& options)
 {
     std::vector<std::string> resultEntries;
     resultEntries.reserve(results.size());
     for (const SymlinkRepairResult& result : results)
     {
-        resultEntries.push_back(toJson(result));
+        resultEntries.push_back(toJson(result, options));
     }
 
     std::vector<std::string> collisionEntries;
     collisionEntries.reserve(collisions.size());
     for (const AliasCollision& collision : collisions)
     {
-        collisionEntries.push_back(toJson(collision));
+        collisionEntries.push_back(toJson(collision, options));
     }
 
     std::string json = R"({"schemaVersion":1,"command":"fix","results":)";
