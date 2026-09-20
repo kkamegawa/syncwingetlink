@@ -3662,6 +3662,10 @@ Continuation of the same session, same issue
 
 **Issue**: [#179](https://github.com/kkamegawa/syncwingetlink/issues/179)
 **ADR**: `docs/adr-phase-10.md` ADR-0047 (new phase file; `adr-phase-9.md` was at 857 lines)
+**Wiki**: `plan/syncwingetlink/tui-mismatch-and-path-abbreviation` (EN + JA), plus a
+post-implementation revision note on `plan/syncwingetlink/m7-interactive-tui` carrying
+the full `LinkStatus` table - which statuses appear in the checklist, which are
+selectable, and what `fix` does to each
 **Branch**: `fix/179-tui-shows-mismatch-candidates`
 
 ### Reported symptom
