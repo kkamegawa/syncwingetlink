@@ -119,3 +119,90 @@ returned. Two further defects made it unreadable rather than merely surprising:
   `docs/task.md`.
 
 ---
+
+## ADR-0048 — `--showspecialfolder`: abbreviating user folders in console *and* `--json` output
+
+- **Date**: 2026-09-20
+- **Affected**: `cli::PathDisplay` (new), `cli::ArgParser`, `cli::Json`,
+  `cli::ScanReport`, `cli::Dispatch`, `tui::TuiApp`, `core::AppOptions`,
+  `docs/PLAN.md`, `README.md`, `docs/TODO.md`
+- **Status**: Accepted
+
+### Context
+
+Every path this tool prints contains the real user-profile directory, so a screenshot or
+a pasted log leaks the account name and has to be redacted by hand before it can be
+shared in an issue (#180).
+
+### Decision
+
+1. **`--showspecialfolder`, short form `-s`.** When set, a path whose prefix is a known
+   user folder is printed with that folder's environment-variable spelling.
+
+2. **Exactly three folders: `%LOCALAPPDATA%`, `%APPDATA%`, `%USERPROFILE%`.** These are
+   the folders whose real form carries the account name. `%PROGRAMFILES%`,
+   `%PROGRAMDATA%` and `%SYSTEMROOT%` identify nobody, so abbreviating them would shorten
+   output without serving the purpose the option exists for, and each extra entry is one
+   more prefix every printed path is tested against.
+
+3. **Longest match wins, and only on a component boundary.** `%LOCALAPPDATA%` is itself
+   under `%USERPROFILE%`, so scan order alone would yield the less specific (and less
+   informative) of the two. The character after a matched prefix must be a separator or
+   the end of the string, so `C:\Users\bob` never rewrites `C:\Users\bobby\...`.
+   Comparison is ordinal and case-insensitive, matching every other path comparison in
+   this codebase.
+
+4. **`--json` documents are abbreviated too.** Being able to paste a document verbatim
+   was judged worth more than keeping every path in the document directly openable; a
+   consumer that needs the real path expands the environment variable itself. The
+   behavior is documented in `docs/PLAN.md` §8 alongside the schema. Without the flag the
+   document is byte-for-byte what it always was.
+
+5. **The setting is a parameter, never a global.** `PathDisplayOptions` is threaded
+   through `formatGroupedReport()`, the `cli::Json` serializers, and
+   `tui::runChecklist()` as a defaulted trailing argument. A process-wide flag would have
+   been a smaller diff but would make these otherwise-pure functions order-dependent
+   under the unit tests, and `cli::Dispatch` is already the single place that turns
+   `AppOptions` into presentation decisions.
+
+6. **Sorting is unaffected.** `formatGroupedReport()` still orders rows by the real
+   executable path (`lessByAliasThenPath()`), so the flag can never reorder a report.
+   Column widths *are* measured on the rendered text, so an abbreviated table still lines
+   up.
+
+7. **`abbreviateKnownFolders()` takes its folder table as a parameter**, and
+   `knownFolderMappings()` is the separate, cached accessor that queries
+   `SHGetKnownFolderPath`. That split is what makes the matching rules testable against a
+   synthetic table on any host, rather than against wherever the build machine's profile
+   happens to live.
+
+8. **A folder the shell will not report is simply absent from the table.** Unlike
+   `paths::getLocalAppDataDirectory()`, which cannot proceed without its answer, failing
+   to abbreviate is cosmetic - so `queryKnownFolder()` returns an empty string instead of
+   throwing, and the entry is dropped.
+
+9. **No conflicts with any other option.** Unlike `--tui` (ADR-0027 decision 3), this one
+   only changes how a path is rendered, which is meaningful for every command and for
+   `--json` alike.
+
+### Consequences
+
+- `src/cli/PathDisplay.{h,cpp}` (new): `PathDisplayOptions`, `KnownFolderMapping`,
+  `abbreviateKnownFolders()`, `knownFolderMappings()`, `formatPathForDisplay()`.
+  Registered in both `syncwingetlink.core.vcxproj` and its `.filters`.
+- `formatPathForDisplay()` becomes the single entry point for printing a path:
+  abbreviate (when asked), then `sanitizeForDisplay()`. Sanitization stays last, so an
+  abbreviated path can never smuggle a control sequence into a terminal or a document.
+- `core::AppOptions::showSpecialFolders`; `cli::ArgParser` accepts
+  `--showspecialfolder`/`-s`; `cli::Dispatch::pathDisplayOptionsFor()` is the one place
+  the two are joined.
+- Five call sites now print through it: the grouped report's target column, the `--tui`
+  checklist row, the two `--verbose` directory diagnostics, and the
+  "could not derive a valid alias" warning. `toJsonPathString()` covers every path in
+  both JSON documents.
+- `tests/PathDisplayTests.cpp` (new, registered in the test `.vcxproj` and `.filters`)
+  covers the matching rules against a synthetic table, the sanitize-last ordering, and
+  the invariants `knownFolderMappings()` must satisfy on any host.
+- `tests/ArgParserTests.cpp`, `tests/JsonTests.cpp`, `tests/ScanReportTests.cpp` and
+  `tests/TuiAppTests.cpp` each gain cases for the flag; the report case also asserts that
+  row order is identical with and without it.

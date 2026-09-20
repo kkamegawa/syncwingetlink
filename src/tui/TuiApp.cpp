@@ -50,7 +50,8 @@ constexpr std::size_t kReservedRows = 2;
 // (rather than diffing) is deliberate: this is a modal checklist with at most a few
 // dozen visible rows, not a high-frequency renderer, and a full redraw can never leave
 // a stale line from a previous, differently-sized frame on screen.
-void render(TerminalSession& session, const ChecklistModel& model)
+void render(TerminalSession& session, const ChecklistModel& model,
+            const cli::PathDisplayOptions& pathOptions)
 {
     std::wstring frame;
     frame += L"\x1b[2J\x1b[H"; // Clear screen, home cursor.
@@ -85,7 +86,7 @@ void render(TerminalSession& session, const ChecklistModel& model)
         frame += L") ";
         frame += cli::sanitizeForDisplay(candidate.item.alias);
         frame += L" -> ";
-        frame += cli::sanitizeForDisplay(candidate.item.executable.path.native());
+        frame += cli::formatPathForDisplay(candidate.item.executable.path, pathOptions);
         if (!candidate.selectable)
         {
             frame += L" [cannot repair]";
@@ -97,7 +98,8 @@ void render(TerminalSession& session, const ChecklistModel& model)
 }
 } // namespace
 
-ChecklistRunResult runChecklist(TerminalSession& session, ChecklistModel& model)
+ChecklistRunResult runChecklist(TerminalSession& session, ChecklistModel& model,
+                                const cli::PathDisplayOptions& pathOptions)
 {
     if (const std::optional<TuiResizeEvent> initial = session.queryViewport();
         initial.has_value())
@@ -105,7 +107,7 @@ ChecklistRunResult runChecklist(TerminalSession& session, ChecklistModel& model)
         model.resize(usableHeight(initial->rows));
     }
 
-    render(session, model);
+    render(session, model, pathOptions);
 
     ChecklistRunResult result;
 
@@ -122,7 +124,7 @@ ChecklistRunResult runChecklist(TerminalSession& session, ChecklistModel& model)
         if (std::holds_alternative<TuiResizeEvent>(*event))
         {
             model.resize(usableHeight(std::get<TuiResizeEvent>(*event).rows));
-            render(session, model);
+            render(session, model, pathOptions);
             continue;
         }
 
@@ -164,7 +166,7 @@ ChecklistRunResult runChecklist(TerminalSession& session, ChecklistModel& model)
         }
         // Any other key is ignored - the checklist has no other bindings.
 
-        render(session, model);
+        render(session, model, pathOptions);
     }
 }
 } // namespace syncwingetlink::tui

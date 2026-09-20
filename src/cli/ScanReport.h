@@ -3,6 +3,7 @@
 #pragma once
 
 #include "Console.h"
+#include "PathDisplay.h"
 #include "core/Model.h"
 
 #include <cstddef>
@@ -60,6 +61,12 @@ enum class ReportMode
 // as just its heading followed by a bare "nothing" line instead of an empty table. Every
 // cell is passed through sanitizeForDisplay() before measurement and rendering; an empty
 // packageId renders as "-".
-[[nodiscard]] std::vector<ReportLine> formatGroupedReport(std::span<const RepairItem> items,
-                                                           ReportMode mode);
+//
+// pathOptions controls only how the target column is *rendered* - sorting still uses the
+// real executable path, so --showspecialfolder can never reorder rows
+// (docs/adr-phase-10.md ADR-0048). Column widths are measured on the rendered text, so
+// an abbreviated table still lines up.
+[[nodiscard]] std::vector<ReportLine>
+formatGroupedReport(std::span<const RepairItem> items, ReportMode mode,
+                    const PathDisplayOptions& pathOptions = {});
 } // namespace syncwingetlink::cli

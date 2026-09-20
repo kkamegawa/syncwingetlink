@@ -172,6 +172,32 @@ public:
     }
 };
 
+// The real %LOCALAPPDATA% root on this host, or empty when the shell declined to report
+// it - the --showspecialfolder cases below build their fixture from the live table so
+// they assert nothing about where any particular machine's profile lives.
+[[nodiscard]] std::wstring liveLocalAppDataRoot()
+{
+    for (const KnownFolderMapping& mapping : knownFolderMappings())
+    {
+        if (mapping.variable == L"%LOCALAPPDATA%")
+        {
+            return mapping.root;
+        }
+    }
+    return {};
+}
+
+[[nodiscard]] std::size_t countOccurrences(const std::string& haystack, const std::string& needle)
+{
+    std::size_t count = 0;
+    for (std::size_t at = haystack.find(needle); at != std::string::npos;
+         at = haystack.find(needle, at + needle.size()))
+    {
+        ++count;
+    }
+    return count;
+}
+
 TEST_CLASS(JsonDomainSerializationTests)
 {
 public:
@@ -299,6 +325,69 @@ public:
         Assert::IsTrue(json.find(R"("command":"fix")") != std::string::npos);
         Assert::IsTrue(json.find("results") != std::string::npos);
         Assert::IsTrue(json.find(R"("outcome":"Created")") != std::string::npos);
+    }
+};
+
+// docs/adr-phase-10.md ADR-0048: --showspecialfolder abbreviates --json paths too.
+TEST_CLASS(JsonPathDisplayTests)
+{
+public:
+    TEST_METHOD(everyPathFieldIsAbbreviatedWhenTheOptionIsSet)
+    {
+        const std::wstring root = liveLocalAppDataRoot();
+        if (root.empty())
+        {
+            return; // Nothing to abbreviate against on this host.
+        }
+
+        RepairItem item;
+        item.executable.path = root + LR"(\Packages\Codex\codex-x64.exe)";
+        item.alias = L"codex.exe";
+        item.linkPath = root + LR"(\Links\codex.exe)";
+        item.status = LinkStatus::Broken;
+        item.entryKind = LinkEntryKind::SymbolicLink;
+        item.existingTarget = std::filesystem::path(root + LR"(\Packages\Old\old.exe)");
+
+        const std::string json = toJson(item, PathDisplayOptions{true});
+
+        // All three path fields, not just `executable` - they share toJsonPathString(),
+        // and a missed one would be silent.
+        Assert::AreEqual(std::size_t{3}, countOccurrences(json, "%LOCALAPPDATA%"));
+    }
+
+    TEST_METHOD(pathsKeepTheirRealFormByDefault)
+    {
+        RepairItem item;
+        item.executable.path = LR"(D:\scratch\codex.exe)";
+        item.alias = L"codex.exe";
+        item.linkPath = LR"(D:\links\codex.exe)";
+        item.status = LinkStatus::Missing;
+
+        const std::string json = toJson(item);
+
+        Assert::IsTrue(json.find("%LOCALAPPDATA%") == std::string::npos);
+        Assert::IsTrue(json.find("scratch") != std::string::npos);
+    }
+
+    TEST_METHOD(theOptionReachesNestedDocuments)
+    {
+        const std::wstring root = liveLocalAppDataRoot();
+        if (root.empty())
+        {
+            return;
+        }
+
+        RepairItem item;
+        item.executable.path = root + LR"(\Packages\Codex\codex-x64.exe)";
+        item.alias = L"codex.exe";
+        item.linkPath = root + LR"(\Links\codex.exe)";
+        item.status = LinkStatus::Missing;
+
+        // toJsonScanResult -> toJson(RepairItem) -> toJsonPathString: the option has to
+        // survive two hops, which is exactly what a defaulted parameter makes easy to
+        // drop by accident.
+        const std::string json = toJsonScanResult({item}, {}, PathDisplayOptions{true});
+        Assert::IsTrue(json.find("%LOCALAPPDATA%") != std::string::npos);
     }
 };
 } // namespace syncwingetlink::tests

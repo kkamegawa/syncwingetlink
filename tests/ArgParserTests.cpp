@@ -194,6 +194,35 @@ public:
         Assert::IsTrue(parseArguments({L"fix", L"--silent"}).silent);
     }
 
+    TEST_METHOD(showSpecialFolderFlagSets)
+    {
+        Assert::IsTrue(parseArguments({L"scan", L"--showspecialfolder"}).showSpecialFolders);
+    }
+
+    TEST_METHOD(showSpecialFolderShortFormSets)
+    {
+        Assert::IsTrue(parseArguments({L"scan", L"-s"}).showSpecialFolders);
+    }
+
+    TEST_METHOD(showSpecialFolderDefaultsToOff)
+    {
+        Assert::IsFalse(parseArguments({L"scan"}).showSpecialFolders);
+    }
+
+    // Unlike --tui, this one conflicts with nothing: it changes how paths are rendered,
+    // which is meaningful for every command and for --json alike
+    // (docs/adr-phase-10.md ADR-0048).
+    TEST_METHOD(showSpecialFolderCombinesWithJsonAndTui)
+    {
+        const AppOptions json = parseArguments({L"scan", L"--json", L"-s"});
+        Assert::IsTrue(json.jsonOutput);
+        Assert::IsTrue(json.showSpecialFolders);
+
+        const AppOptions tui = parseArguments({L"fix", L"--tui", L"-s"});
+        Assert::IsTrue(tui.useTui);
+        Assert::IsTrue(tui.showSpecialFolders);
+    }
+
     TEST_METHOD(missingOptionValueIsRejected)
     {
         Assert::IsTrue(expectError({L"--source"}) == ArgParseErrorKind::MissingOptionValue);

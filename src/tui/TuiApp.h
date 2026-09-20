@@ -5,6 +5,8 @@
 #include "ChecklistModel.h"
 #include "TerminalSession.h"
 
+#include "cli/PathDisplay.h"
+
 #include <vector>
 
 namespace syncwingetlink::tui
@@ -40,5 +42,11 @@ struct ChecklistRunResult
 // A read failure from session (session.readEvent() returning nullopt - e.g. the input
 // handle became invalid) is treated as a cancellation: no repair is authorized either
 // way, and looping forever on a dead input source would just hang.
-[[nodiscard]] ChecklistRunResult runChecklist(TerminalSession& session, ChecklistModel& model);
+//
+// pathOptions is passed straight to cli::formatPathForDisplay() for each candidate's
+// target, so --showspecialfolder keeps the account name off a screenshot of the
+// checklist (docs/adr-phase-10.md ADR-0048).
+[[nodiscard]] ChecklistRunResult
+runChecklist(TerminalSession& session, ChecklistModel& model,
+             const cli::PathDisplayOptions& pathOptions = {});
 } // namespace syncwingetlink::tui

@@ -295,6 +295,9 @@ Options:
   --fail-on-missing     scan exits 1 if a Missing/Broken/Mismatch candidate is found
   --no-color            disable colored/VT output regardless of TTY state (also honors
                         the NO_COLOR environment variable)
+  -s, --showspecialfolder
+                        print %LOCALAPPDATA%/%APPDATA%/%USERPROFILE% instead of the
+                        real path (console output and --json alike)
   --version / --help
 ```
 
@@ -384,6 +387,33 @@ behavior - documented here rather than left as "run in interactive TUI mode", pe
   `--tui` invocation that fell back prints it as a plain `fix` would, so a fallback never
   shows *less* than not passing `--tui` at all.
 - `--dry-run` and `--no-color` both remain compatible with `--tui`.
+
+### `--showspecialfolder` / `-s`
+
+Prints a path whose prefix is a known user folder using that folder's environment-variable
+spelling, so console output and `--json` documents can be shared without redacting the
+account name (`docs/adr-phase-10.md` ADR-0048).
+
+```
+%LOCALAPPDATA%\Microsoft\WinGet\Links\copilot.exe
+```
+
+- **Folder set**: `%LOCALAPPDATA%`, `%APPDATA%`, `%USERPROFILE%` - and only these three.
+  They are the folders whose real form carries the account name; `%PROGRAMFILES%` and
+  friends identify nobody, so abbreviating them would shorten output without serving the
+  purpose the option exists for.
+- **Longest match wins**: `%LOCALAPPDATA%` lives under `%USERPROFILE%`, so the more
+  specific of the two is chosen rather than whichever is scanned first.
+- **Component-boundary match only**: the character after the matched prefix must be a
+  separator or the end of the string, so `C:\Users\bob` never rewrites
+  `C:\Users\bobby\...`. The comparison is ordinal and case-insensitive.
+- **Applies to `--json` as well as the console**, including the `--tui` checklist and the
+  `--verbose` diagnostics. A path outside all three folders (for example a
+  `--links-dir` pointing elsewhere) is printed unchanged.
+- **Never changes ordering**: the grouped report still sorts on the real executable path,
+  so the flag cannot reorder rows.
+- It conflicts with nothing. Unlike `--tui`, it only changes how a path is rendered, which
+  is meaningful for every command.
 
 ### `--verbose` / `--quiet` (log level)
 
@@ -478,6 +508,13 @@ stable, versioned document shape.
 
 `collisions` here lists candidates excluded from repair before `fix` ran at all - they
 never appear inside `results`.
+
+With `--showspecialfolder`, every path value in the document (`executable`, `linkPath`,
+`existingTarget`, and the elements of `executables`) carries a `%LOCALAPPDATA%`-style
+prefix instead of the real one. This is deliberate: being able to paste a document
+verbatim was judged worth more than keeping every path directly openable, and a consumer
+that needs the real path expands the environment variable itself
+(`docs/adr-phase-10.md` ADR-0048). Without the flag the document is unchanged.
 
 Every string value (`executable`, `alias`, `linkPath`, `existingTarget`, the elements of
 `executables`) is sanitized the same way console output is - see

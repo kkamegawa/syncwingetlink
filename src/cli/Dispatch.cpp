@@ -5,6 +5,7 @@
 #include "ArgParser.h"
 #include "Console.h"
 #include "Json.h"
+#include "PathDisplay.h"
 #include "ScanReport.h"
 #include "Version.h"
 
@@ -141,6 +142,14 @@ BOOL WINAPI consoleCtrlHandler(DWORD ctrlType)
         return L"not attempted";
     }
     return L"unknown";
+}
+
+// The one place AppOptions turns into the presentation layer's path-display setting.
+// cli::ScanReport, cli::Json and tui::TuiApp all take it as a parameter rather than
+// reading a global, so each of them stays independently testable.
+[[nodiscard]] PathDisplayOptions pathDisplayOptionsFor(const AppOptions& options) noexcept
+{
+    return PathDisplayOptions{options.showSpecialFolders};
 }
 
 enum class UiLanguage
@@ -349,7 +358,8 @@ void reportVerboseDiagnostics(const AppOptions& options, Console& console,
     }
 
     console.writeLine(std::format(L"verbose: effective Links directory: {}",
-                                  sanitizeForDisplay(linksDirectory.native())),
+                                  formatPathForDisplay(linksDirectory,
+                                                       pathDisplayOptionsFor(options))),
                       ConsoleStream::Error, MessageImportance::Diagnostic);
 
     // Unlike linksDirectory above (already resolved unconditionally by the caller for
@@ -365,7 +375,8 @@ void reportVerboseDiagnostics(const AppOptions& options, Console& console,
         const std::filesystem::path packagesDirectory =
             paths::getPackagesDirectory(options.packagesDirectory);
         console.writeLine(std::format(L"verbose: effective Packages directory: {}",
-                                      sanitizeForDisplay(packagesDirectory.native())),
+                                      formatPathForDisplay(packagesDirectory,
+                                                           pathDisplayOptionsFor(options))),
                           ConsoleStream::Error, MessageImportance::Diagnostic);
     }
     catch (const std::exception&)
@@ -469,7 +480,9 @@ void reportVerboseDiagnostics(const AppOptions& options, Console& console,
             {
                 console.writeLine(std::format(L"warning: could not derive a valid alias "
                                               L"for {}",
-                                              sanitizeForDisplay(executable.path.native())),
+                                              formatPathForDisplay(
+                                                  executable.path,
+                                                  pathDisplayOptionsFor(options))),
                                   ConsoleStream::Error);
                 continue;
             }
@@ -532,11 +545,13 @@ void writeJsonDocument(Console& console, const std::string& json)
 
     if (options.jsonOutput)
     {
-        writeJsonDocument(console, toJsonScanResult(candidates.allItems, candidates.collisions));
+        writeJsonDocument(console, toJsonScanResult(candidates.allItems, candidates.collisions,
+                                                    pathDisplayOptionsFor(options)));
     }
     else
     {
-        for (const ReportLine& line : formatGroupedReport(candidates.allItems, ReportMode::Scan))
+        for (const ReportLine& line : formatGroupedReport(candidates.allItems, ReportMode::Scan,
+                                                          pathDisplayOptionsFor(options)))
         {
             console.writeLine(line.text, ConsoleStream::Output, line.importance);
         }
@@ -651,7 +666,8 @@ struct TuiRunResult
     }
 
     tui::ChecklistModel model(std::move(rows));
-    const tui::ChecklistRunResult checklistResult = tui::runChecklist(*session, model);
+    const tui::ChecklistRunResult checklistResult =
+        tui::runChecklist(*session, model, pathDisplayOptionsFor(options));
     // Fold the terminal back before this function's caller writes anything else -
     // progress lines and the final summary must land on the restored, normal screen,
     // not the checklist's alternate one.
@@ -734,7 +750,8 @@ void printBatchSummary(Console& console, const RepairBatchSummary& summary)
     if (!options.jsonOutput && tuiResult.outcome == TuiRunOutcome::NotRun)
     {
         for (const ReportLine& line :
-             formatGroupedReport(candidates.allItems, ReportMode::FixPreview))
+             formatGroupedReport(candidates.allItems, ReportMode::FixPreview,
+                                 pathDisplayOptionsFor(options)))
         {
             console.writeLine(line.text, ConsoleStream::Output, line.importance);
         }
@@ -852,7 +869,8 @@ void printBatchSummary(Console& console, const RepairBatchSummary& summary)
                 jsonResults.push_back(*item.repairResult);
             }
         }
-        writeJsonDocument(console, toJsonFixResult(jsonResults, candidates.collisions));
+        writeJsonDocument(console, toJsonFixResult(jsonResults, candidates.collisions,
+                                                   pathDisplayOptionsFor(options)));
     }
 
     return toExitCode(exitCodeFor(batchResult.summary));
@@ -926,6 +944,9 @@ void printHelp(Console& console)
         L"  --no-color             disable colored/VT output regardless of TTY",
         L"                         state (also honors the NO_COLOR environment",
         L"                         variable)",
+        L"  -s, --showspecialfolder",
+        L"                         print %LOCALAPPDATA%/%APPDATA%/%USERPROFILE% instead",
+        L"                         of the real path (console output and --json alike)",
         L"  --silent               do not ask whether to restart elevated; print only",
         L"                         the startup permission message",
         L"  --version              print the version number and exit",

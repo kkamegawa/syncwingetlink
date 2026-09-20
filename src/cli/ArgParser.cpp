@@ -207,6 +207,10 @@ void handleOption(const std::wstring& arg, const std::vector<std::wstring>& args
     {
         options.noColor = true;
     }
+    else if (arg == L"--showspecialfolder" || arg == L"-s")
+    {
+        options.showSpecialFolders = true;
+    }
     else if (arg == L"--silent")
     {
         options.silent = true;

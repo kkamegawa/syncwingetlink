@@ -430,4 +430,73 @@ public:
         Assert::IsTrue(result.outcome == ChecklistOutcome::Cancelled);
     }
 };
+
+// docs/adr-phase-10.md ADR-0048: --showspecialfolder keeps the account name off a
+// screenshot of the checklist.
+TEST_CLASS(RunChecklistPathDisplayTests)
+{
+public:
+    TEST_METHOD(theTargetIsAbbreviatedWhenTheOptionIsSet)
+    {
+        std::wstring root;
+        for (const cli::KnownFolderMapping& mapping : cli::knownFolderMappings())
+        {
+            if (mapping.variable == L"%LOCALAPPDATA%")
+            {
+                root = mapping.root;
+            }
+        }
+        if (root.empty())
+        {
+            return; // Nothing to abbreviate against on this host.
+        }
+
+        ScriptedTerminal fake;
+        fake.events.push_back(keyEvent(kVkReturn));
+
+        ChecklistCandidate candidate = makeCandidate(L"tool.exe");
+        candidate.item.executable.path = root + LR"(\Microsoft\WinGet\Packages\t\tool.exe)";
+
+        TerminalSession session = makeSession(fake);
+        ChecklistModel model({candidate});
+
+        static_cast<void>(
+            runChecklist(session, model, cli::PathDisplayOptions{/* showSpecialFolders */ true}));
+
+        const std::wstring frames = allWrites(fake);
+        Assert::IsTrue(frames.find(L"%LOCALAPPDATA%") != std::wstring::npos);
+        Assert::IsTrue(frames.find(root) == std::wstring::npos);
+    }
+
+    TEST_METHOD(theTargetKeepsTheRealPathByDefault)
+    {
+        std::wstring root;
+        for (const cli::KnownFolderMapping& mapping : cli::knownFolderMappings())
+        {
+            if (mapping.variable == L"%LOCALAPPDATA%")
+            {
+                root = mapping.root;
+            }
+        }
+        if (root.empty())
+        {
+            return;
+        }
+
+        ScriptedTerminal fake;
+        fake.events.push_back(keyEvent(kVkReturn));
+
+        ChecklistCandidate candidate = makeCandidate(L"tool.exe");
+        candidate.item.executable.path = root + LR"(\Microsoft\WinGet\Packages\t\tool.exe)";
+
+        TerminalSession session = makeSession(fake);
+        ChecklistModel model({candidate});
+
+        static_cast<void>(runChecklist(session, model));
+
+        const std::wstring frames = allWrites(fake);
+        Assert::IsTrue(frames.find(root) != std::wstring::npos);
+        Assert::IsTrue(frames.find(L"%LOCALAPPDATA%") == std::wstring::npos);
+    }
+};
 } // namespace syncwingetlink::tests

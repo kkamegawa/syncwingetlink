@@ -3717,3 +3717,79 @@ Three separate things combined:
 - `tests/DispatchTests.cpp` is unchanged — `runTuiChecklistIfRequested()` lives in an
   anonymous namespace and is not unit-testable, as that file's own header comment
   records. The wiring is covered by the manual scratch-tree checks below.
+
+---
+
+## 2026-09-20 — `--showspecialfolder`/`-s`: print `%LOCALAPPDATA%` instead of the real user-profile path
+
+**Issue**: [#180](https://github.com/kkamegawa/syncwingetlink/issues/180)
+**ADR**: `docs/adr-phase-10.md` ADR-0048
+**Branch**: `feature/180-showspecialfolder` (stacked on
+`fix/179-tui-shows-mismatch-candidates`)
+
+### Motivation
+
+Every path the tool printed carried the real user profile directory, so a screenshot of a
+`scan` table or a `--tui` checklist leaked the account name and had to be redacted by
+hand before it could be attached to an issue.
+
+### What changed
+
+- `src/cli/PathDisplay.{h,cpp}` (new): `PathDisplayOptions`, `KnownFolderMapping`,
+  `abbreviateKnownFolders()`, `knownFolderMappings()`, `formatPathForDisplay()`.
+  Registered in `syncwingetlink.core.vcxproj` **and** its `.filters`.
+- `core::AppOptions::showSpecialFolders`; `cli::ArgParser` accepts
+  `--showspecialfolder` / `-s` (neither short form collided - only `-h` and `-y` existed).
+- The setting is threaded as a defaulted trailing parameter through
+  `formatGroupedReport()`, every `cli::Json` serializer, and `tui::runChecklist()`.
+  `cli::Dispatch::pathDisplayOptionsFor()` is the single place `AppOptions` becomes one.
+  No global state - a process-wide flag would have made these otherwise-pure functions
+  order-dependent under the unit tests.
+- Five console sites and both JSON documents now print through
+  `formatPathForDisplay()`: the grouped report's target column, the `--tui` checklist row,
+  the two `--verbose` directory diagnostics, the "could not derive a valid alias" warning,
+  and `toJsonPathString()`.
+- Tests: `tests/PathDisplayTests.cpp` (new, 18 cases, registered in both test project
+  files) plus new cases in `ArgParserTests`, `JsonTests`, `ScanReportTests` and
+  `TuiAppTests`.
+- Docs: `docs/adr-phase-10.md` ADR-0048, `docs/PLAN.md` (synopsis, a new
+  §`--showspecialfolder` section, and a §8 note on the JSON schema), `README.md` options
+  table, `docs/TODO.md`.
+
+### Decisions worth remembering
+
+- **Only three folders** - `%LOCALAPPDATA%`, `%APPDATA%`, `%USERPROFILE%`. Those are the
+  ones whose real form carries the account name; `%PROGRAMFILES%` and friends identify
+  nobody.
+- **`--json` is abbreviated too** (the owner's call): pasting a document verbatim beats
+  keeping every path directly openable, and a consumer expands the variable itself.
+- **Sorting still uses the real path**, so the flag can never reorder a report. Column
+  widths *are* measured on the rendered text, so an abbreviated table still lines up.
+- **`sanitizeForDisplay()` stays last**, after abbreviation - covered by a test, since an
+  abbreviated path must not be able to smuggle a control sequence into a terminal.
+- `abbreviateKnownFolders()` takes the folder table as a parameter so the matching rules
+  are testable against a synthetic table on any host; `knownFolderMappings()` is the
+  separate cached accessor that queries `SHGetKnownFolderPath`.
+
+### Verification
+
+- `Debug|Release` × `x64` built and tested; `Debug|Release` × `ARM64` cross-built only
+  (not run - this is an x64 host; CI runs ARM64 natively per ADR-0046).
+- `vstest.console.exe`: **476/478** for `Debug|x64` and `Release|x64`. The 2 failures are
+  the pre-existing `IntegrationTests` symlink cases
+  (`dummyTreeReachesOkThroughScanFixRescan`,
+  `nonAsciiDummyTreeReachesOkThroughScanFixRescan`), which need Developer Mode or
+  elevation to create a symlink; confirmed by `git stash`-ing every change and re-running
+  them on the unmodified tree, where they fail identically.
+- Manual, read-only, against the real `Links`/`Packages` on the reporting host:
+  - `scan --source fs -s` — target column renders `%LOCALAPPDATA%\...`; the one
+    `Mismatch` (`GitHub.Copilot.Prerelease` / `copilot.exe`) and all 20 `Ok` rows line up.
+  - `scan --source fs --json -s` — `executable`, `linkPath` and `existingTarget` all
+    abbreviated; `scan --source fs --json` without the flag still emits the real paths.
+  - `scan --source fs --verbose -s` — both directory diagnostics abbreviated.
+  - `fix --tui --dry-run -s --source fs < /dev/null` — the non-interactive fallback
+    warning fires and, thanks to #179's preview fix, the grouped preview is now printed
+    (before that change a fallback showed nothing at all).
+- **Not verified here**: the interactive checklist itself, which needs a real console
+  this session does not have. Its rendering is covered by `TuiAppTests`; the live TUI
+  should be eyeballed once on the reporting host.
