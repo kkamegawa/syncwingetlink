@@ -3732,8 +3732,9 @@ Three separate things combined:
   `nonAsciiDummyTreeReachesOkThroughScanFixRescan`), which need Developer Mode or
   elevation to create a symlink. Confirmed not a regression by `git stash`-ing every
   change and re-running them on the unmodified tree, where they fail identically.
-- New coverage: `ChecklistModelUnselectableCandidateTests` (8 cases) and
-  `RunChecklistUnselectableCandidateTests` (7 cases).
+- New coverage: `ChecklistModelUnselectableCandidateTests` (8 cases),
+  `RunChecklistUnselectableCandidateTests` (7 cases), and `ChecklistRowKindForTests`
+  (4 cases, added in the second review round - see below).
 - `fix --tui --dry-run --source fs` with stdin redirected from `/dev/null`: the
   non-interactive fallback warning fires **and** the grouped preview is printed. Before
   this change a fallback printed neither, which is the second half of what made #179
@@ -3746,3 +3747,22 @@ Three separate things combined:
   `> [-] (Mismatch) copilot.exe -> %LOCALAPPDATA%\...\copilot.exe [cannot repair]`.
   This closes the one item the implementation session could not verify itself, since it
   had no real console.
+
+### Second review round
+
+Copilot's follow-up review reported **`Findings: None`**, with all seven earlier
+findings marked resolved. Its headline sentence still mentioned "Dispatch coverage",
+which the body contradicted - but the underlying observation was fair, so one change was
+made rather than none:
+
+`cli::checklistRowKindFor(LinkStatus)` and `ChecklistRowKind` were extracted from
+`runTuiChecklistIfRequested()`'s inline `switch` and exported from `cli/Dispatch.h`.
+That is the exact shape of `exitCodeAfterElevationDeclined()`, which already sits in
+that header for the same reason - a pure `--tui` policy decision exported so it can be
+asserted without a console, a filesystem, or a package source. The status→row mapping is
+the load-bearing half of ADR-0047 and previously had no direct test at all; it now has
+`ChecklistRowKindForTests`. No behavior changed: `runTuiChecklistIfRequested()` calls
+the helper instead of spelling the policy out, so the two cannot drift.
+
+Test count after this change: **450/452** for `Debug|x64`, with the same two
+pre-existing `IntegrationTests` symlink failures.

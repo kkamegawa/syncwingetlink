@@ -39,10 +39,19 @@ returned. Two further defects made it unreadable rather than merely surprising:
 
 1. **The checklist lists `Missing`, `Broken`, and `Mismatch`; `Mismatch` rows are not
    selectable.** `tui::ChecklistCandidate` gains a `bool selectable` field, and
-   `cli::Dispatch` is the single place that maps a `LinkStatus` onto it:
-   `Missing`/`Broken` → selectable, `Mismatch` → not selectable, `Ok` → not listed at
-   all. `tui::ChecklistModel` never interprets a `LinkStatus`; it stays a pure selection
-   state machine, which is what keeps every transition unit-testable without a console.
+   `cli::checklistRowKindFor(LinkStatus)` is the single place that maps a status onto
+   its role: `Missing`/`Broken` → `Selectable`, `Mismatch` → `Informational`, `Ok` →
+   `NotListed`. `tui::ChecklistModel` never interprets a `LinkStatus`; it stays a pure
+   selection state machine, which is what keeps every transition unit-testable without a
+   console.
+
+   That mapping is **exported from `cli/Dispatch.h`**, not left inline in
+   `runTuiChecklistIfRequested()`'s anonymous namespace, for the same reason
+   `exitCodeAfterElevationDeclined()` already is: it is a pure `--tui` policy decision,
+   and it is the load-bearing half of this ADR, so it should be assertable directly
+   rather than only through `runFix()` - which needs a real console, filesystem, and
+   package source. The `switch` is total, so adding a `LinkStatus` fails to compile here
+   rather than silently defaulting a new state into or out of the checklist.
 
 2. **`ChecklistModel` enforces non-selectability, rather than trusting the renderer to.**
    `isSelected()` reports false for a non-selectable index regardless of prior toggles,
@@ -120,9 +129,13 @@ returned. Two further defects made it unreadable rather than merely surprising:
 - `docs/PLAN.md` §`--tui` and `README.md` §`--tui` both gain an explicit statement that
   `fix` never repairs a `Mismatch` — the behavior is easy to forget, and issue #179 is
   what it looks like when it is.
-- `cli::Dispatch`'s TUI wiring remains outside unit-test reach (`tests/DispatchTests.cpp`
-  documents why). It is covered by the manual checks recorded in `docs/task.md`,
-  including the reporting user's confirmation of the live checklist on the inventory that
-  produced #179.
+- `cli::Dispatch.h` gains `ChecklistRowKind` and `checklistRowKindFor()`;
+  `tests/DispatchTests.cpp` gains `ChecklistRowKindForTests`, covering each status and
+  asserting that exactly two of the four are ever selectable.
+- The rest of the TUI wiring (`runTuiChecklistIfRequested()`, `runFix()`) remains
+  outside unit-test reach, in an anonymous namespace - `tests/DispatchTests.cpp`
+  documents why. It is covered by the manual checks recorded in `docs/task.md`,
+  including the reporting user's confirmation of the live checklist on the inventory
+  that produced #179.
 
 ---
