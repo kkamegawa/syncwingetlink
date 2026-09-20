@@ -170,8 +170,9 @@ confirm-per-item flow. Its real behavior, not just its intent:
 - **It falls back to the line-oriented CLI confirmation flow** - no TUI escape sequence
   is ever emitted, and a warning is printed to stderr - when stdin and stdout aren't
   both a real, interactive console, when virtual-terminal processing isn't available
-  (e.g. output is redirected/piped), or when there is nothing to list at all because
-  every candidate is `Ok`.
+  (e.g. output is redirected/piped), or when there is nothing to list at all - which
+  means every candidate is either `Ok` or was excluded as an alias collision, not only
+  the all-`Ok` case.
 - **It does not start when required elevation is declined or suppressed** - `fix --tui`
   exits with code `2` instead of opening an editable checklist that cannot create links.
 - `--dry-run` and `--no-color` both remain compatible with `--tui`.

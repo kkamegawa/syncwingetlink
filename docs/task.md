@@ -3720,4 +3720,29 @@ Three separate things combined:
   matter (20 of 21 entries, in the reported case).
 - `tests/DispatchTests.cpp` is unchanged — `runTuiChecklistIfRequested()` lives in an
   anonymous namespace and is not unit-testable, as that file's own header comment
-  records. The wiring is covered by the manual scratch-tree checks below.
+  records. The wiring is covered by the manual checks recorded below.
+
+### Verification
+
+- `Debug|Release` × `x64`/`ARM64` all build clean under `/W4 /WX`. ARM64 was
+  **cross-built, not run** — this is an x64 host; CI runs ARM64 natively per ADR-0046.
+- `vstest.console.exe`: **446/448** for `Debug|x64` and `Release|x64`. The 2 failures are
+  the pre-existing `IntegrationTests` symlink cases
+  (`dummyTreeReachesOkThroughScanFixRescan`,
+  `nonAsciiDummyTreeReachesOkThroughScanFixRescan`), which need Developer Mode or
+  elevation to create a symlink. Confirmed not a regression by `git stash`-ing every
+  change and re-running them on the unmodified tree, where they fail identically.
+- New coverage: `ChecklistModelUnselectableCandidateTests` (8 cases) and
+  `RunChecklistUnselectableCandidateTests` (7 cases).
+- `fix --tui --dry-run --source fs` with stdin redirected from `/dev/null`: the
+  non-interactive fallback warning fires **and** the grouped preview is printed. Before
+  this change a fallback printed neither, which is the second half of what made #179
+  look like a silent failure.
+- **The live interactive checklist was confirmed by the reporting user** on the real
+  inventory that produced #179, against a build of this branch plus #180. The screenshot
+  shows exactly the intended frame: the key-hint line reads
+  `Up/Down: move  Enter: continue  Esc/Q/Ctrl+C: cancel` (the no-selectable-rows
+  variant), and the single row reads
+  `> [-] (Mismatch) copilot.exe -> %LOCALAPPDATA%\...\copilot.exe [cannot repair]`.
+  This closes the one item the implementation session could not verify itself, since it
+  had no real console.

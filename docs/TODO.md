@@ -275,7 +275,7 @@ Build system decisions are recorded in [`adr.md`](./adr.md) (ADR-0001 … ADR-00
       `--source com|auto|fs` checks on the reporting host
 
 ## `--tui` reporting and path display (issues #179, #180)
-- [ ] Show `Mismatch` candidates in the `fix --tui` checklist as non-selectable
+- [x] Show `Mismatch` candidates in the `fix --tui` checklist as non-selectable
       `[cannot repair]` rows, warn instead of returning silently when nothing is
       listable, and suppress the grouped fix preview only when the checklist actually
       ran - issue #179, `docs/adr-phase-10.md` ADR-0047

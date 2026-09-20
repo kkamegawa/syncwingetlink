@@ -378,8 +378,9 @@ behavior - documented here rather than left as "run in interactive TUI mode", pe
   `console.stdoutInteractive()`, or `console.vtEnabled()` is false, or the terminal
   session otherwise fails to start, `cli::Dispatch` prints one warning line to stderr
   and falls back to the existing line-oriented confirmation flow. The same applies when
-  there is nothing at all to list (every candidate is `Ok`), which likewise warns rather
-  than falling back silently.
+  there is nothing at all to list - every candidate is either `Ok` or was excluded as an
+  alias collision (`docs/adr-phase-5.md` ADR-0021), not only the all-`Ok` case - which
+  likewise warns rather than falling back silently.
 - **The grouped `fix` preview is suppressed only when the checklist actually ran** - a
   `--tui` invocation that fell back prints it as a plain `fix` would, so a fallback never
   shows *less* than not passing `--tui` at all.

@@ -618,15 +618,19 @@ struct TuiRunResult
 
     if (rows.empty())
     {
-        // Every remaining candidate is Ok, or was excluded as an alias collision. An
-        // empty checklist would say nothing, so runFix()'s ordinary path handles these
-        // exactly as it would without --tui - but say so, rather than leaving the user
-        // to wonder why the checklist they asked for never appeared. ADR-0027 decision 5
-        // always specified this warning; only the terminal-capability branch below ever
-        // implemented it.
-        console.writeLine(L"warning: --tui has nothing to show - no Missing, Broken, or "
-                          L"Mismatch candidates; falling back to the line-oriented "
-                          L"confirmation flow",
+        // Two different ways to get here, and the wording has to cover both: every
+        // candidate is Ok, or the actionable ones exist but were all excluded as alias
+        // collisions upstream (printCollisions() has already named those). Saying "no
+        // Missing, Broken, or Mismatch candidates" would be a lie in the second case.
+        //
+        // An empty checklist would say nothing, so runFix()'s ordinary path handles
+        // these exactly as it would without --tui - but say so, rather than leaving the
+        // user to wonder why the checklist they asked for never appeared. ADR-0027
+        // decision 5 always specified this warning; only the terminal-capability branch
+        // below ever implemented it.
+        console.writeLine(L"warning: --tui has nothing to list - every candidate is "
+                          L"either Ok or excluded as an alias collision; falling back "
+                          L"to the line-oriented confirmation flow",
                           ConsoleStream::Error);
         return {};
     }
