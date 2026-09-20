@@ -170,8 +170,9 @@ confirm-per-item flow. Its real behavior, not just its intent:
 - **It falls back to the line-oriented CLI confirmation flow** - no TUI escape sequence
   is ever emitted, and a warning is printed to stderr - when stdin and stdout aren't
   both a real, interactive console, when virtual-terminal processing isn't available
-  (e.g. output is redirected/piped), or when there is nothing to list at all because
-  every candidate is `Ok`.
+  (e.g. output is redirected/piped), or when there is nothing to list at all - which
+  means every candidate is either `Ok` or was excluded as an alias collision, not only
+  the all-`Ok` case.
 - **It does not start when required elevation is declined or suppressed** - `fix --tui`
   exits with code `2` instead of opening an editable checklist that cannot create links.
 - `--dry-run` and `--no-color` both remain compatible with `--tui`.
@@ -194,7 +195,7 @@ confirm-per-item flow. Its real behavior, not just its intent:
 | `--fail-on-missing` | `scan` exits 1 if a Missing/Broken/Mismatch link is found |
 | `--no-color` | Disable colored/VT output regardless of TTY state (also honors the `NO_COLOR` environment variable) |
 | `--silent` | Print the startup permission warning without asking whether to restart elevated |
-| `--showspecialfolder`, `-s` | Print `%LOCALAPPDATA%`/`%APPDATA%`/`%USERPROFILE%` instead of the real path, so output can be shared without redacting the account name. Applies to console output, the `--tui` checklist, and `--json` documents alike; never changes row ordering |
+| `--showspecialfolder`, `-s` | Print `%LOCALAPPDATA%`/`%APPDATA%`/`%USERPROFILE%` instead of the real path, so output can be shared without redacting the account name. Applies to console output, the `--tui` checklist, `--json` documents, and error messages that embed a path; never changes row ordering |
 | `--help`, `-h` / `--version` | Help / version |
 
 ### Exit codes

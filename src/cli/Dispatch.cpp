@@ -152,6 +152,19 @@ BOOL WINAPI consoleCtrlHandler(DWORD ctrlType)
     return PathDisplayOptions{options.showSpecialFolders};
 }
 
+// core/ formats its exception messages (as UTF-8) long before this layer decides how to
+// display them, and several of them embed a real path mid-sentence - e.g.
+// "CreateSymbolicLinkW failed for 'C:\Users\...\Links\tool.exe' (Win32 error 5)" from
+// SymlinkService, plus LinkInspector's and RuleSetSelector's equivalents. Without this,
+// --showspecialfolder would abbreviate every ordinary path the tool prints and then leak
+// the account name the moment anything went wrong, which is precisely when output gets
+// pasted into an issue. See docs/adr-phase-10.md ADR-0048.
+[[nodiscard]] std::wstring diagnosticText(std::string_view utf8Message,
+                                          const AppOptions& options)
+{
+    return formatDiagnosticForDisplay(utf8ToWide(utf8Message), pathDisplayOptionsFor(options));
+}
+
 enum class UiLanguage
 {
     English,
@@ -447,10 +460,10 @@ void reportVerboseDiagnostics(const AppOptions& options, Console& console,
 {
     bool sourceDegradedToFileSystem = false;
     std::wstring degradeReason;
-    const auto onDegrade = [&console, &sourceDegradedToFileSystem,
+    const auto onDegrade = [&console, &options, &sourceDegradedToFileSystem,
                             &degradeReason](const PackageSourceError& error) {
         sourceDegradedToFileSystem = true;
-        degradeReason = utf8ToWide(error.what());
+        degradeReason = diagnosticText(error.what(), options);
         console.writeLine(std::format(L"warning: --source auto fell back to a filesystem "
                                       L"scan: {}",
                                       degradeReason),
@@ -633,15 +646,19 @@ struct TuiRunResult
 
     if (rows.empty())
     {
-        // Every remaining candidate is Ok, or was excluded as an alias collision. An
-        // empty checklist would say nothing, so runFix()'s ordinary path handles these
-        // exactly as it would without --tui - but say so, rather than leaving the user
-        // to wonder why the checklist they asked for never appeared. ADR-0027 decision 5
-        // always specified this warning; only the terminal-capability branch below ever
-        // implemented it.
-        console.writeLine(L"warning: --tui has nothing to show - no Missing, Broken, or "
-                          L"Mismatch candidates; falling back to the line-oriented "
-                          L"confirmation flow",
+        // Two different ways to get here, and the wording has to cover both: every
+        // candidate is Ok, or the actionable ones exist but were all excluded as alias
+        // collisions upstream (printCollisions() has already named those). Saying "no
+        // Missing, Broken, or Mismatch candidates" would be a lie in the second case.
+        //
+        // An empty checklist would say nothing, so runFix()'s ordinary path handles
+        // these exactly as it would without --tui - but say so, rather than leaving the
+        // user to wonder why the checklist they asked for never appeared. ADR-0027
+        // decision 5 always specified this warning; only the terminal-capability branch
+        // below ever implemented it.
+        console.writeLine(L"warning: --tui has nothing to list - every candidate is "
+                          L"either Ok or excluded as an alias collision; falling back "
+                          L"to the line-oriented confirmation flow",
                           ConsoleStream::Error);
         return {};
     }
@@ -1080,19 +1097,19 @@ int run(const std::vector<std::wstring>& args)
     }
     catch (const PackageSourceError& error)
     {
-        console.writeLine(utf8ToWide(error.what()), ConsoleStream::Error);
+        console.writeLine(diagnosticText(error.what(), options), ConsoleStream::Error);
         console.writeLine(std::wstring(L"hint: ") + utf8ToWide(remediationFor(error.kind())),
                           ConsoleStream::Error);
         return static_cast<int>(exitCodeFor(error.kind()));
     }
     catch (const RuleSetError& error)
     {
-        console.writeLine(utf8ToWide(error.what()), ConsoleStream::Error);
+        console.writeLine(diagnosticText(error.what(), options), ConsoleStream::Error);
         return static_cast<int>(exitCodeFor(error.kind()));
     }
     catch (const SymlinkServiceError& error)
     {
-        console.writeLine(utf8ToWide(error.what()), ConsoleStream::Error);
+        console.writeLine(diagnosticText(error.what(), options), ConsoleStream::Error);
         return static_cast<int>(exitCodeFor(error.kind()));
     }
     catch (const LinkInspectionError& error)
@@ -1103,7 +1120,7 @@ int run(const std::vector<std::wstring>& args)
         // falls into the same generic-failure bucket (exit code 3) the std::exception
         // catch-all below uses for every other condition this dispatch layer did not
         // anticipate closely enough to give its own exit code.
-        console.writeLine(utf8ToWide(error.what()), ConsoleStream::Error);
+        console.writeLine(diagnosticText(error.what(), options), ConsoleStream::Error);
         return static_cast<int>(ExitCode::ArgumentError);
     }
     catch (const std::exception& error)
@@ -1113,7 +1130,7 @@ int run(const std::vector<std::wstring>& args)
         // code 3 is the closest documented fit ("argument/config error") for a
         // condition this dispatch layer did not anticipate closely enough to name -
         // see docs/adr-phase-5.md ADR-0024.
-        console.writeLine(utf8ToWide(error.what()), ConsoleStream::Error);
+        console.writeLine(diagnosticText(error.what(), options), ConsoleStream::Error);
         return static_cast<int>(ExitCode::ArgumentError);
     }
 }

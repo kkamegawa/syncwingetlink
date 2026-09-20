@@ -3720,7 +3720,32 @@ Three separate things combined:
   matter (20 of 21 entries, in the reported case).
 - `tests/DispatchTests.cpp` is unchanged — `runTuiChecklistIfRequested()` lives in an
   anonymous namespace and is not unit-testable, as that file's own header comment
-  records. The wiring is covered by the manual scratch-tree checks below.
+  records. The wiring is covered by the manual checks recorded below.
+
+### Verification
+
+- `Debug|Release` × `x64`/`ARM64` all build clean under `/W4 /WX`. ARM64 was
+  **cross-built, not run** — this is an x64 host; CI runs ARM64 natively per ADR-0046.
+- `vstest.console.exe`: **446/448** for `Debug|x64` and `Release|x64`. The 2 failures are
+  the pre-existing `IntegrationTests` symlink cases
+  (`dummyTreeReachesOkThroughScanFixRescan`,
+  `nonAsciiDummyTreeReachesOkThroughScanFixRescan`), which need Developer Mode or
+  elevation to create a symlink. Confirmed not a regression by `git stash`-ing every
+  change and re-running them on the unmodified tree, where they fail identically.
+- New coverage: `ChecklistModelUnselectableCandidateTests` (8 cases) and
+  `RunChecklistUnselectableCandidateTests` (7 cases).
+- `fix --tui --dry-run --source fs` with stdin redirected from `/dev/null`: the
+  non-interactive fallback warning fires **and** the grouped preview is printed. Before
+  this change a fallback printed neither, which is the second half of what made #179
+  look like a silent failure.
+- **The live interactive checklist was confirmed by the reporting user** on the real
+  inventory that produced #179, against a build of this branch plus #180. The screenshot
+  shows exactly the intended frame: the key-hint line reads
+  `Up/Down: move  Enter: continue  Esc/Q/Ctrl+C: cancel` (the no-selectable-rows
+  variant), and the single row reads
+  `> [-] (Mismatch) copilot.exe -> %LOCALAPPDATA%\...\copilot.exe [cannot repair]`.
+  This closes the one item the implementation session could not verify itself, since it
+  had no real console.
 
 ---
 
@@ -3795,6 +3820,59 @@ hand before it could be attached to an issue.
   - `fix --tui --dry-run -s --source fs < /dev/null` — the non-interactive fallback
     warning fires and, thanks to #179's preview fix, the grouped preview is now printed
     (before that change a fallback showed nothing at all).
-- **Not verified here**: the interactive checklist itself, which needs a real console
-  this session does not have. Its rendering is covered by `TuiAppTests`; the live TUI
-  should be eyeballed once on the reporting host.
+- **The live checklist was confirmed by the reporting user**, on a build of this branch
+  stacked on #179, against the real inventory: the single row rendered as
+  `> [-] (Mismatch) copilot.exe -> %LOCALAPPDATA%\Microsoft\WinGet\Packages\...\copilot.exe
+  [cannot repair]`, with no account name anywhere on screen. That covers both the
+  `[cannot repair]` rendering from #179 and this change's abbreviation inside the TUI -
+  neither of which the implementation session could exercise itself, for lack of a real
+  console.
+### Review follow-up (PR #182)
+
+Copilot's review found two real gaps in the first implementation, both now fixed with
+tests:
+
+1. **Extended-length paths bypassed abbreviation.** `ArgParser::validatePathOverride()`
+   accepts a `\\?\`-prefixed `--links-dir`/`--packages-dir`/`--rules` verbatim (it
+   rejects only `\.\` device paths), and `paths::getLinksDirectory()` returns an
+   override unchanged, while `SHGetKnownFolderPath` always reports the ordinary form.
+   The prefix comparison therefore failed and `-s --verbose` still printed the account
+   name. `abbreviateKnownFolders()` now matches against
+   `paths::fromExtendedLengthPath()`'s output. A path that matches nothing is still
+   returned byte-for-byte, `\\?\` included - normalizing a path the function was not
+   asked to rewrite is not its job. My original header comment claimed this could not
+   arise because model paths are already non-extended; that reasoning was sound for the
+   scan pipeline and simply missed the override route.
+2. **Error diagnostics still leaked the profile path.** `LinkInspector`,
+   `SymlinkService` and `RuleSetSelector` all format exception messages in `core/` with
+   a real path embedded mid-sentence, and `cli::Dispatch` printed them straight through
+   `utf8ToWide()`. Abbreviating every ordinary path and then leaking the account name
+   the moment anything failed defeats the option exactly when output gets pasted into an
+   issue. New `abbreviateKnownFoldersInText()` / `formatDiagnosticForDisplay()`
+   substitute every occurrence inside a message; `cli::Dispatch::diagnosticText()` routes
+   five of the six `catch` handlers plus the `--source auto` degrade reason through it.
+   The `ArgParseError` handler is left alone - it runs before `parseArguments()`
+   returned, so no `-s` has been observed yet, and the message usually names the very
+   argument that failed to parse.
+
+The in-text boundary rule accepts a quote as well as a separator or end-of-string, since
+this codebase's diagnostics wrap a path in `'...'`. The trade-off, recorded in ADR-0048:
+a directory whose own name begins with an apostrophe immediately after a known-folder
+root would be abbreviated one component early.
+
+**Verified after the fix** (`Debug|x64`, plus the four-configuration build):
+
+- `vstest.console.exe`: **491/493** (15 new cases: 4 extended-length, 8 in-text, 3
+  `formatDiagnosticForDisplay`). The same 2 pre-existing `IntegrationTests` symlink
+  failures remain.
+- Live, read-only, driven from PowerShell so the `\\?\` argument survives the shell:
+
+  | Command | Result |
+  |---|---|
+  | `scan --verbose --links-dir \\?\%LOCALAPPDATA%\...\Links` | `\\?\C:\Users\<name>\AppData\Local\...` — the leak |
+  | `scan --verbose -s --links-dir \\?\%LOCALAPPDATA%\...\Links` | `%LOCALAPPDATA%\Microsoft\WinGet\Links` |
+  | `scan --rules %LOCALAPPDATA%\<missing>\rules.json` | `could not open rules file for reading: C:\Users\<name>\...` — the leak |
+  | `scan -s --rules %LOCALAPPDATA%\<missing>\rules.json` | `could not open rules file for reading: %LOCALAPPDATA%\...` |
+
+  Both leaking rows are the pre-fix behavior, reproduced by omitting `-s` on the fixed
+  build.

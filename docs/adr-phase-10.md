@@ -70,8 +70,14 @@ returned. Two further defects made it unreadable rather than merely surprising:
 
 6. **The genuinely-empty case warns instead of returning silently**, implementing what
    ADR-0027 decision 5 already specified:
-   `warning: --tui has nothing to show - no Missing, Broken, or Mismatch candidates;
-   falling back to the line-oriented confirmation flow`.
+   `warning: --tui has nothing to list - every candidate is either Ok or excluded as an
+   alias collision; falling back to the line-oriented confirmation flow`.
+
+   The wording names both routes to an empty list deliberately. `nonCollisionItems` can
+   be empty while the inventory still holds `Missing`/`Broken`/`Mismatch` rows, if every
+   one of them shares a colliding alias (ADR-0021); a message claiming there are no such
+   candidates would be false in exactly that case, and `printCollisions()` has already
+   named the aliases responsible.
 
 7. **The fix preview is suppressed only when the checklist actually ran.** The preview
    block moves *after* `runTuiChecklistIfRequested()` and is gated on
@@ -115,8 +121,9 @@ returned. Two further defects made it unreadable rather than merely surprising:
   `fix` never repairs a `Mismatch` — the behavior is easy to forget, and issue #179 is
   what it looks like when it is.
 - `cli::Dispatch`'s TUI wiring remains outside unit-test reach (`tests/DispatchTests.cpp`
-  documents why); it is covered by the manual scratch-tree checks recorded in
-  `docs/task.md`.
+  documents why). It is covered by the manual checks recorded in `docs/task.md`,
+  including the reporting user's confirmation of the live checklist on the inventory that
+  produced #179.
 
 ---
 
@@ -152,6 +159,34 @@ shared in an issue (#180).
    the end of the string, so `C:\Users\bob` never rewrites `C:\Users\bobby\...`.
    Comparison is ordinal and case-insensitive, matching every other path comparison in
    this codebase.
+
+3a. **An extended-length path is matched in its non-extended form** (added after review).
+   `ArgParser::validatePathOverride()` accepts a `\\?\`-prefixed `--links-dir` /
+   `--packages-dir` / `--rules` verbatim - it rejects only `\\.\` device paths - while
+   `SHGetKnownFolderPath` always reports the ordinary spelling. A literal comparison
+   therefore left exactly those overrides printing the account name under `-s`.
+   `abbreviateKnownFolders()` matches against
+   `paths::fromExtendedLengthPath()`'s output; a path that matches nothing is still
+   returned byte-for-byte as it came in, `\\?\` included, because normalizing a path
+   this function was not asked to rewrite is not its job.
+
+3b. **Diagnostics that embed a path are abbreviated too** (added after review).
+   `core/` formats its exception messages as UTF-8 long before `cli::Dispatch` decides
+   how to display them, and `LinkInspector`, `SymlinkService` and `RuleSetSelector` all
+   embed a real path mid-sentence - e.g.
+   `CreateSymbolicLinkW failed for 'C:\Users\...\Links\tool.exe' (Win32 error 5)`.
+   Abbreviating every ordinary path and then leaking the account name the moment
+   anything failed would defeat the option at precisely the moment output gets pasted
+   into an issue. `abbreviateKnownFoldersInText()` substitutes every occurrence inside a
+   message, with the boundary widened to accept a quote as well as a separator or the
+   end of the string, since this codebase's diagnostics wrap a path in `'...'`. The
+   trade-off is that a directory whose own name begins with an apostrophe immediately
+   after a known-folder root would be abbreviated one component early - a cosmetic
+   mis-render in a case that does not occur in practice.
+
+   The `ArgParseError` handler is deliberately left alone: it runs before
+   `parseArguments()` returned, so no `--showspecialfolder` has been observed yet, and
+   the message is usually about the very argument that failed to parse.
 
 4. **`--json` documents are abbreviated too.** Being able to paste a document verbatim
    was judged worth more than keeping every path in the document directly openable; a
@@ -189,8 +224,16 @@ shared in an issue (#180).
 ### Consequences
 
 - `src/cli/PathDisplay.{h,cpp}` (new): `PathDisplayOptions`, `KnownFolderMapping`,
-  `abbreviateKnownFolders()`, `knownFolderMappings()`, `formatPathForDisplay()`.
-  Registered in both `syncwingetlink.core.vcxproj` and its `.filters`.
+  `abbreviateKnownFolders()`, `abbreviateKnownFoldersInText()`, `knownFolderMappings()`,
+  `formatPathForDisplay()`, `formatDiagnosticForDisplay()`. Registered in both
+  `syncwingetlink.core.vcxproj` and its `.filters`.
+- `cli::Dispatch::diagnosticText()` routes five of the six `catch` handlers plus the
+  `--source auto` degrade reason through `formatDiagnosticForDisplay()`. The sixth, the
+  `ArgParseError` handler, is left as it was (see decision 3b).
+- `formatDiagnosticForDisplay()` deliberately does **not** sanitize, unlike
+  `formatPathForDisplay()`: every caller is an existing `Console::writeLine()` site that
+  already sanitizes at its own boundary, and a second pass would change what today's
+  non-path diagnostics look like.
 - `formatPathForDisplay()` becomes the single entry point for printing a path:
   abbreviate (when asked), then `sanitizeForDisplay()`. Sanitization stays last, so an
   abbreviated path can never smuggle a control sequence into a terminal or a document.

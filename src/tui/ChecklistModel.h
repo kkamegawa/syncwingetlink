@@ -26,8 +26,10 @@ struct ChecklistCandidate
 
 // Pure, Win32-free selection-state model for the M7 repair checklist. Holds cursor
 // position, the set of selected items, and the scrolling viewport. `cli::Dispatch`
-// (#59) constructs one from the non-colliding Missing/Broken subset of a scan's
-// results and drives it from key/resize events read through a tui::TerminalSession;
+// (#59) constructs one from the non-colliding Missing/Broken/Mismatch subset of a
+// scan's results - Missing/Broken selectable, Mismatch informational only
+// (docs/adr-phase-10.md ADR-0047), Ok not listed at all - and drives it from
+// key/resize events read through a tui::TerminalSession;
 // `tui::runChecklist()` (TuiApp.h) is the thin renderer/input loop built on top of both.
 // Having no Win32 dependency here keeps every state transition unit-testable without a
 // real console.

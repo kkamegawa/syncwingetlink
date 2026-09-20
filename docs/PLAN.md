@@ -381,8 +381,9 @@ behavior - documented here rather than left as "run in interactive TUI mode", pe
   `console.stdoutInteractive()`, or `console.vtEnabled()` is false, or the terminal
   session otherwise fails to start, `cli::Dispatch` prints one warning line to stderr
   and falls back to the existing line-oriented confirmation flow. The same applies when
-  there is nothing at all to list (every candidate is `Ok`), which likewise warns rather
-  than falling back silently.
+  there is nothing at all to list - every candidate is either `Ok` or was excluded as an
+  alias collision (`docs/adr-phase-5.md` ADR-0021), not only the all-`Ok` case - which
+  likewise warns rather than falling back silently.
 - **The grouped `fix` preview is suppressed only when the checklist actually ran** - a
   `--tui` invocation that fell back prints it as a plain `fix` would, so a fallback never
   shows *less* than not passing `--tui` at all.
@@ -407,9 +408,16 @@ account name (`docs/adr-phase-10.md` ADR-0048).
 - **Component-boundary match only**: the character after the matched prefix must be a
   separator or the end of the string, so `C:\Users\bob` never rewrites
   `C:\Users\bobby\...`. The comparison is ordinal and case-insensitive.
-- **Applies to `--json` as well as the console**, including the `--tui` checklist and the
-  `--verbose` diagnostics. A path outside all three folders (for example a
-  `--links-dir` pointing elsewhere) is printed unchanged.
+- **Applies to `--json` as well as the console**, including the `--tui` checklist, the
+  `--verbose` diagnostics, and error messages that embed a path (`fix`'s symlink
+  failures, an unreadable rules file, and the like). A path outside all three folders
+  (for example a `--links-dir` pointing elsewhere) is printed unchanged.
+- **An extended-length (`\\?\`-prefixed) override is abbreviated too.** `--links-dir`,
+  `--packages-dir` and `--rules` accept that spelling verbatim, so it is matched in its
+  non-extended form; a path that matches no known folder keeps whatever spelling it was
+  given.
+- **Not applied to the argument-parsing error message**, which is emitted before the
+  flag has been parsed and usually names the very argument that failed.
 - **Never changes ordering**: the grouped report still sorts on the real executable path,
   so the flag cannot reorder rows.
 - It conflicts with nothing. Unlike `--tui`, it only changes how a path is rendered, which

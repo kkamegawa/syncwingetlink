@@ -208,4 +208,153 @@ public:
         Assert::IsTrue(first.data() == second.data());
     }
 };
+
+// Review follow-up on #180: ArgParser accepts an extended-length override verbatim
+// (it rejects only "\\.\" device paths) while SHGetKnownFolderPath always reports the
+// ordinary form, so a literal comparison left exactly those paths carrying the account
+// name under -s.
+TEST_CLASS(AbbreviateExtendedLengthPathTests)
+{
+public:
+    TEST_METHOD(anExtendedLengthPathUnderAKnownFolderIsAbbreviated)
+    {
+        const std::vector<KnownFolderMapping> folders = makeFolders();
+        Assert::AreEqual(
+            std::wstring(L"%LOCALAPPDATA%\\Microsoft\\WinGet\\Links\\tool.exe"),
+            abbreviateKnownFolders(
+                L"\\\\?\\C:\\Users\\alice\\AppData\\Local\\Microsoft\\WinGet\\Links\\tool.exe",
+                folders));
+    }
+
+    TEST_METHOD(anExtendedLengthPathEqualToAKnownFolderBecomesJustTheVariable)
+    {
+        const std::vector<KnownFolderMapping> folders = makeFolders();
+        Assert::AreEqual(std::wstring(L"%USERPROFILE%"),
+                         abbreviateKnownFolders(L"\\\\?\\C:\\Users\\alice", folders));
+    }
+
+    // Normalization is for *matching* only. A path that matches nothing keeps the
+    // caller's own spelling, prefix included - stripping it would be this function
+    // silently rewriting a path it was not asked to touch.
+    TEST_METHOD(anUnmatchedExtendedLengthPathKeepsItsPrefix)
+    {
+        const std::vector<KnownFolderMapping> folders = makeFolders();
+        Assert::AreEqual(std::wstring(L"\\\\?\\D:\\scratch\\links\\tool.exe"),
+                         abbreviateKnownFolders(L"\\\\?\\D:\\scratch\\links\\tool.exe", folders));
+    }
+
+    // The boundary rule still applies after normalization.
+    TEST_METHOD(anExtendedLengthSiblingProfileIsNotAbbreviated)
+    {
+        const std::vector<KnownFolderMapping> folders = makeFolders();
+        Assert::AreEqual(
+            std::wstring(L"\\\\?\\C:\\Users\\alice2\\Documents\\tool.exe"),
+            abbreviateKnownFolders(L"\\\\?\\C:\\Users\\alice2\\Documents\\tool.exe", folders));
+    }
+};
+
+// Review follow-up on #180: core/ formats its exception messages with a real path
+// embedded mid-sentence, so -s abbreviated every ordinary path and then leaked the
+// account name the moment anything failed.
+TEST_CLASS(AbbreviateKnownFoldersInTextTests)
+{
+public:
+    TEST_METHOD(aPathEmbeddedInADiagnosticIsAbbreviated)
+    {
+        const std::vector<KnownFolderMapping> folders = makeFolders();
+        Assert::AreEqual(
+            std::wstring(L"CreateSymbolicLinkW failed for "
+                         L"'%LOCALAPPDATA%\\Microsoft\\WinGet\\Links\\tool.exe' "
+                         L"(Win32 error 5)"),
+            abbreviateKnownFoldersInText(
+                L"CreateSymbolicLinkW failed for "
+                L"'C:\\Users\\alice\\AppData\\Local\\Microsoft\\WinGet\\Links\\tool.exe' "
+                L"(Win32 error 5)",
+                folders));
+    }
+
+    // A quote closes a path just as a separator opens a component - without that, a
+    // message naming the folder itself would keep the account name.
+    TEST_METHOD(aQuoteCountsAsABoundary)
+    {
+        const std::vector<KnownFolderMapping> folders = makeFolders();
+        Assert::AreEqual(std::wstring(L"could not open '%USERPROFILE%' for reading"),
+                         abbreviateKnownFoldersInText(
+                             L"could not open 'C:\\Users\\alice' for reading", folders));
+    }
+
+    TEST_METHOD(severalOccurrencesAreAllAbbreviated)
+    {
+        const std::vector<KnownFolderMapping> folders = makeFolders();
+        Assert::AreEqual(
+            std::wstring(L"copy '%LOCALAPPDATA%\\a.exe' to '%APPDATA%\\b.exe'"),
+            abbreviateKnownFoldersInText(
+                L"copy 'C:\\Users\\alice\\AppData\\Local\\a.exe' to "
+                L"'C:\\Users\\alice\\AppData\\Roaming\\b.exe'",
+                folders));
+    }
+
+    TEST_METHOD(theLongestMatchStillWinsInsideText)
+    {
+        const std::vector<KnownFolderMapping> folders = makeFolders();
+        Assert::AreEqual(std::wstring(L"at %LOCALAPPDATA%\\Temp"),
+                         abbreviateKnownFoldersInText(
+                             L"at C:\\Users\\alice\\AppData\\Local\\Temp", folders));
+    }
+
+    // The component-boundary guarantee must survive the wider boundary rule.
+    TEST_METHOD(aSiblingProfileInsideTextIsNotAbbreviated)
+    {
+        const std::vector<KnownFolderMapping> folders = makeFolders();
+        const std::wstring text = L"could not read 'C:\\Users\\alice2\\notes.txt'";
+        Assert::AreEqual(text, abbreviateKnownFoldersInText(text, folders));
+    }
+
+    TEST_METHOD(textWithNoPathIsReturnedUnchanged)
+    {
+        const std::vector<KnownFolderMapping> folders = makeFolders();
+        const std::wstring text = L"rules file is not valid JSON at offset 12";
+        Assert::AreEqual(text, abbreviateKnownFoldersInText(text, folders));
+    }
+
+    TEST_METHOD(anEmptyFolderTableLeavesTextAlone)
+    {
+        const std::vector<KnownFolderMapping> none;
+        const std::wstring text = L"failed for 'C:\\Users\\alice\\AppData\\Local\\a.exe'";
+        Assert::AreEqual(text, abbreviateKnownFoldersInText(text, none));
+    }
+
+    TEST_METHOD(emptyTextIsReturnedUnchanged)
+    {
+        const std::vector<KnownFolderMapping> folders = makeFolders();
+        Assert::AreEqual(std::wstring(L""), abbreviateKnownFoldersInText(L"", folders));
+    }
+};
+
+TEST_CLASS(FormatDiagnosticForDisplayTests)
+{
+public:
+    TEST_METHOD(theFlagOffLeavesTheMessageByteForByte)
+    {
+        const std::wstring text = L"failed for 'C:\\Users\\alice\\AppData\\Local\\a.exe'";
+        Assert::AreEqual(text, formatDiagnosticForDisplay(text, PathDisplayOptions{}));
+    }
+
+    // Unlike formatPathForDisplay(), this one does not sanitize: its callers are
+    // existing Console::writeLine() sites that already sanitize at their own boundary,
+    // and a second pass would change what today's non-path diagnostics look like.
+    TEST_METHOD(itDoesNotSanitize)
+    {
+        const std::wstring text = std::wstring(L"failed") + wchar_t(0x1B) + L"[31m";
+        Assert::AreEqual(text, formatDiagnosticForDisplay(text, PathDisplayOptions{}));
+        Assert::AreEqual(text, formatDiagnosticForDisplay(text, PathDisplayOptions{true}));
+    }
+
+    TEST_METHOD(aMessageWithNoKnownFolderIsIdenticalEitherWay)
+    {
+        const std::wstring text = L"failed for 'D:\\scratch\\a.exe' (Win32 error 5)";
+        Assert::AreEqual(formatDiagnosticForDisplay(text, PathDisplayOptions{}),
+                         formatDiagnosticForDisplay(text, PathDisplayOptions{true}));
+    }
+};
 } // namespace syncwingetlink::tests
