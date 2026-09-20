@@ -54,7 +54,14 @@ void render(TerminalSession& session, const ChecklistModel& model)
 {
     std::wstring frame;
     frame += L"\x1b[2J\x1b[H"; // Clear screen, home cursor.
-    frame += L"Space: toggle  Up/Down: move  Enter: repair selected  Esc/Q/Ctrl+C: cancel\r\n";
+    // With nothing selectable, "Space: toggle" and "Enter: repair selected" would both
+    // promise something no key press can deliver - every row is information-only, and
+    // Enter merely continues to the batch (which will refuse each of them). See
+    // docs/adr-phase-10.md ADR-0047.
+    frame += model.hasSelectable()
+                 ? L"Space: toggle  Up/Down: move  Enter: repair selected  Esc/Q/Ctrl+C: cancel"
+                 : L"Up/Down: move  Enter: continue  Esc/Q/Ctrl+C: cancel";
+    frame += L"\r\n";
     frame += L"\r\n";
 
     const std::size_t start = model.viewportStart();
@@ -64,13 +71,25 @@ void render(TerminalSession& session, const ChecklistModel& model)
         const ChecklistCandidate& candidate = model.candidates()[index];
 
         frame += (index == model.cursor()) ? L"> " : L"  ";
-        frame += model.isSelected(index) ? L"[x] " : L"[ ] ";
+        // Three states, not two: "[-]" marks a row that exists to be read, not chosen.
+        if (!candidate.selectable)
+        {
+            frame += L"[-] ";
+        }
+        else
+        {
+            frame += model.isSelected(index) ? L"[x] " : L"[ ] ";
+        }
         frame += L"(";
         frame += statusLabel(candidate.item.status);
         frame += L") ";
         frame += cli::sanitizeForDisplay(candidate.item.alias);
         frame += L" -> ";
         frame += cli::sanitizeForDisplay(candidate.item.executable.path.native());
+        if (!candidate.selectable)
+        {
+            frame += L" [cannot repair]";
+        }
         frame += L"\r\n";
     }
 

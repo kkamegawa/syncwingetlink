@@ -350,10 +350,43 @@ behavior - documented here rather than left as "run in interactive TUI mode", pe
   `--json`, or `--yes` is rejected by `ArgParser` before anything is enumerated. `--tui`
   is meaningful only for an interactive `fix`; the other three all imply an unattended or
   non-interactive invocation.
-- **Non-interactive fallback, no TUI escape sequence emitted**: if `console.stdinInteractive()`,
-  `console.stdoutInteractive()`, or `console.vtEnabled()` is false, or the terminal
-  session otherwise fails to start, `cli::Dispatch` prints one warning line to stderr
-  and falls back to the existing line-oriented confirmation flow.
+- **What the checklist lists** (`docs/adr-phase-10.md` ADR-0047):
+
+  | `LinkStatus` | In the checklist? | Selectable? |
+  |---|---|---|
+  | `Missing` | yes | yes - checking it is consent to create the link |
+  | `Broken` | yes | yes - checking it is consent to replace the link |
+  | `Mismatch` | yes, as `[-] ... [cannot repair]` | **no** |
+  | `Ok` | no | - |
+
+  An alias collision is excluded before this point and never reaches the checklist
+  (`docs/adr-phase-5.md` ADR-0021).
+
+- **`fix` never repairs a `Mismatch`, with or without `--tui`.** This is worth stating
+  plainly because it is easy to forget: a `Mismatch` means the entry under `Links\` is a
+  regular file, a non-symlink reparse point, or a symbolic link resolving to a
+  *different* existing file (§6). `repairLink()` reports `RefusedMismatch` and mutates
+  nothing (`docs/adr-phase-3.md` ADR-0014, `docs/adr-phase-4.md` ADR-0016), and there is
+  no `--force`-style override. The checklist therefore *shows* the entry - so the one
+  candidate needing manual attention is not invisible - without offering to act on it.
+  Resolve it by removing or renaming the offending entry yourself, then re-running `fix`.
+- **With nothing selectable, the key hints change** to
+  `Up/Down: move  Enter: continue  Esc/Q/Ctrl+C: cancel`: `Enter` proceeds to the batch
+  (which refuses each `Mismatch`), and `Esc`/`Q`/`Ctrl+C` cancels with exit code 0 and no
+  filesystem mutation.
+- **Fallback, no TUI escape sequence emitted**: `cli::Dispatch` prints one warning line
+  to stderr and falls back to the existing line-oriented confirmation flow in either of
+  two cases:
+  - the terminal can't support it - `console.stdinInteractive()`,
+    `console.stdoutInteractive()`, or `console.vtEnabled()` is false, or the terminal
+    session otherwise fails to start;
+  - there is nothing to list - every candidate is either `Ok` or was excluded as an
+    alias collision (`docs/adr-phase-5.md` ADR-0021).
+
+  Neither case is silent; both warn.
+- **The grouped `fix` preview is suppressed only when the checklist actually ran** - a
+  `--tui` invocation that fell back prints it as a plain `fix` would, so a fallback never
+  shows *less* than not passing `--tui` at all.
 - `--dry-run` and `--no-color` both remain compatible with `--tui`.
 
 ### `--verbose` / `--quiet` (log level)

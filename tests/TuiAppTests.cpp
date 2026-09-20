@@ -28,6 +28,16 @@ namespace
     return ChecklistCandidate{item};
 }
 
+// A Mismatch row: rendered for information only, never selectable
+// (docs/adr-phase-10.md ADR-0047).
+[[nodiscard]] ChecklistCandidate makeUnselectableCandidate(const std::wstring& alias)
+{
+    ChecklistCandidate candidate = makeCandidate(alias);
+    candidate.item.status = LinkStatus::Mismatch;
+    candidate.selectable = false;
+    return candidate;
+}
+
 [[nodiscard]] TuiEvent keyEvent(std::uint16_t virtualKeyCode, wchar_t character = 0,
                                 bool ctrlPressed = false)
 {
@@ -59,6 +69,18 @@ struct ScriptedTerminal
     std::deque<std::optional<TuiEvent>> events;
     std::vector<std::wstring> controlWrites;
 };
+
+// Concatenates every control write so a single find() can search the whole session's
+// output, whatever frame boundary a string happened to land on.
+[[nodiscard]] std::wstring allWrites(const ScriptedTerminal& fake)
+{
+    std::wstring combined;
+    for (const std::wstring& write : fake.controlWrites)
+    {
+        combined += write;
+    }
+    return combined;
+}
 
 [[nodiscard]] TerminalOperations makeScriptedOperations(ScriptedTerminal& fake)
 {
@@ -292,6 +314,120 @@ public:
         }
         Assert::IsTrue(sanitizedFormFound);
         Assert::IsFalse(rawFormFound);
+    }
+};
+
+// docs/adr-phase-10.md ADR-0047: a Mismatch candidate is shown so the user knows it is
+// there, marked as something no key press can act on.
+TEST_CLASS(RunChecklistUnselectableCandidateTests)
+{
+public:
+    TEST_METHOD(anUnselectableCandidateRendersAsCannotRepair)
+    {
+        ScriptedTerminal fake;
+        fake.events.push_back(keyEvent(kVkReturn));
+
+        TerminalSession session = makeSession(fake);
+        ChecklistModel model({makeUnselectableCandidate(L"copilot.exe")});
+
+        static_cast<void>(runChecklist(session, model));
+
+        const std::wstring frames = allWrites(fake);
+        Assert::IsTrue(frames.find(L"[-] (Mismatch) copilot.exe") != std::wstring::npos);
+        Assert::IsTrue(frames.find(L"[cannot repair]") != std::wstring::npos);
+        // "[ ]"/"[x]" would both imply the row can be chosen.
+        Assert::IsTrue(frames.find(L"[ ] (Mismatch)") == std::wstring::npos);
+        Assert::IsTrue(frames.find(L"[x] (Mismatch)") == std::wstring::npos);
+    }
+
+    TEST_METHOD(aSelectableCandidateKeepsItsCheckboxAndCarriesNoCannotRepairMarker)
+    {
+        ScriptedTerminal fake;
+        fake.events.push_back(keyEvent(kVkReturn));
+
+        TerminalSession session = makeSession(fake);
+        ChecklistModel model({makeCandidate(L"codex.exe")});
+
+        static_cast<void>(runChecklist(session, model));
+
+        const std::wstring frames = allWrites(fake);
+        Assert::IsTrue(frames.find(L"[ ] (Missing) codex.exe") != std::wstring::npos);
+        Assert::IsTrue(frames.find(L"[cannot repair]") == std::wstring::npos);
+    }
+
+    TEST_METHOD(theKeyHintsDropToggleAndRepairWhenNothingIsSelectable)
+    {
+        ScriptedTerminal fake;
+        fake.events.push_back(keyEvent(kVkReturn));
+
+        TerminalSession session = makeSession(fake);
+        ChecklistModel model({makeUnselectableCandidate(L"copilot.exe")});
+
+        static_cast<void>(runChecklist(session, model));
+
+        const std::wstring frames = allWrites(fake);
+        Assert::IsTrue(frames.find(L"Enter: continue") != std::wstring::npos);
+        Assert::IsTrue(frames.find(L"Space: toggle") == std::wstring::npos);
+        Assert::IsTrue(frames.find(L"Enter: repair selected") == std::wstring::npos);
+    }
+
+    TEST_METHOD(theKeyHintsKeepToggleAndRepairWhenSomethingIsSelectable)
+    {
+        ScriptedTerminal fake;
+        fake.events.push_back(keyEvent(kVkReturn));
+
+        TerminalSession session = makeSession(fake);
+        ChecklistModel model(
+            {makeUnselectableCandidate(L"copilot.exe"), makeCandidate(L"codex.exe")});
+
+        static_cast<void>(runChecklist(session, model));
+
+        const std::wstring frames = allWrites(fake);
+        Assert::IsTrue(frames.find(L"Space: toggle") != std::wstring::npos);
+        Assert::IsTrue(frames.find(L"Enter: repair selected") != std::wstring::npos);
+    }
+
+    TEST_METHOD(spaceCannotSelectAnUnselectableCandidate)
+    {
+        ScriptedTerminal fake;
+        fake.events.push_back(keyEvent(0, L' '));
+        fake.events.push_back(keyEvent(kVkReturn));
+
+        TerminalSession session = makeSession(fake);
+        ChecklistModel model({makeUnselectableCandidate(L"copilot.exe")});
+
+        ChecklistRunResult result = runChecklist(session, model);
+
+        Assert::IsTrue(result.outcome == ChecklistOutcome::Confirmed);
+        Assert::IsTrue(result.selectedCandidates.empty());
+    }
+
+    TEST_METHOD(enterOverAMismatchOnlyChecklistConfirmsAnEmptyBatch)
+    {
+        ScriptedTerminal fake;
+        fake.events.push_back(keyEvent(kVkReturn));
+
+        TerminalSession session = makeSession(fake);
+        ChecklistModel model(
+            {makeUnselectableCandidate(L"copilot.exe"), makeUnselectableCandidate(L"gh.exe")});
+
+        ChecklistRunResult result = runChecklist(session, model);
+
+        Assert::IsTrue(result.outcome == ChecklistOutcome::Confirmed);
+        Assert::IsTrue(result.selectedCandidates.empty());
+    }
+
+    TEST_METHOD(escapeOverAMismatchOnlyChecklistStillCancels)
+    {
+        ScriptedTerminal fake;
+        fake.events.push_back(keyEvent(kVkEscape));
+
+        TerminalSession session = makeSession(fake);
+        ChecklistModel model({makeUnselectableCandidate(L"copilot.exe")});
+
+        ChecklistRunResult result = runChecklist(session, model);
+
+        Assert::IsTrue(result.outcome == ChecklistOutcome::Cancelled);
     }
 };
 } // namespace syncwingetlink::tests

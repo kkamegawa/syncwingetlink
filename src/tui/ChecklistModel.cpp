@@ -12,9 +12,19 @@ ChecklistModel::ChecklistModel(std::vector<ChecklistCandidate> candidates)
 {
 }
 
+bool ChecklistModel::hasSelectable() const noexcept
+{
+    return std::any_of(m_candidates.begin(), m_candidates.end(),
+                       [](const ChecklistCandidate& candidate) { return candidate.selectable; });
+}
+
 bool ChecklistModel::isSelected(std::size_t index) const noexcept
 {
-    return index < m_selected.size() && m_selected[index];
+    // The `selectable` check is not merely defensive: it is what guarantees a
+    // non-selectable row can never reach confirm()'s result, which is in turn what makes
+    // cli::Dispatch's "a Mismatch is never consented to" contract (ADR-0047) hold no
+    // matter how the model was driven.
+    return index < m_selected.size() && m_candidates[index].selectable && m_selected[index];
 }
 
 void ChecklistModel::moveUp() noexcept
@@ -39,7 +49,7 @@ void ChecklistModel::moveDown() noexcept
 
 void ChecklistModel::toggleCurrent() noexcept
 {
-    if (m_cursor < m_selected.size())
+    if (m_cursor < m_selected.size() && m_candidates[m_cursor].selectable)
     {
         m_selected[m_cursor] = !m_selected[m_cursor];
     }

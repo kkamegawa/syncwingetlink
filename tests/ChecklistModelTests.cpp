@@ -25,6 +25,16 @@ namespace
     return ChecklistCandidate{item};
 }
 
+// A Mismatch row: shown so the user knows it is there, never selectable, because
+// repairLink() always refuses a Mismatch (docs/adr-phase-10.md ADR-0047).
+[[nodiscard]] ChecklistCandidate makeUnselectableCandidate(const std::wstring& alias)
+{
+    ChecklistCandidate candidate = makeCandidate(alias);
+    candidate.item.status = LinkStatus::Mismatch;
+    candidate.selectable = false;
+    return candidate;
+}
+
 [[nodiscard]] std::vector<ChecklistCandidate> makeCandidates(std::size_t count)
 {
     std::vector<ChecklistCandidate> candidates;
@@ -257,6 +267,115 @@ public:
         // than the viewport actually has room for.
         Assert::AreEqual(size_t{2}, model.viewportStart());
         Assert::AreEqual(size_t{3}, model.viewportCount());
+    }
+};
+
+// docs/adr-phase-10.md ADR-0047: a Mismatch candidate is listed for information only.
+TEST_CLASS(ChecklistModelUnselectableCandidateTests)
+{
+public:
+    TEST_METHOD(hasSelectableIsFalseWhenEveryCandidateIsUnselectable)
+    {
+        std::vector<ChecklistCandidate> candidates;
+        candidates.push_back(makeUnselectableCandidate(L"copilot.exe"));
+        candidates.push_back(makeUnselectableCandidate(L"gh.exe"));
+        ChecklistModel model(std::move(candidates));
+
+        Assert::IsFalse(model.hasSelectable());
+    }
+
+    TEST_METHOD(hasSelectableIsTrueWhenAtLeastOneCandidateIsSelectable)
+    {
+        std::vector<ChecklistCandidate> candidates;
+        candidates.push_back(makeUnselectableCandidate(L"copilot.exe"));
+        candidates.push_back(makeCandidate(L"codex.exe"));
+        ChecklistModel model(std::move(candidates));
+
+        Assert::IsTrue(model.hasSelectable());
+    }
+
+    TEST_METHOD(hasSelectableIsFalseForAnEmptyModel)
+    {
+        ChecklistModel model({});
+        Assert::IsFalse(model.hasSelectable());
+    }
+
+    TEST_METHOD(togglingAnUnselectableCandidateIsANoOp)
+    {
+        std::vector<ChecklistCandidate> candidates;
+        candidates.push_back(makeUnselectableCandidate(L"copilot.exe"));
+        ChecklistModel model(std::move(candidates));
+
+        model.toggleCurrent();
+        Assert::IsFalse(model.isSelected(0));
+
+        // Repeated presses must not flip it either - the guard is on the candidate, not
+        // on some "already toggled once" state.
+        model.toggleCurrent();
+        Assert::IsFalse(model.isSelected(0));
+    }
+
+    TEST_METHOD(confirmNeverReturnsAnUnselectableCandidate)
+    {
+        std::vector<ChecklistCandidate> candidates;
+        candidates.push_back(makeUnselectableCandidate(L"copilot.exe"));
+        candidates.push_back(makeCandidate(L"codex.exe"));
+        ChecklistModel model(std::move(candidates));
+
+        model.toggleCurrent(); // no-op on the Mismatch row
+        model.moveDown();
+        model.toggleCurrent(); // selects codex.exe
+
+        const std::vector<ChecklistCandidate> selected = model.confirm();
+        Assert::AreEqual(size_t{1}, selected.size());
+        Assert::AreEqual(std::wstring(L"codex.exe"), selected[0].item.alias);
+    }
+
+    TEST_METHOD(confirmIsEmptyWhenNothingIsSelectable)
+    {
+        std::vector<ChecklistCandidate> candidates;
+        candidates.push_back(makeUnselectableCandidate(L"copilot.exe"));
+        ChecklistModel model(std::move(candidates));
+
+        model.toggleCurrent();
+        const std::vector<ChecklistCandidate> selected = model.confirm();
+
+        Assert::IsTrue(selected.empty());
+        Assert::IsTrue(model.wasConfirmed());
+    }
+
+    TEST_METHOD(theCursorStillRestsOnAnUnselectableCandidate)
+    {
+        // Non-selectable rows are not skipped: the cursor must be able to sit on one so
+        // its target path can be read.
+        std::vector<ChecklistCandidate> candidates;
+        candidates.push_back(makeCandidate(L"codex.exe"));
+        candidates.push_back(makeUnselectableCandidate(L"copilot.exe"));
+        candidates.push_back(makeCandidate(L"uv.exe"));
+        ChecklistModel model(std::move(candidates));
+
+        model.moveDown();
+        Assert::AreEqual(size_t{1}, model.cursor());
+        model.moveDown();
+        Assert::AreEqual(size_t{2}, model.cursor());
+    }
+
+    TEST_METHOD(unselectableCandidatesStillOccupyTheViewport)
+    {
+        std::vector<ChecklistCandidate> candidates;
+        candidates.push_back(makeCandidate(L"codex.exe"));
+        candidates.push_back(makeUnselectableCandidate(L"copilot.exe"));
+        candidates.push_back(makeUnselectableCandidate(L"gh.exe"));
+        candidates.push_back(makeCandidate(L"uv.exe"));
+        ChecklistModel model(std::move(candidates));
+        model.resize(2);
+
+        model.moveDown();
+        model.moveDown();
+        model.moveDown(); // cursor == 3
+
+        Assert::AreEqual(size_t{2}, model.viewportStart());
+        Assert::AreEqual(size_t{2}, model.viewportCount());
     }
 };
 } // namespace syncwingetlink::tests
