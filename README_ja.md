@@ -39,8 +39,19 @@ winget でポータブルパッケージをインストールすると、本来�
 
 ## インストール
 
-インストーラーや winget パッケージはありません。`syncwingetlink` はアーキテクチャごとの
-**ZIP アーカイブ**として GitHub Releases に公開されます
+winget でインストール:
+
+```powershell
+winget install kkamegawa.syncwingetlink
+```
+
+winget で更新:
+
+```powershell
+winget upgrade kkamegawa.syncwingetlink
+```
+
+`syncwingetlink` はアーキテクチャごとの **ZIP アーカイブ**として GitHub Releases に公開されます
 （`docs/adr-phase-6.md` ADR-0033、`docs/adr-phase-9.md` ADR-0045）。中の exe は
 **署名なし**のため、初回実行時に Windows SmartScreen やアンチウイルスが警告を出す
 可能性があります。展開する前に公開されている `SHA256SUMS.txt` でハッシュを検証して
@@ -48,7 +59,7 @@ winget でポータブルパッケージをインストールすると、本来�
 ガイド（英語・日本語の両方）を収めた `docs/` フォルダも同梱されており、オフラインでも
 参照できます。
 
-PowerShell:
+ZIP から手動インストール（PowerShell）:
 
 ```powershell
 # <version>/<arch> をインストールしたいリリースに置き換えてください（x64 または arm64）。
