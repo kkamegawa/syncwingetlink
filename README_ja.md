@@ -1,5 +1,9 @@
 # syncwingetlink（日本語）
 
+<p align="center">
+  <img src="./docs/images/synwingetlink_thumbnail.png" alt="syncwingetlink: ターミナルで winget のリンクを自動修復" width="720">
+</p>
+
 > winget のポータブルパッケージで作られるべきシンボリックリンクの欠落・破損を検出し、再作成するネイティブ CLI ツール（Windows 11 24H2+）。
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
