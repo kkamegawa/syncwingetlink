@@ -125,7 +125,8 @@ returned. Two further defects made it unreadable rather than merely surprising:
 - **Date**: 2026-09-20
 - **Affected**: `cli::PathDisplay` (new), `cli::ArgParser`, `cli::Json`,
   `cli::ScanReport`, `cli::Dispatch`, `tui::TuiApp`, `core::AppOptions`,
-  `docs/PLAN.md`, `README.md`, `docs/TODO.md`
+  `docs/PLAN.md`, `README.md`, `docs/TODO.md`, the Wiki page
+  `plan/syncwingetlink/tui-mismatch-and-path-abbreviation`
 - **Status**: Accepted
 
 ### Context

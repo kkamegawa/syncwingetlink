@@ -3728,6 +3728,7 @@ Three separate things combined:
 
 **Issue**: [#180](https://github.com/kkamegawa/syncwingetlink/issues/180)
 **ADR**: `docs/adr-phase-10.md` ADR-0048
+**Wiki**: `plan/syncwingetlink/tui-mismatch-and-path-abbreviation` (EN + JA), part 2
 **Branch**: `feature/180-showspecialfolder` (stacked on
 `fix/179-tui-shows-mismatch-candidates`)
 
