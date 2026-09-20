@@ -3655,3 +3655,65 @@ Continuation of the same session, same issue
   already exercised in shape by the x64 leg. Left as a follow-up if the owner wants
   release-asset verification before actually tagging `v0.1.0`.
 - No C++ source changed.
+
+---
+
+## 2026-09-20 — `fix --tui` shows `Mismatch` candidates instead of silently skipping the checklist
+
+**Issue**: [#179](https://github.com/kkamegawa/syncwingetlink/issues/179)
+**ADR**: `docs/adr-phase-10.md` ADR-0047 (new phase file; `adr-phase-9.md` was at 857 lines)
+**Branch**: `fix/179-tui-shows-mismatch-candidates`
+
+### Reported symptom
+
+`syncwingetlink fix --tui` printed no checklist and went straight to the non-interactive
+repair loop. The host's inventory was 20 `Ok` links and one `Mismatch` (`copilot.exe`),
+and nothing on stdout or stderr said why the TUI never appeared. (The
+`開発者モードの状態を確認できませんでした` line at the top of that transcript was
+unrelated: `handleFixStartupPermissionGate()` returns `nullopt` for an elevated process
+and never blocked the run.)
+
+### Diagnosis
+
+Three separate things combined:
+
+1. **By design**: `runTuiChecklistIfRequested()` collected only `Missing`/`Broken`
+   candidates, per `docs/adr-phase-6.md` ADR-0027 decision 4. With only `Ok`/`Mismatch`
+   present, the selectable set was empty.
+2. **Code/ADR divergence**: the empty-set branch returned silently, although ADR-0027
+   decision 5 specifies a stderr warning for *both* that case and the
+   terminal-capability case. Only the latter was implemented.
+3. **Compounding defect**: `runFix()` suppressed the grouped fix preview whenever
+   `--tui` was merely *requested*, so a fallback produced strictly less output than a
+   plain `fix` — hiding the `Mismatch` a second time.
+
+### What changed
+
+- `src/tui/ChecklistModel.{h,cpp}`: `ChecklistCandidate::selectable`,
+  `ChecklistModel::hasSelectable()`, and guards in `isSelected()`/`toggleCurrent()` so a
+  non-selectable row can never reach `confirm()`. The defaulted field keeps existing
+  aggregate initialization compiling. The model still never interprets a `LinkStatus`.
+- `src/tui/TuiApp.cpp`: three-state checkbox (`[-]` for informational rows), a trailing
+  `[cannot repair]` marker, and a key-hint line that drops `Space: toggle` /
+  `Enter: repair selected` when nothing is selectable. `kReservedRows` unchanged at 2.
+- `src/cli/Dispatch.cpp`: the collection loop became a total `switch` over `LinkStatus`
+  (`Missing`/`Broken` selectable, `Mismatch` not, `Ok` not listed); the empty case now
+  warns; `runFix()`'s preview moved after the checklist attempt and is gated on
+  `TuiRunOutcome::NotRun`.
+- Tests: `ChecklistModelUnselectableCandidateTests` (8 cases) and
+  `RunChecklistUnselectableCandidateTests` (7 cases).
+- Docs: `docs/adr-phase-10.md` (new), `docs/adr.md` index (also corrected the stale
+  `adr-phase-9.md` range from `ADR-0038 – ADR-0043` to `– ADR-0046`), `docs/PLAN.md`
+  §`--tui` (status table plus an explicit "`fix` never repairs a `Mismatch`" statement),
+  `README.md` §`--tui`, `docs/TODO.md`.
+
+### Deliberately not done
+
+- **No `--force` / `--replace-mismatch` option.** `docs/adr-phase-3.md` ADR-0014 and
+  `docs/adr-phase-4.md` ADR-0016 are unchanged: a `Mismatch` is still never mutated. The
+  row is shown, not offered.
+- **`Ok` candidates are still not listed.** A healthy inventory would bury the rows that
+  matter (20 of 21 entries, in the reported case).
+- `tests/DispatchTests.cpp` is unchanged — `runTuiChecklistIfRequested()` lives in an
+  anonymous namespace and is not unit-testable, as that file's own header comment
+  records. The wiring is covered by the manual scratch-tree checks below.

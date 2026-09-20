@@ -157,10 +157,21 @@ confirm-per-item flow. Its real behavior, not just its intent:
   rejected at parse time with exit code 3, before anything is enumerated. `--tui` is only
   meaningful for an interactive `fix`; the other three all imply an unattended or
   non-interactive invocation.
+- **It lists `Missing`, `Broken`, and `Mismatch` candidates; `Ok` ones are left out.**
+  `Missing` and `Broken` rows are selectable - checking one is consent to create or
+  replace that link. A `Mismatch` row is shown for information only, rendered as
+  `[-] (Mismatch) <alias> -> <target> [cannot repair]`, and no key press can select it.
+- **`fix` never repairs a `Mismatch`, with or without `--tui`.** A `Mismatch` means the
+  entry under `Links\` is a regular file, a non-symlink reparse point, or a symbolic link
+  pointing at a *different* existing file. Replacing it would destroy whatever is
+  actually there, so `fix` reports `refused (mismatch)` and changes nothing - there is no
+  `--force`-style override. The checklist still shows it, because it is exactly the entry
+  that needs your attention: remove or rename it yourself, then re-run `fix`.
 - **It falls back to the line-oriented CLI confirmation flow** - no TUI escape sequence
   is ever emitted, and a warning is printed to stderr - when stdin and stdout aren't
-  both a real, interactive console, or when virtual-terminal processing isn't available
-  (e.g. output is redirected/piped).
+  both a real, interactive console, when virtual-terminal processing isn't available
+  (e.g. output is redirected/piped), or when there is nothing to list at all because
+  every candidate is `Ok`.
 - **It does not start when required elevation is declined or suppressed** - `fix --tui`
   exits with code `2` instead of opening an editable checklist that cannot create links.
 - `--dry-run` and `--no-color` both remain compatible with `--tui`.

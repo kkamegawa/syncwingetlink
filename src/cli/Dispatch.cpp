@@ -588,21 +588,46 @@ struct TuiRunResult
         return {};
     }
 
-    std::vector<tui::ChecklistCandidate> selectable;
+    // This loop is the single place that decides what a checklist row means
+    // (docs/adr-phase-10.md ADR-0047); tui::ChecklistModel itself never interprets a
+    // LinkStatus.
+    //
+    //   Missing/Broken -> selectable: checking one is consent to repair it.
+    //   Mismatch       -> shown, never selectable: repairLink() always refuses these
+    //                     (ADR-0014), but the user still has to know they are there -
+    //                     silently hiding the one candidate that needs manual attention
+    //                     is what made `fix --tui` look broken in issue #179.
+    //   Ok             -> not shown at all: nothing to decide, and a healthy inventory
+    //                     would otherwise bury the rows that matter.
+    std::vector<tui::ChecklistCandidate> rows;
     for (const RepairItem& item : candidates.nonCollisionItems)
     {
-        if (item.status == LinkStatus::Missing || item.status == LinkStatus::Broken)
+        switch (item.status)
         {
-            selectable.push_back(tui::ChecklistCandidate{item});
+        case LinkStatus::Missing:
+        case LinkStatus::Broken:
+            rows.push_back(tui::ChecklistCandidate{item, /* selectable */ true});
+            break;
+        case LinkStatus::Mismatch:
+            rows.push_back(tui::ChecklistCandidate{item, /* selectable */ false});
+            break;
+        case LinkStatus::Ok:
+            break;
         }
     }
 
-    if (selectable.empty())
+    if (rows.empty())
     {
-        // Nothing to select - every remaining candidate is Ok/Mismatch/excluded, none
-        // of which ever needed confirmation. Showing an empty checklist would be
-        // meaningless, so runFix()'s ordinary path below handles these exactly as it
-        // would without --tui at all.
+        // Every remaining candidate is Ok, or was excluded as an alias collision. An
+        // empty checklist would say nothing, so runFix()'s ordinary path handles these
+        // exactly as it would without --tui - but say so, rather than leaving the user
+        // to wonder why the checklist they asked for never appeared. ADR-0027 decision 5
+        // always specified this warning; only the terminal-capability branch below ever
+        // implemented it.
+        console.writeLine(L"warning: --tui has nothing to show - no Missing, Broken, or "
+                          L"Mismatch candidates; falling back to the line-oriented "
+                          L"confirmation flow",
+                          ConsoleStream::Error);
         return {};
     }
 
@@ -625,7 +650,7 @@ struct TuiRunResult
         return {};
     }
 
-    tui::ChecklistModel model(std::move(selectable));
+    tui::ChecklistModel model(std::move(rows));
     const tui::ChecklistRunResult checklistResult = tui::runChecklist(*session, model);
     // Fold the terminal back before this function's caller writes anything else -
     // progress lines and the final summary must land on the restored, normal screen,
@@ -693,11 +718,20 @@ void printBatchSummary(Console& console, const RepairBatchSummary& summary)
     const RepairCandidateSet candidates = buildRepairCandidates(options, console);
     printCollisions(console, candidates.collisions);
 
+    const TuiRunResult tuiResult = runTuiChecklistIfRequested(options, console, candidates);
+
     // The batch's own [current/total] progress lines (ADR-0028) stay exactly as they
     // are; this is only an up-front picture of what fix is about to consider. Skipped
-    // for --tui, whose checklist supersedes it (and which must not print into the
-    // alternate screen), and for --json, per ADR-0022's stdout-purity rule.
-    if (!options.jsonOutput && !options.useTui)
+    // when the checklist actually ran, which supersedes it, and for --json, per
+    // ADR-0022's stdout-purity rule.
+    //
+    // Deliberately *after* runTuiChecklistIfRequested() and gated on NotRun rather than
+    // on options.useTui: a --tui run that fell back (no selectable rows, a redirected
+    // stream, a session that would not start) previously printed neither this preview
+    // nor a checklist, leaving the user with strictly less than a plain `fix` (#179).
+    // The checklist restores the terminal before returning, so writing here lands on the
+    // normal screen, never the alternate one.
+    if (!options.jsonOutput && tuiResult.outcome == TuiRunOutcome::NotRun)
     {
         for (const ReportLine& line :
              formatGroupedReport(candidates.allItems, ReportMode::FixPreview))
@@ -706,7 +740,6 @@ void printBatchSummary(Console& console, const RepairBatchSummary& summary)
         }
     }
 
-    const TuiRunResult tuiResult = runTuiChecklistIfRequested(options, console, candidates);
     if (tuiResult.outcome == TuiRunOutcome::Cancelled)
     {
         // Escape, Q, or Ctrl+C: success, with no repairs and no filesystem mutation -

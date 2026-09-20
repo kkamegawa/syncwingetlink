@@ -274,6 +274,15 @@ Build system decisions are recorded in [`adr.md`](./adr.md) (ADR-0001 … ADR-00
 - [x] Verify `Debug|Release` × `x64`, cross-build `ARM64`, and run the relevant manual
       `--source com|auto|fs` checks on the reporting host
 
+## `--tui` reporting and path display (issues #179, #180)
+- [ ] Show `Mismatch` candidates in the `fix --tui` checklist as non-selectable
+      `[cannot repair]` rows, warn instead of returning silently when nothing is
+      listable, and suppress the grouped fix preview only when the checklist actually
+      ran - issue #179, `docs/adr-phase-10.md` ADR-0047
+- [ ] Add `--showspecialfolder`/`-s` so console and `--json` output print
+      `%LOCALAPPDATA%`/`%APPDATA%`/`%USERPROFILE%` instead of the real user-profile path -
+      issue #180, `docs/adr-phase-10.md` ADR-0048
+
 ## Future enhancements (separate milestone)
 - [ ] Read winget `PortableIndex` (sqlite) read-only (last resort when COM/FS are insufficient)
 - [ ] machine-scope support (requires admin)
