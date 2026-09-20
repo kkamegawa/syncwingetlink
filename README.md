@@ -45,15 +45,26 @@ recreates them after user confirmation.
 
 ## Installation
 
-There is no installer and no winget package - `syncwingetlink` is published as a
-per-architecture **ZIP archive** attached to a GitHub release
+Install with winget:
+
+```powershell
+winget install kkamegawa.syncwingetlink
+```
+
+Update with winget:
+
+```powershell
+winget upgrade kkamegawa.syncwingetlink
+```
+
+`syncwingetlink` is also published as a per-architecture **ZIP archive** attached to a GitHub release
 (`docs/adr-phase-6.md` ADR-0033, `docs/adr-phase-9.md` ADR-0045). The `.exe` inside is
 still **unsigned**, so Windows SmartScreen / your antivirus will likely warn on first
 run; verify the download against the published `SHA256SUMS.txt` before extracting it.
 Each ZIP also bundles a `docs/` folder with this README, the alias-rule reference, and
 the troubleshooting guide (English and Japanese) so they're readable offline.
 
-PowerShell:
+Manual ZIP install (PowerShell):
 
 ```powershell
 # Replace <version>/<arch> with the release you're installing (x64 or arm64).
