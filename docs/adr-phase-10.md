@@ -1,10 +1,9 @@
-# Architecture Decision Records — Post-M9 (`--tui` reporting and path display)
+# Architecture Decision Records — Post-M9 follow-ups
 
 This file continues the chronological record in
-[`adr-phase-9.md`](./adr-phase-9.md). Both records here belong to unnumbered
-follow-up work reported against a shipped build rather than to a milestone in
-`docs/TODO.md`: issue #179 (`fix --tui` hides the one candidate that needs attention)
-and issue #180 (real user-profile paths make console output hard to share).
+[`adr-phase-9.md`](./adr-phase-9.md). Its records belong to unnumbered follow-up work
+reported against a shipped build rather than to a milestone in `docs/TODO.md`; each one
+names the issue it came from in its own Context section.
 
 ---
 
