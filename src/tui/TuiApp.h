@@ -44,8 +44,8 @@ struct ChecklistRunResult
 // way, and looping forever on a dead input source would just hang.
 //
 // pathOptions is passed straight to cli::formatPathForDisplay() for each candidate's
-// target, so --showspecialfolder keeps the account name off a screenshot of the
-// checklist (docs/adr-phase-10.md ADR-0048).
+// target, so default human-readable path abbreviation keeps the account name off a
+// checklist screenshot (docs/adr-phase-10.md ADR-0048).
 [[nodiscard]] ChecklistRunResult
 runChecklist(TerminalSession& session, ChecklistModel& model,
              const cli::PathDisplayOptions& pathOptions = {});
