@@ -2,6 +2,8 @@
 
 #pragma once
 
+#include "ArgParser.h"
+#include "PathDisplay.h"
 #include "core/Model.h"
 #include "core/PackageSourceError.h"
 #include "core/SymlinkService.h"
@@ -13,6 +15,12 @@
 
 namespace syncwingetlink::cli
 {
+// Selects path rendering for a specific output context. JSON documents keep real paths
+// unless --showspecialfolder / -s is set; diagnostics remain human-readable even when
+// the command also emits JSON (docs/adr-phase-10.md ADR-0048).
+[[nodiscard]] PathDisplayOptions pathDisplayOptionsFor(const AppOptions& options,
+                                                       bool jsonDocument = false) noexcept;
+
 // The process exit codes documented in docs/PLAN.md §8. main.cpp returns
 // static_cast<int>(...) of whichever value run() below settles on.
 enum class ExitCode : int
