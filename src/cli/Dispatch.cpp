@@ -144,15 +144,6 @@ BOOL WINAPI consoleCtrlHandler(DWORD ctrlType)
     return L"unknown";
 }
 
-// The one place AppOptions turns into the presentation layer's path-display setting.
-// cli::ScanReport, cli::Json and tui::TuiApp all take it as a parameter rather than
-// reading a global, so each of them stays independently testable.
-[[nodiscard]] PathDisplayOptions pathDisplayOptionsFor(const AppOptions& options,
-                                                       bool jsonDocument = false) noexcept
-{
-    return PathDisplayOptions{options.showSpecialFolders || !jsonDocument};
-}
-
 // core/ formats its exception messages (as UTF-8) long before this layer decides how to
 // display them, and several of them embed a real path mid-sentence - e.g.
 // "CreateSymbolicLinkW failed for 'C:\Users\...\Links\tool.exe' (Win32 error 5)" from
@@ -980,6 +971,15 @@ void printVersion(Console& console)
     console.writeLine(std::wstring(L"syncwingetlink ") + kVersion);
 }
 } // namespace
+
+// The one place AppOptions turns into the presentation layer's path-display setting.
+// cli::ScanReport, cli::Json and tui::TuiApp all take it as a parameter rather than
+// reading a global, so each of them stays independently testable. This dispatch seam is
+// exported so tests can pin the user-visible defaults without running package discovery.
+PathDisplayOptions pathDisplayOptionsFor(const AppOptions& options, bool jsonDocument) noexcept
+{
+    return PathDisplayOptions{options.showSpecialFolders || !jsonDocument};
+}
 
 ChecklistRowKind checklistRowKindFor(LinkStatus status) noexcept
 {

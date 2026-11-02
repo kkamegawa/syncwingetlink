@@ -3935,3 +3935,14 @@ conversation on 2026-11-02.
   `%LOCALAPPDATA%`; JSON with `-s` contained `%LOCALAPPDATA%` and no expanded package path.
 - A TUI screenshot was not captured; the TUI renderer's path-display tests passed in the
   full test runs.
+
+### Copilot review follow-up (PR #187)
+
+- Exported `pathDisplayOptionsFor()` as a dispatch seam and added tests that parse actual
+  command-line options, then pass the selected settings through the production table and
+  JSON renderers. The cases cover default human-readable abbreviation, JSON real paths
+  without `-s`, and abbreviated JSON paths with `-s`.
+- Verification: Debug x64, Release x64, and Debug ARM64 builds succeeded with no warnings
+  or errors. The three focused dispatch tests passed (3/3). Full Debug and Release x64
+  suites each passed 498/500; the same two integration tests failed at assertions in
+  `tests/IntegrationTests.cpp` lines 127 and 179. Their cause remains unestablished.
