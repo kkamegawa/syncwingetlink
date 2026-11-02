@@ -3946,3 +3946,41 @@ conversation on 2026-11-02.
   or errors. The three focused dispatch tests passed (3/3). Full Debug and Release x64
   suites each passed 498/500; the same two integration tests failed at assertions in
   `tests/IntegrationTests.cpp` lines 127 and 179. Their cause remains unestablished.
+
+## 2026-11-02 — Highlight repair result statuses
+
+**Issues**: [#188](https://github.com/kkamegawa/syncwingetlink/issues/188),
+[#189](https://github.com/kkamegawa/syncwingetlink/issues/189),
+[#190](https://github.com/kkamegawa/syncwingetlink/issues/190)
+**Approval**: The user approved the implementation plan on 2026-11-02 and explicitly
+excluded Wiki registration.
+
+### Change
+
+- Added `Console::writeLineWithStyledStatus()` for independently sanitized prefix/status
+  output. The Console emits a fixed, high-contrast white-on-green style for successful
+  repairs and black-on-amber for refused mismatches, then resets SGR immediately after
+  the status. Existing `--no-color`, `NO_COLOR`, redirected-output, and JSON behavior is
+  preserved.
+- `runFix()` applies those styles only to `created`, `replaced`, and
+  `refused (mismatch)`. Other statuses and the batch summary remain plain. The CLI plan
+  and TODO now document the output and track the remaining real-terminal screenshot
+  check.
+
+### Verification
+
+- Debug|x64, Release|x64, and Release|ARM64 builds succeeded with 0 warnings and 0 errors.
+- The focused Console test run passed 21/21 in both Debug|x64 and Release|x64. Coverage
+  includes the disposition-to-style mapping, exact SGR sequences and reset placement,
+  sanitization, color suppression (`--no-color`, `NO_COLOR`, redirected output, and VT
+  failure), and the `--quiet` importance gate.
+- Full Debug|x64 and Release|x64 test runs each passed 506/508. The same two integration
+  tests failed at `tests/IntegrationTests.cpp` lines 127 and 179 while trying to create
+  real symbolic links; this host reports that Developer Mode could not be checked and
+  the process is not elevated. The focused tests passed in both configurations.
+- The user performed the terminal check. The supplied screenshot shows
+  `refused (mismatch)` in black on amber against a dark terminal background. The agent
+  did not automate terminal applications, in accordance with the Computer Use skill.
+- `clang-format --dry-run --Werror --style=file` over the touched C++ files reports
+  extensive formatting violations throughout those files. No broad formatting cleanup
+  was included in this focused change.

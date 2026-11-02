@@ -284,6 +284,14 @@ Build system decisions are recorded in [`adr.md`](./adr.md) (ADR-0001 … ADR-00
       `--showspecialfolder`/`-s` is set - issue #186, extending issue #180 and
       `docs/adr-phase-10.md` ADR-0048
 
+## Fix result status coloring (issue #188)
+- [x] Color only `created`/`replaced` and `refused (mismatch)` in repair progress, with
+      readable foreground/background pairs; preserve color suppression and JSON output -
+      issues #189/#190
+- [x] Confirm the status colors in terminal output with dark and light backgrounds. The user
+      performed this check; the supplied screenshot shows `refused (mismatch)` with black
+      text on amber against a dark terminal background.
+
 ## Future enhancements (separate milestone)
 - [ ] Read winget `PortableIndex` (sqlite) read-only (last resort when COM/FS are insufficient)
 - [ ] machine-scope support (requires admin)

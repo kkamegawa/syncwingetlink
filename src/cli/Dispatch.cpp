@@ -834,10 +834,27 @@ void printBatchSummary(Console& console, const RepairBatchSummary& summary)
         }
         if (!options.jsonOutput)
         {
-            console.writeLine(std::format(L"[{}/{}] {}: {}", current, total,
-                                          sanitizeForDisplay(item.candidate.alias),
-                                          repairDispositionDisplayName(item.disposition)),
-                              ConsoleStream::Output, MessageImportance::Supplementary);
+            const std::wstring prefix = std::format(L"[{}/{}] {}: ",
+                                                    current,
+                                                    total,
+                                                    sanitizeForDisplay(item.candidate.alias));
+            const std::wstring_view status = repairDispositionDisplayName(item.disposition);
+            const std::optional<ConsoleStatusStyle> style =
+                repairDispositionStatusStyle(item.disposition);
+            if (style.has_value())
+            {
+                console.writeLineWithStyledStatus(prefix,
+                                                  status,
+                                                  *style,
+                                                  ConsoleStream::Output,
+                                                  MessageImportance::Supplementary);
+            }
+            else
+            {
+                console.writeLine(prefix + std::wstring(status),
+                                  ConsoleStream::Output,
+                                  MessageImportance::Supplementary);
+            }
         }
     };
 
@@ -979,6 +996,27 @@ void printVersion(Console& console)
 PathDisplayOptions pathDisplayOptionsFor(const AppOptions& options, bool jsonDocument) noexcept
 {
     return PathDisplayOptions{options.showSpecialFolders || !jsonDocument};
+}
+
+std::optional<ConsoleStatusStyle> repairDispositionStatusStyle(
+    RepairDisposition disposition) noexcept
+{
+    switch (disposition)
+    {
+        case RepairDisposition::Created:
+        case RepairDisposition::ReplacedBroken:
+            return ConsoleStatusStyle::Success;
+        case RepairDisposition::RefusedMismatch:
+            return ConsoleStatusStyle::Warning;
+        case RepairDisposition::PlannedCreate:
+        case RepairDisposition::PlannedReplaceBroken:
+        case RepairDisposition::Declined:
+        case RepairDisposition::SkippedOk:
+        case RepairDisposition::Failed:
+        case RepairDisposition::NotAttempted:
+            return std::nullopt;
+    }
+    return std::nullopt;
 }
 
 ChecklistRowKind checklistRowKindFor(LinkStatus status) noexcept
