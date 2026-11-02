@@ -12,6 +12,8 @@ targets:
 dependencies:
   apm:
     - github/awesome-copilot
+    - tfsugjp/skills/plugins/github-plan-wiki
+    - tfsugjp/skills/plugins/windows-shell-safety
   mcp: []
 includes: auto
 scripts: {}
