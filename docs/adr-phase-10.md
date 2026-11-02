@@ -139,12 +139,12 @@ returned. Two further defects made it unreadable rather than merely surprising:
 
 ---
 
-## ADR-0048 — `--showspecialfolder`: abbreviating user folders in console *and* `--json` output
+## ADR-0048 — Abbreviating user folders in human-readable output and optional JSON output
 
 - **Date**: 2026-09-20
 - **Affected**: `cli::PathDisplay` (new), `cli::ArgParser`, `cli::Json`,
   `cli::ScanReport`, `cli::Dispatch`, `tui::TuiApp`, `core::AppOptions`,
-  `docs/PLAN.md`, `README.md`, `docs/TODO.md`, the Wiki page
+  `docs/PLAN.md`, `README.md`, `docs/TODO.md`, issue #186, the Wiki page
   `plan/syncwingetlink/tui-mismatch-and-path-abbreviation`
 - **Status**: Accepted
 
@@ -156,8 +156,10 @@ shared in an issue (#180).
 
 ### Decision
 
-1. **`--showspecialfolder`, short form `-s`.** When set, a path whose prefix is a known
-   user folder is printed with that folder's environment-variable spelling.
+1. **Human-readable output abbreviates known user folders by default.** The `scan` and
+   `fix` tables, the `--tui` checklist, and path-bearing diagnostics print the folder's
+   environment-variable spelling. `--showspecialfolder`, short form `-s`, controls the
+   optional JSON abbreviation described in decision 4.
 
 2. **Exactly three folders: `%LOCALAPPDATA%`, `%APPDATA%`, `%USERPROFILE%`.** These are
    the folders whose real form carries the account name. `%PROGRAMFILES%`,
@@ -200,11 +202,9 @@ shared in an issue (#180).
    `parseArguments()` returned, so no `--showspecialfolder` has been observed yet, and
    the message is usually about the very argument that failed to parse.
 
-4. **`--json` documents are abbreviated too.** Being able to paste a document verbatim
-   was judged worth more than keeping every path in the document directly openable; a
-   consumer that needs the real path expands the environment variable itself. The
-   behavior is documented in `docs/PLAN.md` §8 alongside the schema. Without the flag the
-   document is byte-for-byte what it always was.
+4. **JSON paths stay real by default and abbreviate only with `--showspecialfolder` / `-s`.**
+   Scripts can use the paths directly unless they opt into shareable, abbreviated output.
+   Human-readable output uses the default abbreviation independently of this JSON option.
 
 5. **The setting is a parameter, never a global.** `PathDisplayOptions` is threaded
    through `formatGroupedReport()`, the `cli::Json` serializers, and
@@ -247,8 +247,9 @@ shared in an issue (#180).
   already sanitizes at its own boundary, and a second pass would change what today's
   non-path diagnostics look like.
 - `formatPathForDisplay()` becomes the single entry point for printing a path:
-  abbreviate (when asked), then `sanitizeForDisplay()`. Sanitization stays last, so an
-  abbreviated path can never smuggle a control sequence into a terminal or a document.
+  abbreviate (when requested by the caller), then `sanitizeForDisplay()`. Sanitization
+  stays last, so an abbreviated path can never smuggle a control sequence into a terminal
+  or a document.
 - `core::AppOptions::showSpecialFolders`; `cli::ArgParser` accepts
   `--showspecialfolder`/`-s`; `cli::Dispatch::pathDisplayOptionsFor()` is the one place
   the two are joined.
@@ -262,3 +263,9 @@ shared in an issue (#180).
 - `tests/ArgParserTests.cpp`, `tests/JsonTests.cpp`, `tests/ScanReportTests.cpp` and
   `tests/TuiAppTests.cpp` each gain cases for the flag; the report case also asserts that
   row order is identical with and without it.
+
+### Decision history
+
+| Date | Previous decision | Updated decision | Reason and approval |
+|---|---|---|---|
+| 2026-11-02 | Both output types required `-s` to abbreviate paths. | Human-readable output abbreviates by default; JSON paths stay real unless `-s` is passed. | Ordinary `scan` output exposed the profile path. User approved this update in the conversation on this date. |

@@ -3906,3 +3906,32 @@ root would be abbreviated one component early.
 
   Both leaking rows are the pre-fix behavior, reproduced by omitting `-s` on the fixed
   build.
+
+## 2026-11-02 — Abbreviate user-folder paths in human-readable output by default
+
+**Issue**: #186 (follow-up to #180)
+**Approval**: The user approved the implementation and documentation scope in this
+conversation on 2026-11-02.
+
+### Change
+
+- `cli::Dispatch::pathDisplayOptionsFor()` now enables known-folder abbreviation for
+  human-readable output by default. The JSON serializers receive a separate display
+  option: JSON retains real paths by default and abbreviates only with `-s`.
+- Updated `README.md`, `docs/PLAN.md`, ADR-0048 in `docs/adr-phase-10.md`, and the matching
+  `docs/TODO.md` item to document this behavior. ADR-0048 retains the previous decision in
+  its decision history.
+
+### Verification
+
+- `Debug|x64`, `Release|x64`, and `Debug|ARM64` builds succeeded with 0 warnings and 0 errors.
+- The Debug and Release x64 MSTest runs each passed 495/497 tests. The same two integration
+  tests failed in both runs: `nonAsciiDummyTreeReachesOkThroughScanFixRescan` and
+  `dummyTreeReachesOkThroughScanFixRescan` (`tests/IntegrationTests.cpp`, assertion
+  failures at lines 179 and 127). Their cause was not established in this change.
+- The path-display and JSON default-path tests passed (2/2).
+- Read-only `scan --source fs` output contained `%LOCALAPPDATA%` and did not contain the
+  expanded LocalAppData path. JSON without `-s` contained expanded package paths and no
+  `%LOCALAPPDATA%`; JSON with `-s` contained `%LOCALAPPDATA%` and no expanded package path.
+- A TUI screenshot was not captured; the TUI renderer's path-display tests passed in the
+  full test runs.

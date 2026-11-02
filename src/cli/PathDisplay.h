@@ -17,7 +17,9 @@ namespace syncwingetlink::cli
 // exists to avoid.
 struct PathDisplayOptions
 {
-    // --showspecialfolder / -s (docs/adr-phase-10.md ADR-0048).
+    // Whether this rendering context abbreviates known user folders. Human-readable
+    // output enables it by default; JSON opts in with --showspecialfolder / -s
+    // (docs/adr-phase-10.md ADR-0048).
     bool showSpecialFolders{false};
 };
 

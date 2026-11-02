@@ -297,7 +297,7 @@ Options:
                         the NO_COLOR environment variable)
   -s, --showspecialfolder
                         print %LOCALAPPDATA%/%APPDATA%/%USERPROFILE% instead of the
-                        real path (console output and --json alike)
+                        real path in --json output (human-readable output abbreviates by default)
   --version / --help
 ```
 
@@ -394,9 +394,10 @@ behavior - documented here rather than left as "run in interactive TUI mode", pe
 
 ### `--showspecialfolder` / `-s`
 
-Prints a path whose prefix is a known user folder using that folder's environment-variable
-spelling, so console output and `--json` documents can be shared without redacting the
-account name (`docs/adr-phase-10.md` ADR-0048).
+Human-readable console output, the `--tui` checklist, and path-bearing diagnostics print
+known user folders using their environment-variable spelling by default. In `--json`
+documents the real paths remain the default; pass `--showspecialfolder` / `-s` to
+abbreviate those paths too (`docs/adr-phase-10.md` ADR-0048).
 
 ```
 %LOCALAPPDATA%\Microsoft\WinGet\Links\copilot.exe
@@ -411,10 +412,12 @@ account name (`docs/adr-phase-10.md` ADR-0048).
 - **Component-boundary match only**: the character after the matched prefix must be a
   separator or the end of the string, so `C:\Users\bob` never rewrites
   `C:\Users\bobby\...`. The comparison is ordinal and case-insensitive.
-- **Applies to `--json` as well as the console**, including the `--tui` checklist, the
-  `--verbose` diagnostics, and error messages that embed a path (`fix`'s symlink
-  failures, an unreadable rules file, and the like). A path outside all three folders
-  (for example a `--links-dir` pointing elsewhere) is printed unchanged.
+- **Human-readable output abbreviates by default.** This includes the `scan` and `fix`
+  tables, the `--tui` checklist, `--verbose` diagnostics, and error messages that embed a
+  path (`fix`'s symlink failures, an unreadable rules file, and the like). A path outside
+  all three folders (for example a `--links-dir` pointing elsewhere) is printed unchanged.
+- **JSON documents abbreviate only with `--showspecialfolder` / `-s`.** Without the flag,
+  their path values retain the real paths so scripts can use them directly.
 - **An extended-length (`\\?\`-prefixed) override is abbreviated too.** `--links-dir`,
   `--packages-dir` and `--rules` accept that spelling verbatim, so it is matched in its
   non-extended form; a path that matches no known folder keeps whatever spelling it was
@@ -423,8 +426,8 @@ account name (`docs/adr-phase-10.md` ADR-0048).
   flag has been parsed and usually names the very argument that failed.
 - **Never changes ordering**: the grouped report still sorts on the real executable path,
   so the flag cannot reorder rows.
-- It conflicts with nothing. Unlike `--tui`, it only changes how a path is rendered, which
-  is meaningful for every command.
+- It conflicts with nothing. It changes path rendering for human-readable output by
+  default and also applies to JSON documents when explicitly requested.
 
 ### `--verbose` / `--quiet` (log level)
 
@@ -522,10 +525,8 @@ never appear inside `results`.
 
 With `--showspecialfolder`, every path value in the document (`executable`, `linkPath`,
 `existingTarget`, and the elements of `executables`) carries a `%LOCALAPPDATA%`-style
-prefix instead of the real one. This is deliberate: being able to paste a document
-verbatim was judged worth more than keeping every path directly openable, and a consumer
-that needs the real path expands the environment variable itself
-(`docs/adr-phase-10.md` ADR-0048). Without the flag the document is unchanged.
+prefix instead of the real one. Without the flag, JSON retains its real paths for direct
+use by scripts (`docs/adr-phase-10.md` ADR-0048).
 
 Every string value (`executable`, `alias`, `linkPath`, `existingTarget`, the elements of
 `executables`) is sanitized the same way console output is - see

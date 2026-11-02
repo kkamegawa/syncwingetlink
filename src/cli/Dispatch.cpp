@@ -147,18 +147,18 @@ BOOL WINAPI consoleCtrlHandler(DWORD ctrlType)
 // The one place AppOptions turns into the presentation layer's path-display setting.
 // cli::ScanReport, cli::Json and tui::TuiApp all take it as a parameter rather than
 // reading a global, so each of them stays independently testable.
-[[nodiscard]] PathDisplayOptions pathDisplayOptionsFor(const AppOptions& options) noexcept
+[[nodiscard]] PathDisplayOptions pathDisplayOptionsFor(const AppOptions& options,
+                                                       bool jsonDocument = false) noexcept
 {
-    return PathDisplayOptions{options.showSpecialFolders};
+    return PathDisplayOptions{options.showSpecialFolders || !jsonDocument};
 }
 
 // core/ formats its exception messages (as UTF-8) long before this layer decides how to
 // display them, and several of them embed a real path mid-sentence - e.g.
 // "CreateSymbolicLinkW failed for 'C:\Users\...\Links\tool.exe' (Win32 error 5)" from
-// SymlinkService, plus LinkInspector's and RuleSetSelector's equivalents. Without this,
-// --showspecialfolder would abbreviate every ordinary path the tool prints and then leak
-// the account name the moment anything went wrong, which is precisely when output gets
-// pasted into an issue. See docs/adr-phase-10.md ADR-0048.
+// SymlinkService, plus LinkInspector's and RuleSetSelector's equivalents. Abbreviating
+// ordinary paths while leaking the account name from an error would defeat shareable
+// output when the user needs it most. See docs/adr-phase-10.md ADR-0048.
 [[nodiscard]] std::wstring diagnosticText(std::string_view utf8Message,
                                           const AppOptions& options)
 {
@@ -559,7 +559,7 @@ void writeJsonDocument(Console& console, const std::string& json)
     if (options.jsonOutput)
     {
         writeJsonDocument(console, toJsonScanResult(candidates.allItems, candidates.collisions,
-                                                    pathDisplayOptionsFor(options)));
+                                                    pathDisplayOptionsFor(options, true)));
     }
     else
     {
@@ -879,7 +879,7 @@ void printBatchSummary(Console& console, const RepairBatchSummary& summary)
             }
         }
         writeJsonDocument(console, toJsonFixResult(jsonResults, candidates.collisions,
-                                                   pathDisplayOptionsFor(options)));
+                                                   pathDisplayOptionsFor(options, true)));
     }
 
     return toExitCode(exitCodeFor(batchResult.summary));
@@ -954,8 +954,8 @@ void printHelp(Console& console)
         L"                         state (also honors the NO_COLOR environment",
         L"                         variable)",
         L"  -s, --showspecialfolder",
-        L"                         print %LOCALAPPDATA%/%APPDATA%/%USERPROFILE% instead",
-        L"                         of the real path (console output and --json alike)",
+        L"                         abbreviate paths in --json output; human-readable",
+        L"                         output already abbreviates known user folders",
         L"  --silent               do not ask whether to restart elevated; print only",
         L"                         the startup permission message",
         L"  --version              print the version number and exit",

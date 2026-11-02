@@ -279,10 +279,10 @@ Build system decisions are recorded in [`adr.md`](./adr.md) (ADR-0001 … ADR-00
       `[cannot repair]` rows, warn instead of returning silently when nothing is
       listable, and suppress the grouped fix preview only when the checklist actually
       ran - issue #179, `docs/adr-phase-10.md` ADR-0047
-- [x] Add `--showspecialfolder`/`-s` so console output, the `--tui` checklist, `--json`
-      documents, and path-bearing diagnostics print
-      `%LOCALAPPDATA%`/`%APPDATA%`/`%USERPROFILE%` instead of the real user-profile path -
-      issue #180, `docs/adr-phase-10.md` ADR-0048
+- [x] Abbreviate known user folders by default in human-readable console output, the
+      `--tui` checklist, and path-bearing diagnostics; keep JSON paths real unless
+      `--showspecialfolder`/`-s` is set - issue #186, extending issue #180 and
+      `docs/adr-phase-10.md` ADR-0048
 
 ## Future enhancements (separate milestone)
 - [ ] Read winget `PortableIndex` (sqlite) read-only (last resort when COM/FS are insufficient)

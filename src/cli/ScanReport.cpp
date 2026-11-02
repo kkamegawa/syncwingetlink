@@ -108,8 +108,8 @@ struct ReportRow
 // a stable, deterministic ordering even for candidates that share an alias (an alias
 // collision, core/LinkInspector.h detectAliasCollisions()).
 //
-// Deliberately the *real* path, never the display form: --showspecialfolder must not
-// be able to reorder a report (docs/adr-phase-10.md ADR-0048).
+// Deliberately the *real* path, never the display form: abbreviation must not be able to
+// reorder a report (docs/adr-phase-10.md ADR-0048).
 [[nodiscard]] bool lessByAliasThenPath(const RepairItem& a, const RepairItem& b) noexcept
 {
     const int aliasComparison = compareOrdinalCaseInsensitive(a.alias, b.alias);
