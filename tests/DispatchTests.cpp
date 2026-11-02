@@ -3,9 +3,13 @@
 #include <CppUnitTest.h>
 
 #include <cli/Dispatch.h>
+#include <cli/Json.h>
+#include <cli/ScanReport.h>
 #include <cli/Version.h>
 
+#include <filesystem>
 #include <string>
+#include <vector>
 
 using namespace Microsoft::VisualStudio::CppUnitTestFramework;
 using namespace syncwingetlink;
@@ -31,8 +35,47 @@ using namespace syncwingetlink::cli;
 // precisely so they can be asserted without a console, a filesystem, or a package
 // source. Everything they feed - runTuiChecklistIfRequested(), runFix() - stays in an
 // anonymous namespace and is verified by the manual checks recorded in docs/task.md.
+// pathDisplayOptionsFor() is another exported dispatch seam: these tests parse the real
+// options and pass the resulting settings through the production table/JSON renderers,
+// without invoking package discovery in cli::run().
 namespace syncwingetlink::tests
 {
+namespace
+{
+[[nodiscard]] std::wstring liveLocalAppDataRoot()
+{
+    for (const KnownFolderMapping& mapping : knownFolderMappings())
+    {
+        if (mapping.variable == L"%LOCALAPPDATA%")
+        {
+            return mapping.root;
+        }
+    }
+    return {};
+}
+
+[[nodiscard]] std::vector<RepairItem> makePathDisplayItems(const std::filesystem::path& path)
+{
+    RepairItem item;
+    item.executable.path = path;
+    item.alias = L"codex.exe";
+    item.status = LinkStatus::Missing;
+    item.packageId = L"OpenAI.Codex";
+    return {item};
+}
+
+[[nodiscard]] std::wstring joinReportLines(const std::vector<ReportLine>& lines)
+{
+    std::wstring joined;
+    for (const ReportLine& line : lines)
+    {
+        joined += line.text;
+        joined += L'\n';
+    }
+    return joined;
+}
+} // namespace
+
 TEST_CLASS(ExitCodeForPackageSourceErrorKindTests)
 {
 public:
@@ -120,6 +163,66 @@ public:
     TEST_METHOD(declinedElevationKeepsLineOrientedFixFlow)
     {
         Assert::IsFalse(exitCodeAfterElevationDeclined(false).has_value());
+    }
+};
+
+TEST_CLASS(PathDisplayOptionsForTests)
+{
+public:
+    TEST_METHOD(humanReadableOutputAbbreviatesByDefault)
+    {
+        const std::wstring localAppDataRoot = liveLocalAppDataRoot();
+        if (localAppDataRoot.empty())
+        {
+            return; // Nothing to abbreviate against on this host.
+        }
+
+        const std::filesystem::path path(
+            localAppDataRoot + LR"(\Packages\Codex\codex-x64.exe)");
+        const std::vector<RepairItem> items = makePathDisplayItems(path);
+        const AppOptions options = parseArguments({L"scan"});
+        const std::wstring report = joinReportLines(
+            formatGroupedReport(items, ReportMode::Scan, pathDisplayOptionsFor(options)));
+
+        Assert::IsTrue(report.find(L"%LOCALAPPDATA%\\Packages\\Codex\\codex-x64.exe") !=
+                       std::wstring::npos);
+        Assert::IsTrue(report.find(localAppDataRoot) == std::wstring::npos);
+    }
+
+    TEST_METHOD(jsonOutputKeepsRealPathsByDefault)
+    {
+        const std::wstring localAppDataRoot = liveLocalAppDataRoot();
+        if (localAppDataRoot.empty())
+        {
+            return; // Nothing to abbreviate against on this host.
+        }
+
+        const std::filesystem::path path(
+            localAppDataRoot + LR"(\Packages\Codex\codex-x64.exe)");
+        const std::vector<RepairItem> items = makePathDisplayItems(path);
+        const AppOptions options = parseArguments({L"scan", L"--json"});
+        const std::string json = toJsonScanResult(items, {}, pathDisplayOptionsFor(options, true));
+
+        Assert::IsTrue(json.find(escapeJsonString(localAppDataRoot)) != std::string::npos);
+        Assert::IsTrue(json.find("%LOCALAPPDATA%") == std::string::npos);
+    }
+
+    TEST_METHOD(jsonOutputAbbreviatesWhenShortOptionIsSet)
+    {
+        const std::wstring localAppDataRoot = liveLocalAppDataRoot();
+        if (localAppDataRoot.empty())
+        {
+            return; // Nothing to abbreviate against on this host.
+        }
+
+        const std::filesystem::path path(
+            localAppDataRoot + LR"(\Packages\Codex\codex-x64.exe)");
+        const std::vector<RepairItem> items = makePathDisplayItems(path);
+        const AppOptions options = parseArguments({L"scan", L"--json", L"-s"});
+        const std::string json = toJsonScanResult(items, {}, pathDisplayOptionsFor(options, true));
+
+        Assert::IsTrue(json.find("%LOCALAPPDATA%") != std::string::npos);
+        Assert::IsTrue(json.find(escapeJsonString(localAppDataRoot)) == std::string::npos);
     }
 };
 
