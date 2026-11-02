@@ -284,6 +284,15 @@ Build system decisions are recorded in [`adr.md`](./adr.md) (ADR-0001 … ADR-00
       `--showspecialfolder`/`-s` is set - issue #186, extending issue #180 and
       `docs/adr-phase-10.md` ADR-0048
 
+## Fix result status coloring (issue #188)
+- [x] Color only `created`/`replaced` and `refused (mismatch)` in repair progress, with
+      readable foreground/background pairs; preserve color suppression and JSON output -
+      issues #189/#190
+- [ ] Capture the output in real terminals with dark and light backgrounds. This host has
+      no available terminal window, and the Computer Use skill prohibits terminal-app
+      automation; the fixed foreground/background pairs and emitted SGR sequences are
+      covered by tests, but the requested screenshots remain unverified.
+
 ## Future enhancements (separate milestone)
 - [ ] Read winget `PortableIndex` (sqlite) read-only (last resort when COM/FS are insufficient)
 - [ ] machine-scope support (requires admin)

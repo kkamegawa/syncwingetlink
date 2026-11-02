@@ -3,6 +3,7 @@
 #pragma once
 
 #include "ArgParser.h"
+#include "Console.h"
 #include "PathDisplay.h"
 #include "core/Model.h"
 #include "core/PackageSourceError.h"
@@ -12,6 +13,11 @@
 #include <optional>
 #include <string>
 #include <vector>
+
+namespace syncwingetlink
+{
+enum class RepairDisposition;
+}
 
 namespace syncwingetlink::cli
 {
@@ -49,6 +55,12 @@ enum class ExitCode : int
 // an otherwise-successful batch is the "some repairs failed" case, not the permission
 // case.
 [[nodiscard]] ExitCode exitCodeFor(SymlinkServiceErrorKind kind) noexcept;
+
+// Selects the color, if any, for a repair disposition's progress status. Only completed
+// repairs and a refused mismatch are highlighted; planned, declined, unchanged, and
+// failed states remain plain text.
+[[nodiscard]] std::optional<ConsoleStatusStyle>
+repairDispositionStatusStyle(RepairDisposition disposition) noexcept;
 
 // A TUI checklist must not be shown when the requested elevation is declined or
 // intentionally suppressed. The line-oriented fix flow may continue and report its

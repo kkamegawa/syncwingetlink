@@ -332,6 +332,14 @@ truncated. `--json` output (schema, fields, and item ordering) is unchanged by t
 format - it reflects `scan`/`fix`'s underlying candidate list directly, not the
 grouped/sorted console presentation. See `docs/adr-phase-9.md` ADR-0038.
 
+After each attempted item, `fix` prints `[current/total] alias: status` progress. In
+human-readable terminal output, only `created` and `replaced` are shown as white text on a
+dark green background, and `refused (mismatch)` as black text on an amber background.
+These explicit foreground and background colors keep the status readable independently
+of the terminal theme. Other statuses and the summary remain unstyled. `Console` emits
+and resets these SGR styles only when color is enabled; `--no-color`, `NO_COLOR`,
+redirected output, and JSON output contain no styling sequences.
+
 `--include`/`--exclude` take shell-style wildcards (`*` and `?` only — no character
 classes, no path semantics), matched per executable against either the package identifier
 or the executable file name, ordinal and case-insensitive. An exclude match always beats

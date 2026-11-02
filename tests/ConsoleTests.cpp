@@ -3,6 +3,8 @@
 #include <CppUnitTest.h>
 
 #include <cli/Console.h>
+#include <cli/Dispatch.h>
+#include <core/RepairBatch.h>
 
 #include <Windows.h>
 
@@ -166,6 +168,37 @@ namespace
 TEST_CLASS(ConsoleTests)
 {
 public:
+    TEST_METHOD(createdAndReplacedUseSuccessStyle)
+    {
+        Assert::IsTrue(repairDispositionStatusStyle(RepairDisposition::Created) ==
+                       ConsoleStatusStyle::Success);
+        Assert::IsTrue(repairDispositionStatusStyle(RepairDisposition::ReplacedBroken) ==
+                       ConsoleStatusStyle::Success);
+    }
+
+    TEST_METHOD(refusedMismatchUsesWarningStyle)
+    {
+        Assert::IsTrue(repairDispositionStatusStyle(RepairDisposition::RefusedMismatch) ==
+                       ConsoleStatusStyle::Warning);
+    }
+
+    TEST_METHOD(allOtherDispositionsRemainUnstyled)
+    {
+        constexpr RepairDisposition kUnstyled[] = {
+            RepairDisposition::PlannedCreate,
+            RepairDisposition::PlannedReplaceBroken,
+            RepairDisposition::Declined,
+            RepairDisposition::SkippedOk,
+            RepairDisposition::Failed,
+            RepairDisposition::NotAttempted,
+        };
+
+        for (const RepairDisposition disposition : kUnstyled)
+        {
+            Assert::IsFalse(repairDispositionStatusStyle(disposition).has_value());
+        }
+    }
+
     TEST_METHOD(colorIsEnabledOnlyWhenConsoleAndVtSucceedsAndNotSuppressed)
     {
         std::vector<std::wstring> writes;
@@ -234,6 +267,85 @@ public:
 
         Assert::AreEqual(size_t{1}, writes.size());
         Assert::AreEqual(std::wstring(L"tool.exe\n"), writes[0]);
+    }
+
+    TEST_METHOD(styledSuccessStatusUsesHighContrastColorsAndResetsAfterStatus)
+    {
+        std::vector<std::wstring> writes;
+        Console console(false, makeFakeOperations(true, true, writes, {}));
+
+        console.writeLineWithStyledStatus(L"[1/1] tool.exe: ", L"created",
+                                          ConsoleStatusStyle::Success);
+
+        Assert::AreEqual(size_t{1}, writes.size());
+        Assert::AreEqual(std::wstring(
+                             L"[1/1] tool.exe: \x1b[38;2;255;255;255;48;2;27;94;32m"
+                             L"created\x1b[0m\n"),
+                         writes[0]);
+    }
+
+    TEST_METHOD(styledWarningStatusUsesHighContrastColorsAndResetsAfterStatus)
+    {
+        std::vector<std::wstring> writes;
+        Console console(false, makeFakeOperations(true, true, writes, {}));
+
+        console.writeLineWithStyledStatus(L"[1/1] tool.exe: ", L"refused (mismatch)",
+                                          ConsoleStatusStyle::Warning);
+
+        Assert::AreEqual(size_t{1}, writes.size());
+        Assert::AreEqual(std::wstring(
+                             L"[1/1] tool.exe: \x1b[38;2;0;0;0;48;2;255;213;79m"
+                             L"refused (mismatch)\x1b[0m\n"),
+                         writes[0]);
+    }
+
+    TEST_METHOD(styledStatusSanitizesUntrustedPrefixAndStatus)
+    {
+        std::vector<std::wstring> writes;
+        Console console(false, makeFakeOperations(true, true, writes, {}));
+
+        console.writeLineWithStyledStatus(L"tool\x1B.exe: ", L"created\x1B forged",
+                                          ConsoleStatusStyle::Success);
+
+        Assert::AreEqual(std::wstring(
+                             L"tool.exe: \x1b[38;2;255;255;255;48;2;27;94;32m"
+                             L"created forged\x1b[0m\n"),
+                         writes[0]);
+    }
+
+    TEST_METHOD(styledStatusOmitsSequencesWhenColorIsDisabled)
+    {
+        const auto assertUnstyled = [](bool noColorRequested, bool outputIsConsole,
+                                       std::optional<std::wstring> noColorEnvValue,
+                                       bool virtualTerminalSucceeds) {
+            std::vector<std::wstring> writes;
+            Console console(noColorRequested,
+                            makeFakeOperations(outputIsConsole, virtualTerminalSucceeds,
+                                               writes, {}),
+                            std::move(noColorEnvValue));
+            console.writeLineWithStyledStatus(L"tool.exe: ", L"created",
+                                              ConsoleStatusStyle::Success);
+            Assert::AreEqual(size_t{1}, writes.size());
+            Assert::AreEqual(std::wstring(L"tool.exe: created\n"), writes[0]);
+        };
+
+        assertUnstyled(true, true, std::nullopt, true);
+        assertUnstyled(false, true, std::wstring(L""), true);
+        assertUnstyled(false, false, std::nullopt, true);
+        assertUnstyled(false, true, std::nullopt, false);
+    }
+
+    TEST_METHOD(styledStatusHonorsImportanceGate)
+    {
+        std::vector<std::wstring> writes;
+        Console console(false, makeFakeOperations(true, true, writes, {}), std::nullopt,
+                        LogLevel::Quiet);
+
+        console.writeLineWithStyledStatus(L"tool.exe: ", L"created",
+                                          ConsoleStatusStyle::Success, ConsoleStream::Output,
+                                          MessageImportance::Supplementary);
+
+        Assert::IsTrue(writes.empty());
     }
 
     TEST_METHOD(confirmWithAssumeYesNeverTouchesPromptOrStdin)

@@ -60,6 +60,14 @@ enum class MessageImportance
     Diagnostic,    // --verbose-only reporting: effective paths, source, rule source
 };
 
+// High-contrast styles reserved for trusted repair status text. The Console owns the
+// corresponding ANSI sequences so caller-provided text can never inject terminal control.
+enum class ConsoleStatusStyle
+{
+    Success,
+    Warning,
+};
+
 // The Win32-facing operations Console drives. Production code (Console's single-argument
 // constructor) wraps the real APIs; tests supply deterministic callbacks so redirected
 // vs. real-console behavior, VT capability, and EOF vs. a real input line are all
@@ -177,6 +185,16 @@ public:
     // sanitizeForDisplay() nor m_operations.write.
     void writeLine(std::wstring_view text, ConsoleStream stream = ConsoleStream::Output,
                    MessageImportance importance = MessageImportance::Normal);
+
+    // Writes sanitized prefix and status text followed by a newline. When color is
+    // enabled, only status receives the fixed style selected here, then SGR is reset.
+    // Prefix/status are still sanitized independently so untrusted text cannot inject
+    // terminal controls. Uses the same log-level gate as writeLine().
+    void writeLineWithStyledStatus(std::wstring_view prefix,
+                                   std::wstring_view status,
+                                   ConsoleStatusStyle style,
+                                   ConsoleStream stream = ConsoleStream::Output,
+                                   MessageImportance importance = MessageImportance::Normal);
 
     // Writes promptText (sanitized) to stdout, with no trailing newline, then evaluates
     // consent. assumeYes bypasses the prompt entirely: neither promptText nor stdin is

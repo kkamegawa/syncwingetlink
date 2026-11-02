@@ -540,6 +540,42 @@ void Console::writeLine(std::wstring_view text, ConsoleStream stream,
     m_operations.write(stream, sanitizeForDisplay(text) + L"\n");
 }
 
+void Console::writeLineWithStyledStatus(std::wstring_view prefix,
+                                        std::wstring_view status,
+                                        ConsoleStatusStyle style,
+                                        ConsoleStream stream,
+                                        MessageImportance importance)
+{
+    if (!shouldEmit(importance) || !m_operations.write)
+    {
+        return;
+    }
+
+    std::wstring line = sanitizeForDisplay(prefix);
+    if (m_colorEnabled)
+    {
+        switch (style)
+        {
+            case ConsoleStatusStyle::Success:
+                // White on dark green remains legible on both light and dark terminal themes.
+                line += L"\x1b[38;2;255;255;255;48;2;27;94;32m";
+                break;
+            case ConsoleStatusStyle::Warning:
+                // Black on amber has strong contrast regardless of the terminal background.
+                line += L"\x1b[38;2;0;0;0;48;2;255;213;79m";
+                break;
+        }
+    }
+
+    line += sanitizeForDisplay(status);
+    if (m_colorEnabled)
+    {
+        line += L"\x1b[0m";
+    }
+    line += L"\n";
+    m_operations.write(stream, line);
+}
+
 bool Console::confirm(std::wstring_view promptText, bool assumeYes)
 {
     return confirm(promptText, assumeYes, false);
