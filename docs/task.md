@@ -3978,10 +3978,9 @@ excluded Wiki registration.
   tests failed at `tests/IntegrationTests.cpp` lines 127 and 179 while trying to create
   real symbolic links; this host reports that Developer Mode could not be checked and
   the process is not elevated. The focused tests passed in both configurations.
-- Dark/light real-terminal screenshots were not captured. No terminal window was
-  available, and the Computer Use skill prohibits automating terminal applications.
-  The exact foreground/background colors and emitted sequences are verified by unit
-  tests, but actual terminal rendering remains unverified.
+- The user performed the terminal check. The supplied screenshot shows
+  `refused (mismatch)` in black on amber against a dark terminal background. The agent
+  did not automate terminal applications, in accordance with the Computer Use skill.
 - `clang-format --dry-run --Werror --style=file` over the touched C++ files reports
   extensive formatting violations throughout those files. No broad formatting cleanup
   was included in this focused change.
